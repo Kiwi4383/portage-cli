@@ -1,47 +1,65 @@
-<!-- @generated from em's usage spec; do not edit -->
-# `em active`
+<!-- @generated from em's command line; do not edit -->
+# em active
 
-- **Usage:** `em active [FLAGS] [SUBCOMMAND]`
+`em active` — register a default `--prefix`/`--local` for bare invocations
 
-Register a default `--prefix` / `--local` so bare `em <pkg>` picks it up (dogfooding)
+## Usage
 
-Explicit `--prefix`/`--local`/`--root` still win. State is stored under `$XDG_STATE_HOME/em/active`.
+```
+em active [OPTIONS] [COMMAND]
+```
+
+## Commands
+
+* [`show`](active/show.md) — Show the registered active prefix/local
+* [`set`](active/set.md) — Register --prefix/--local as active or activate an existing entry
+* [`clear`](active/clear.md) — Clear the active context (or all entries with --all)
+* [`env`](active/env.md) — Print shell exports for the active context
+* [`list`](active/list.md) — List all registered prefix/local entries
+* [`add`](active/add.md) — Add a new prefix/local entry
+* [`remove`](active/remove.md) — Remove a registered entry
+
+## Options
+
+* `-h, --help` — Print help (see a summary with '-h')
 
 ## Roots
-- **`--prefix <DIR>`** — Unprivileged offset: ROOT/VDB/distfiles/build trees under DIR; config still from the host (use --root for a config offset).
-- **`--local [DIR]`** — Unprivileged, standalone Gentoo-Prefix: own VDB/BROOT/config, not overlaid on the host (see --prefix for the overlay). Defaults to ~/.gentoo (EPREFIX=~/.gentoo) when no DIR is given (`--local=`).
+
+Which tree this invocation reads and writes.
+
+* `--prefix <DIR>` — Unprivileged offset: ROOT/VDB/distfiles/build trees under DIR; config
+  still from the host (use --root for a config offset).
+* `--local [<DIR>]` — Unprivileged, standalone Gentoo-Prefix: own VDB/BROOT/config, not
+  overlaid on the host (see --prefix for the overlay). Defaults to
+  ~/.gentoo (EPREFIX=~/.gentoo) when no DIR is given (`--local=`).
 
   A bare `--local` takes the next word as DIR.
-- **`--config-root <PATH>`** — Read config (profile, make.conf) from this root instead of `--root`
-- **`-T --target <TUPLE>`** — Cross-build/setup for a crossdev target tuple
+* `--config-root <PATH>` — Read config (profile, make.conf) from this root instead of `--root`
+* `-T, --target <TUPLE>` — Cross-build/setup for a crossdev target tuple
 
-  The single source for "which tuple" everywhere: `em crossdev --target T --init-target` sets T up; `em stages --target T --stage1` (or any plain atom build) resolves/installs into the target sysroot `<EROOT>/usr/<TUPLE>` — sugar for `--config-root <sysroot> --root <sysroot>`.
+  The single source for "which tuple" everywhere: `em crossdev --target T --init-target`
+  sets T up; `em stages --target T --stage1` (or any plain atom build) resolves/installs
+  into the target sysroot `<EROOT>/usr/<TUPLE>` — sugar for
+  `--config-root <sysroot> --root <sysroot>`.
 
-  Cross context (CHOST/CBUILD, `--root-deps=rdeps`) is read from the sysroot make.conf. One flag for both roles — `crossdev` no longer has its own `-t`/`--target`.
+  Cross context (CHOST/CBUILD, `--root-deps=rdeps`) is read from the
+  sysroot make.conf. One flag for both roles — `crossdev` no longer
+  has its own `-t`/`--target`.
 
-## Flags
-- **`-h --help`** — Print help
+## Global options
+
+* `--color <WHEN>` — \[default: auto\] \[possible values: auto, always, never\]
 
 ## Examples
 
 **Register ~/.gentoo**
 
 ```
-em active set --local=
+$ em active set --local=
 ```
 
 **Flags may precede set**
 
 ```
-em active --local= set
+$ em active --local= set
 ```
-
-## Subcommands
-
-- [`em active add [NAME]`](active/add.md)
-- [`em active clear [--all]`](active/clear.md)
-- [`em active env`](active/env.md)
-- [`em active list`](active/list.md)
-- [`em active remove <REF>`](active/remove.md)
-- [`em active set [REF]`](active/set.md)
-- [`em active show`](active/show.md)

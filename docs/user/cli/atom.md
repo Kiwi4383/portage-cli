@@ -1,19 +1,30 @@
-<!-- @generated from em's usage spec; do not edit -->
-# `em atom`
+<!-- @generated from em's command line; do not edit -->
+# em atom
 
-- **Usage:** `em atom <ATOMS>…`
-- **Effect:** read-only
+`em atom` — parse/split atom strings
 
-Parse/split atom strings
+**Effect:** read-only.
+
+## Usage
+
+```
+em atom [OPTIONS] <ATOMS>...
+```
 
 ## Arguments
-- **`<ATOMS>…`** — Atom strings to parse and print back in normalized form
 
-## Flags
-- **`-h --help`** — Print help
+* `<ATOMS>...` — Atom strings to parse and print back in normalized form
+
+## Options
+
+* `-h, --help` — Print help (see a summary with '-h')
+
+## Global options
+
+* `--color <WHEN>` — \[default: auto\] \[possible values: auto, always, never\]
 
 ## Examples
 
 ```
-em atom >=dev-lang/python-3.10
+$ em atom >=dev-lang/python-3.10
 ```

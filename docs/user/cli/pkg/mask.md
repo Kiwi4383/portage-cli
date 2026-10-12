@@ -1,15 +1,45 @@
-<!-- @generated from em's usage spec; do not edit -->
-# `em pkg mask`
-
-- **Usage:** `em pkg mask [FLAGS] <ATOM>`
+<!-- @generated from em's command line; do not edit -->
+# em pkg mask
 
 Add/remove a package from package.mask
 
-## Arguments
-- **`<ATOM>`** — Package atom (e.g. sys-boot/grub or >=dev-libs/foo-1.0)
+## Usage
 
-## Flags
-- **`-a --add`** — Add the atom to package.mask
-- **`-d --drop`** — Remove the atom from package.mask
-- **`--path <FILE>`** — Target file inside package.mask/ (default: `<cat>-<pkg>`)
-- **`-h --help`** — Print help
+```
+em pkg mask [OPTIONS] <ATOM>
+```
+
+## Arguments
+
+* `<ATOM>` — Package atom (e.g. sys-boot/grub or \>=dev-libs/foo-1.0)
+
+## Options
+
+* `-a, --add` — Add the atom to package.mask
+* `-d, --drop` — Remove the atom from package.mask
+* `--path <FILE>` — Target file inside package.mask/ (default: `<cat>-<pkg>`)
+* `-h, --help` — Print help (see a summary with '-h')
+
+## Global options
+
+* `--color <WHEN>` — \[default: auto\] \[possible values: auto, always, never\]
+* `--prefix <DIR>` — Unprivileged offset: ROOT/VDB/distfiles/build trees under DIR; config
+  still from the host (use --root for a config offset).
+* `--local [<DIR>]` — Unprivileged, standalone Gentoo-Prefix: own VDB/BROOT/config, not
+  overlaid on the host (see --prefix for the overlay). Defaults to
+  ~/.gentoo (EPREFIX=~/.gentoo) when no DIR is given (`--local=`).
+
+  A bare `--local` takes the next word as DIR.
+* `--config-root <PATH>` — Read config (profile, make.conf) from this root instead of `--root`
+* `-T, --target <TUPLE>` — Cross-build/setup for a crossdev target tuple
+
+  The single source for "which tuple" everywhere: `em crossdev --target T --init-target`
+  sets T up; `em stages --target T --stage1` (or any plain atom build) resolves/installs
+  into the target sysroot `<EROOT>/usr/<TUPLE>` — sugar for
+  `--config-root <sysroot> --root <sysroot>`.
+
+  Cross context (CHOST/CBUILD, `--root-deps=rdeps`) is read from the
+  sysroot make.conf. One flag for both roles — `crossdev` no longer
+  has its own `-t`/`--target`.
+* `--root <PATH>` — Installation root (the offset an applet installs into / queries)
+* `--arch <ARCH>` — Target architecture for operations \[default: current system architecture\]

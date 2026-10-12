@@ -1,22 +1,23 @@
-<!-- @generated from em's usage spec; do not edit -->
-# `em portageq match`
-
-- **Usage:** `em portageq match <EROOT> <ATOM>`
+<!-- @generated from em's command line; do not edit -->
+# em portageq match
 
 List every installed CPV matching ATOM under EROOT, one per line
 
+## Usage
+
+```
+em portageq match [OPTIONS] <EROOT> <ATOM>
+```
+
 ## Arguments
-- **`<EROOT>`**
-- **`<ATOM>`** — Empty string matches every installed package
 
-## Flags
-- **`-h --help`** — Print help
+* `<EROOT>`
+* `<ATOM>` — Empty string matches every installed package
 
-## Exit Status
+## Options
 
-| Code | Meaning |
-| ---- | ------- |
-| `0` | query succeeded |
-| `1` | no match / unset variable |
-| `2` | invalid atom |
-| `64` | <EROOT> is not a directory |
+* `-h, --help` — Print help (see a summary with '-h')
+
+## Global options
+
+* `--color <WHEN>` — \[default: auto\] \[possible values: auto, always, never\]

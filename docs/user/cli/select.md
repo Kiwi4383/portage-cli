@@ -1,43 +1,62 @@
-<!-- @generated from em's usage spec; do not edit -->
-# `em select`
+<!-- @generated from em's command line; do not edit -->
+# em select
 
-- **Usage:** `em select [FLAGS] <SUBCOMMAND>`
+`em select` — native config selectors (profile, repos)
 
-Native config selectors (profile, repos) — eselect-like
+## Usage
 
-## Global Flags
-- **`--arch <ARCH>`** — Target architecture for operations (default: current system architecture)
-- **`--repo <PATH>`** — Pin search/query to a single repository
+```
+em select [OPTIONS] <COMMAND>
+```
 
-  When unset, repositories are auto-discovered from `repos.conf` (the main repo wins for single-repo applets; search walks all of them).
-- **`-p --pretend`** — Show what would be done without actually performing any actions
-- **`--vdb <PATH>`** — Override VDB path (default: $ROOT/var/db/pkg)
+## Commands
+
+* [`profile`](select/profile.md) — Select the system/sysroot profile (cross-aware)
+* [`repository`](select/repository.md), `repos` — Manage local repositories (overlays)
+* [`compiler`](select/compiler.md), `gcc` — Select the active compiler profile (gcc-config/eselect gcc workalike)
+* [`binutils`](select/binutils.md) — Select the active binutils profile (binutils-config/eselect binutils workalike)
+* [`linker`](select/linker.md) — Select the active linker profile
+* [`clang`](select/clang.md) — Select the active LLVM/clang slot
+* [`pkgconf`](select/pkgconf.md) — Select the pkg-config backend and create the \<CTARGET\>-pkg-config wrapper
+* [`mirrors`](select/mirrors.md), `mirror` — Manage Gentoo distfile mirrors (mirrorselect workalike)
+* [`news`](select/news.md) — Read/manage GLEP 42 news items (eselect news workalike)
+* [`glsa`](select/glsa.md) — Check/fix Gentoo Linux Security Advisories (glsa-check workalike)
+
+## Options
+
+* `--arch <ARCH>` — Target architecture for operations \[default: current system architecture\]
+* `--repo <PATH>` — Pin search/query to a single repository
+
+  When unset, repositories are auto-discovered from `repos.conf` (the main repo wins for
+  single-repo applets; search walks all of them).
+* `-p, --pretend` — Show what would be done without actually performing any actions
+* `--vdb <PATH>` — Override VDB path (default: $ROOT/var/db/pkg)
+* `-h, --help` — Print help (see a summary with '-h')
 
 ## Roots
-- **`--prefix <DIR>`** — Unprivileged offset: ROOT/VDB/distfiles/build trees under DIR; config still from the host (use --root for a config offset).
-- **`--local [DIR]`** — Unprivileged, standalone Gentoo-Prefix: own VDB/BROOT/config, not overlaid on the host (see --prefix for the overlay). Defaults to ~/.gentoo (EPREFIX=~/.gentoo) when no DIR is given (`--local=`).
+
+Which tree this invocation reads and writes.
+
+* `--prefix <DIR>` — Unprivileged offset: ROOT/VDB/distfiles/build trees under DIR; config
+  still from the host (use --root for a config offset).
+* `--local [<DIR>]` — Unprivileged, standalone Gentoo-Prefix: own VDB/BROOT/config, not
+  overlaid on the host (see --prefix for the overlay). Defaults to
+  ~/.gentoo (EPREFIX=~/.gentoo) when no DIR is given (`--local=`).
 
   A bare `--local` takes the next word as DIR.
-- **`--config-root <PATH>`** — Read config (profile, make.conf) from this root instead of `--root`
-- **`-T --target <TUPLE>`** — Cross-build/setup for a crossdev target tuple
+* `--config-root <PATH>` — Read config (profile, make.conf) from this root instead of `--root`
+* `-T, --target <TUPLE>` — Cross-build/setup for a crossdev target tuple
 
-  The single source for "which tuple" everywhere: `em crossdev --target T --init-target` sets T up; `em stages --target T --stage1` (or any plain atom build) resolves/installs into the target sysroot `<EROOT>/usr/<TUPLE>` — sugar for `--config-root <sysroot> --root <sysroot>`.
+  The single source for "which tuple" everywhere: `em crossdev --target T --init-target`
+  sets T up; `em stages --target T --stage1` (or any plain atom build) resolves/installs
+  into the target sysroot `<EROOT>/usr/<TUPLE>` — sugar for
+  `--config-root <sysroot> --root <sysroot>`.
 
-  Cross context (CHOST/CBUILD, `--root-deps=rdeps`) is read from the sysroot make.conf. One flag for both roles — `crossdev` no longer has its own `-t`/`--target`.
-- **`--root <PATH>`** — Installation root (the offset an applet installs into / queries)
+  Cross context (CHOST/CBUILD, `--root-deps=rdeps`) is read from the
+  sysroot make.conf. One flag for both roles — `crossdev` no longer
+  has its own `-t`/`--target`.
+* `--root <PATH>` — Installation root (the offset an applet installs into / queries)
 
-## Flags
-- **`-h --help`** — Print help
+## Global options
 
-## Subcommands
-
-- [`em select binutils <SUBCOMMAND>`](select/binutils.md)
-- [`em select clang <SUBCOMMAND>`](select/clang.md)
-- [`em select compiler <SUBCOMMAND>`](select/compiler.md)
-- [`em select glsa [SUBCOMMAND]`](select/glsa.md)
-- [`em select linker <SUBCOMMAND>`](select/linker.md)
-- [`em select mirrors <SUBCOMMAND>`](select/mirrors.md)
-- [`em select news [SUBCOMMAND]`](select/news.md)
-- [`em select pkgconf <SUBCOMMAND>`](select/pkgconf.md)
-- [`em select profile <SUBCOMMAND>`](select/profile.md)
-- [`em select repository <SUBCOMMAND>`](select/repository.md)
+* `--color <WHEN>` — \[default: auto\] \[possible values: auto, always, never\]

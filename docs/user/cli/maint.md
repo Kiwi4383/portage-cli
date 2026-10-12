@@ -1,47 +1,67 @@
-<!-- @generated from em's usage spec; do not edit -->
-# `em maint`
+<!-- @generated from em's command line; do not edit -->
+# em maint
 
-- **Usage:** `em maint [FLAGS] <SUBCOMMAND>`
+`em maint` — system maintenance and health checks
 
-System maintenance and health checks
+## Usage
 
-## Global Flags
-- **`-v --verbose`** — Increase verbosity: `-v` labels each build phase, `-vv`/`-vvv` add `em`'s own debug/trace logs (see also `RUST_LOG`).
-- **`-q --quiet`** — Suppress non-error output
-- **`--arch <ARCH>`** — Target architecture for operations (default: current system architecture)
-- **`--repo <PATH>`** — Pin search/query to a single repository
+```
+em maint [OPTIONS] <COMMAND>
+```
 
-  When unset, repositories are auto-discovered from `repos.conf` (the main repo wins for single-repo applets; search walks all of them).
-- **`-p --pretend`** — Show what would be done without actually performing any actions
-- **`--vdb <PATH>`** — Override VDB path (default: $ROOT/var/db/pkg)
+## Commands
+
+* [`binhost`](maint/binhost.md) — Generate binary package metadata index
+* [`binpkg`](maint/binpkg.md) — Inspect/verify/prune local binary packages (em-only, no emaint equivalent)
+* [`cleanconfmem`](maint/cleanconfmem.md) — No-op: em keeps no config-memory file to go stale
+* [`cleanresume`](maint/cleanresume.md) — Discard saved resume lists
+* [`logs`](maint/logs.md) — Prune the build.log files finished merges leave in the build tree
+* [`merges`](maint/merges.md) — Unavailable: em keeps no failed-merge registry
+* [`movebin`](maint/movebin.md) — Apply package moves to binary packages
+* [`moveinst`](maint/moveinst.md) — Apply package moves to installed packages
+* [`regen-use`](maint/regen-use.md) — Regenerate profiles/use.local.desc from metadata.xml
+* [`revisions`](maint/revisions.md) — Purge repo revision history from repo\_revisions
+* [`sync`](maint/sync.md) — Sync repositories (git, rsync)
+* [`world`](maint/world.md) — Check (and optionally fix) problems in the world file
+
+## Options
+
+* `-v, --verbose...` — Increase verbosity: `-v` labels each build phase, `-vv`/`-vvv` add
+  `em`'s own debug/trace logs (see also `RUST_LOG`).
+* `-q, --quiet` — Suppress non-error output
+* `--arch <ARCH>` — Target architecture for operations \[default: current system architecture\]
+* `--repo <PATH>` — Pin search/query to a single repository
+
+  When unset, repositories are auto-discovered from `repos.conf` (the main repo wins for
+  single-repo applets; search walks all of them).
+* `-p, --pretend` — Show what would be done without actually performing any actions
+* `--vdb <PATH>` — Override VDB path (default: $ROOT/var/db/pkg)
+* `-h, --help` — Print help (see a summary with '-h')
 
 ## Roots
-- **`--prefix <DIR>`** — Unprivileged offset: ROOT/VDB/distfiles/build trees under DIR; config still from the host (use --root for a config offset).
-- **`--local [DIR]`** — Unprivileged, standalone Gentoo-Prefix: own VDB/BROOT/config, not overlaid on the host (see --prefix for the overlay). Defaults to ~/.gentoo (EPREFIX=~/.gentoo) when no DIR is given (`--local=`).
+
+Which tree this invocation reads and writes.
+
+* `--prefix <DIR>` — Unprivileged offset: ROOT/VDB/distfiles/build trees under DIR; config
+  still from the host (use --root for a config offset).
+* `--local [<DIR>]` — Unprivileged, standalone Gentoo-Prefix: own VDB/BROOT/config, not
+  overlaid on the host (see --prefix for the overlay). Defaults to
+  ~/.gentoo (EPREFIX=~/.gentoo) when no DIR is given (`--local=`).
 
   A bare `--local` takes the next word as DIR.
-- **`--config-root <PATH>`** — Read config (profile, make.conf) from this root instead of `--root`
-- **`-T --target <TUPLE>`** — Cross-build/setup for a crossdev target tuple
+* `--config-root <PATH>` — Read config (profile, make.conf) from this root instead of `--root`
+* `-T, --target <TUPLE>` — Cross-build/setup for a crossdev target tuple
 
-  The single source for "which tuple" everywhere: `em crossdev --target T --init-target` sets T up; `em stages --target T --stage1` (or any plain atom build) resolves/installs into the target sysroot `<EROOT>/usr/<TUPLE>` — sugar for `--config-root <sysroot> --root <sysroot>`.
+  The single source for "which tuple" everywhere: `em crossdev --target T --init-target`
+  sets T up; `em stages --target T --stage1` (or any plain atom build) resolves/installs
+  into the target sysroot `<EROOT>/usr/<TUPLE>` — sugar for
+  `--config-root <sysroot> --root <sysroot>`.
 
-  Cross context (CHOST/CBUILD, `--root-deps=rdeps`) is read from the sysroot make.conf. One flag for both roles — `crossdev` no longer has its own `-t`/`--target`.
-- **`--root <PATH>`** — Installation root (the offset an applet installs into / queries)
+  Cross context (CHOST/CBUILD, `--root-deps=rdeps`) is read from the
+  sysroot make.conf. One flag for both roles — `crossdev` no longer
+  has its own `-t`/`--target`.
+* `--root <PATH>` — Installation root (the offset an applet installs into / queries)
 
-## Flags
-- **`-h --help`** — Print help
+## Global options
 
-## Subcommands
-
-- [`em maint binhost`](maint/binhost.md)
-- [`em maint binpkg <SUBCOMMAND>`](maint/binpkg.md)
-- [`em maint cleanconfmem`](maint/cleanconfmem.md)
-- [`em maint cleanresume [-f --fix]`](maint/cleanresume.md)
-- [`em maint logs [--fix] [-t --older-than <AGE>]`](maint/logs.md)
-- [`em maint merges`](maint/merges.md)
-- [`em maint movebin`](maint/movebin.md)
-- [`em maint moveinst`](maint/moveinst.md)
-- [`em maint regen-use [-o --output <PATH>]`](maint/regen-use.md)
-- [`em maint revisions [REPO]…`](maint/revisions.md)
-- [`em maint sync [REPOS]…`](maint/sync.md)
-- [`em maint world [-f --fix]`](maint/world.md)
+* `--color <WHEN>` — \[default: auto\] \[possible values: auto, always, never\]

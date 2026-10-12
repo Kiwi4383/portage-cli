@@ -1,16 +1,46 @@
-<!-- @generated from em's usage spec; do not edit -->
-# `em pkg keyword`
+<!-- @generated from em's command line; do not edit -->
+# em pkg keyword
 
-- **Usage:** `em pkg keyword [FLAGS] <ATOM>`
+Edit per-package keywords in package.accept\_keywords
 
-Edit per-package keywords in package.accept_keywords
+## Usage
+
+```
+em pkg keyword [OPTIONS] <ATOM>
+```
 
 ## Arguments
-- **`<ATOM>`** — Package atom (e.g. sys-boot/grub or >=dev-libs/foo-1.0)
 
-## Flags
-- **`-a --add <KW>`** — Add keyword tokens (e.g. `~amd64`, `-*`)
-- **`-s --subtract <KW>`** — Subtract keyword tokens (written with leading '-', e.g. `-~amd64`)
-- **`-d --drop <KW>`** — Drop keyword tokens entirely (removes both the token and its negated form)
-- **`--path <FILE>`** — Target file inside package.accept_keywords/ (default: `<cat>-<pkg>`)
-- **`-h --help`** — Print help
+* `<ATOM>` — Package atom (e.g. sys-boot/grub or \>=dev-libs/foo-1.0)
+
+## Options
+
+* `-a, --add <KW>...` — Add keyword tokens (e.g. `~amd64`, `-*`)
+* `-s, --subtract <KW>...` — Subtract keyword tokens (written with leading '-', e.g. `-~amd64`)
+* `-d, --drop <KW>...` — Drop keyword tokens entirely (removes both the token and its negated form)
+* `--path <FILE>` — Target file inside package.accept\_keywords/ (default: `<cat>-<pkg>`)
+* `-h, --help` — Print help (see a summary with '-h')
+
+## Global options
+
+* `--color <WHEN>` — \[default: auto\] \[possible values: auto, always, never\]
+* `--prefix <DIR>` — Unprivileged offset: ROOT/VDB/distfiles/build trees under DIR; config
+  still from the host (use --root for a config offset).
+* `--local [<DIR>]` — Unprivileged, standalone Gentoo-Prefix: own VDB/BROOT/config, not
+  overlaid on the host (see --prefix for the overlay). Defaults to
+  ~/.gentoo (EPREFIX=~/.gentoo) when no DIR is given (`--local=`).
+
+  A bare `--local` takes the next word as DIR.
+* `--config-root <PATH>` — Read config (profile, make.conf) from this root instead of `--root`
+* `-T, --target <TUPLE>` — Cross-build/setup for a crossdev target tuple
+
+  The single source for "which tuple" everywhere: `em crossdev --target T --init-target`
+  sets T up; `em stages --target T --stage1` (or any plain atom build) resolves/installs
+  into the target sysroot `<EROOT>/usr/<TUPLE>` — sugar for
+  `--config-root <sysroot> --root <sysroot>`.
+
+  Cross context (CHOST/CBUILD, `--root-deps=rdeps`) is read from the
+  sysroot make.conf. One flag for both roles — `crossdev` no longer
+  has its own `-t`/`--target`.
+* `--root <PATH>` — Installation root (the offset an applet installs into / queries)
+* `--arch <ARCH>` — Target architecture for operations \[default: current system architecture\]

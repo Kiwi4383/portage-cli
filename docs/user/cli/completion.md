@@ -1,14 +1,22 @@
-<!-- @generated from em's usage spec; do not edit -->
-# `em completion`
+<!-- @generated from em's command line; do not edit -->
+# em completion
 
-- **Usage:** `em completion <SHELL>`
+`em completion` — print a shell completion script for `em`.
 
-Print a shell completion script
+## Usage
+
+```
+em completion [OPTIONS] <SHELL>
+```
 
 ## Arguments
-- **`<SHELL>`** — Shell to generate the script for
 
-  **Choices:** `bash`, `zsh`, `fish`, `nu`, `powershell`, `elvish`
+* `<SHELL>` — Shell to generate the script for \[possible values: bash, zsh, fish, powershell, elvish\]
 
-## Flags
-- **`-h --help`** — Print help
+## Options
+
+* `-h, --help` — Print help (see a summary with '-h')
+
+## Global options
+
+* `--color <WHEN>` — \[default: auto\] \[possible values: auto, always, never\]

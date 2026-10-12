@@ -1,61 +1,82 @@
-<!-- @generated from em's usage spec; do not edit -->
-# `em query`
+<!-- @generated from em's command line; do not edit -->
+# em query
 
-- **Usage:** `em query [FLAGS] <SUBCOMMAND>`
-- **Effect:** read-only
+`em query` — query package information
 
-Query package information
+**Effect:** read-only.
 
-## Global Flags
-- **`-v --verbose`** — Increase verbosity: `-v` labels each build phase, `-vv`/`-vvv` add `em`'s own debug/trace logs (see also `RUST_LOG`).
-- **`--arch <ARCH>`** — Target architecture for operations (default: current system architecture)
-- **`--repo <PATH>`** — Pin search/query to a single repository
+## Usage
 
-  When unset, repositories are auto-discovered from `repos.conf` (the main repo wins for single-repo applets; search walks all of them).
-- **`--vdb <PATH>`** — Override VDB path (default: $ROOT/var/db/pkg)
+```
+em query [OPTIONS] <COMMAND>
+```
+
+## Commands
+
+* [`belongs`](query/belongs.md) — Find which package owns a file
+* [`check`](query/check.md) — Verify checksums of installed package
+* [`depends`](query/depends.md) — List packages depending on an atom
+* [`depgraph`](query/depgraph.md) — Display full dependency tree
+* [`files`](query/files.md) — List files installed by a package
+* [`has`](query/has.md) — List installed packages by a VDB field value
+* [`hasuse`](query/hasuse.md) — List packages with a given USE flag in IUSE
+* [`keywords`](query/keywords.md) — Display keyword status across architectures
+* [`list`](query/list.md) — List installed/available packages matching a pattern
+* [`meta`](query/meta.md) — Display package metadata (maintainer, homepage, etc.)
+* [`size`](query/size.md) — Display total file size of a package
+* [`uses`](query/uses.md) — Display USE flags for a package
+* [`which`](query/which.md) — Print full path to the ebuild for a package
+
+## Options
+
+* `-v, --verbose...` — Increase verbosity: `-v` labels each build phase, `-vv`/`-vvv` add
+  `em`'s own debug/trace logs (see also `RUST_LOG`).
+* `--arch <ARCH>` — Target architecture for operations \[default: current system architecture\]
+* `--repo <PATH>` — Pin search/query to a single repository
+
+  When unset, repositories are auto-discovered from `repos.conf` (the main repo wins for
+  single-repo applets; search walks all of them).
+* `--vdb <PATH>` — Override VDB path (default: $ROOT/var/db/pkg)
+* `-h, --help` — Print help (see a summary with '-h')
 
 ## Roots
-- **`--prefix <DIR>`** — Unprivileged offset: ROOT/VDB/distfiles/build trees under DIR; config still from the host (use --root for a config offset).
-- **`--local [DIR]`** — Unprivileged, standalone Gentoo-Prefix: own VDB/BROOT/config, not overlaid on the host (see --prefix for the overlay). Defaults to ~/.gentoo (EPREFIX=~/.gentoo) when no DIR is given (`--local=`).
+
+Which tree this invocation reads and writes.
+
+* `--prefix <DIR>` — Unprivileged offset: ROOT/VDB/distfiles/build trees under DIR; config
+  still from the host (use --root for a config offset).
+* `--local [<DIR>]` — Unprivileged, standalone Gentoo-Prefix: own VDB/BROOT/config, not
+  overlaid on the host (see --prefix for the overlay). Defaults to
+  ~/.gentoo (EPREFIX=~/.gentoo) when no DIR is given (`--local=`).
 
   A bare `--local` takes the next word as DIR.
-- **`--config-root <PATH>`** — Read config (profile, make.conf) from this root instead of `--root`
-- **`-T --target <TUPLE>`** — Cross-build/setup for a crossdev target tuple
+* `--config-root <PATH>` — Read config (profile, make.conf) from this root instead of `--root`
+* `-T, --target <TUPLE>` — Cross-build/setup for a crossdev target tuple
 
-  The single source for "which tuple" everywhere: `em crossdev --target T --init-target` sets T up; `em stages --target T --stage1` (or any plain atom build) resolves/installs into the target sysroot `<EROOT>/usr/<TUPLE>` — sugar for `--config-root <sysroot> --root <sysroot>`.
+  The single source for "which tuple" everywhere: `em crossdev --target T --init-target`
+  sets T up; `em stages --target T --stage1` (or any plain atom build) resolves/installs
+  into the target sysroot `<EROOT>/usr/<TUPLE>` — sugar for
+  `--config-root <sysroot> --root <sysroot>`.
 
-  Cross context (CHOST/CBUILD, `--root-deps=rdeps`) is read from the sysroot make.conf. One flag for both roles — `crossdev` no longer has its own `-t`/`--target`.
-- **`--root <PATH>`** — Installation root (the offset an applet installs into / queries)
+  Cross context (CHOST/CBUILD, `--root-deps=rdeps`) is read from the
+  sysroot make.conf. One flag for both roles — `crossdev` no longer
+  has its own `-t`/`--target`.
+* `--root <PATH>` — Installation root (the offset an applet installs into / queries)
 
-## Flags
-- **`-h --help`** — Print help
+## Global options
+
+* `--color <WHEN>` — \[default: auto\] \[possible values: auto, always, never\]
 
 ## Examples
 
 ```
-em query depgraph zlib
+$ em query depgraph zlib
 ```
 
 ```
-em query belongs /usr/bin/python
+$ em query belongs /usr/bin/python
 ```
 
 ```
-em query list -I
+$ em query list -I
 ```
-
-## Subcommands
-
-- [`em query belongs <FILE>…`](query/belongs.md)
-- [`em query check [--format <FORMAT>] <ATOM>…`](query/check.md)
-- [`em query depends <ATOM>…`](query/depends.md)
-- [`em query depgraph [FLAGS] <ATOM>…`](query/depgraph.md)
-- [`em query files <ATOM>…`](query/files.md)
-- [`em query has <FIELD> [VALUE]`](query/has.md)
-- [`em query hasuse <FLAG>…`](query/hasuse.md)
-- [`em query keywords [--format <FORMAT>] <ATOM>…`](query/keywords.md)
-- [`em query list [-I --installed] [PATTERN]…`](query/list.md)
-- [`em query meta [--format <FORMAT>] <ATOM>…`](query/meta.md)
-- [`em query size <ATOM>…`](query/size.md)
-- [`em query uses <ATOM>…`](query/uses.md)
-- [`em query which <ATOM>…`](query/which.md)

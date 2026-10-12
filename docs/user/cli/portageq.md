@@ -1,32 +1,41 @@
-<!-- @generated from em's usage spec; do not edit -->
-# `em portageq`
+<!-- @generated from em's command line; do not edit -->
+# em portageq
 
-- **Usage:** `em portageq <SUBCOMMAND>`
-- **Effect:** read-only
+`em portageq` — a subset of Portage's own query interface (byte-compatible
+where implemented; only the installed-package query group exists)
 
-Query Portage internal variables and data
+**Effect:** read-only.
 
-## Flags
-- **`-h --help`** — Print help
+## Usage
 
-## Exit Status
+```
+em portageq [OPTIONS] <COMMAND>
+```
 
-| Code | Meaning |
-| ---- | ------- |
-| `0` | query succeeded |
-| `1` | no match / unset variable |
-| `2` | invalid atom |
-| `64` | <EROOT> is not a directory |
+## Commands
+
+* [`has_version`](portageq/has_version.md) — Exit 0 if ATOM is installed under EROOT, 1 otherwise
+* [`best_version`](portageq/best_version.md) — Print the highest installed version matching ATOM under EROOT
+* [`match`](portageq/match.md) — List every installed CPV matching ATOM under EROOT, one per line
+* [`mass_best_version`](portageq/mass_best_version.md) — Print `atom:cpv` for each of several atoms' best installed version
+
+## Options
+
+* `-h, --help` — Print help (see a summary with '-h')
+
+## Global options
+
+* `--color <WHEN>` — \[default: auto\] \[possible values: auto, always, never\]
+
+## Exit status
+
+* `0` — query succeeded
+* `1` — no match / unset variable
+* `2` — invalid atom
+* `64` — \<EROOT\> is not a directory
 
 ## Examples
 
 ```
-em portageq has_version / sys-apps/portage
+$ em portageq has_version / sys-apps/portage
 ```
-
-## Subcommands
-
-- [`em portageq best_version <EROOT> <ATOM>`](portageq/best_version.md)
-- [`em portageq has_version <EROOT> <ATOM>`](portageq/has_version.md)
-- [`em portageq mass_best_version <EROOT> [ATOM]…`](portageq/mass_best_version.md)
-- [`em portageq match <EROOT> <ATOM>`](portageq/match.md)

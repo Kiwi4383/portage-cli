@@ -1,144 +1,67 @@
-<!-- @generated from em's usage spec; do not edit -->
-# `em`
+<!-- @generated from em's command line; do not edit -->
+# em
 
-**Version:** 0.1.0
+Gentoo Portage package manager workalike
 
-- **Usage:** `em [--color <WHEN>] [SUBCOMMAND]`
+## Usage
 
-## Global Flags
-- **`--color <WHEN>`**
+```
+em [OPTIONS] [COMMAND]
+```
 
-  **Choices:** `auto`, `always`, `never`
+## Commands
 
-  **Default:** `auto`
+* [`ebuild`](ebuild.md) — Execute ebuild phases
+* [`maint`](maint.md) — System maintenance and health checks
+* [`portageq`](portageq.md) — Query Portage internal variables and data
+* [`sync`](sync.md) — Sync repositories (git, rsync)
+* [`depclean`](depclean.md) — Remove orphaned/unused packages
+* [`regen`](regen.md) — Regenerate metadata cache
+* [`quickpkg`](quickpkg.md) — Create binary packages from installed files
+* [`mirrordist`](mirrordist.md) — Build/maintain a distfiles mirror (emirrordist workalike)
+* [`query`](query.md) — Query package information
+* [`clean`](clean.md) — Clean distfiles and/or binary packages
+* [`use`](use.md) — Enable/disable/query USE flags in make.conf
+* [`pkg`](pkg.md) — Edit per-package configuration (package.use, .keywords, .mask, .env)
+* [`revdep`](revdep.md) — Rebuild packages with broken shared library deps
+* [`read`](read.md) — Display Portage elog files
+* [`log`](log.md) — Analyze emerge.log
+* [`grep`](grep.md) — Search inside ebuilds and eclasses
+* [`search`](search.md) — Search package names and descriptions
+* [`atom`](atom.md) — Parse/split atom strings
+* [`select`](select.md) — Native config selectors (profile, repos) — eselect-like
+* [`active`](active.md) — Register a default --prefix/--local for bare em invocations
+* [`setup`](setup.md) — Bootstrap a prefix layout (use with --local or --prefix)
+* [`crossdev`](crossdev.md) — Set up a cross-compilation target (sysroot + overlay) — crossdev workalike
+* [`toolchain`](toolchain.md) — Bootstrap a self-hosting native toolchain (--root / --prefix / --local)
+* [`stages`](stages.md) — Assemble stage-build artifacts (stage1 packages.build) into --root
+* [`etc`](etc.md) — Reconcile pending config files (etc-update / dispatch-conf)
+* [`env`](env.md) — Regenerate /etc/profile.env and ld.so cache
+* [`completion`](completion.md) — Print a shell completion script
+* [`emerge`](emerge.md) — Resolve and merge/unmerge packages (emerge workalike) (default)
 
-## Flags
-- **`-h --help`** — Print help
-- **`-V --version`** — Print version
+## Options
 
-## Subcommands
+* `--color <WHEN>` — \[default: auto\] \[possible values: auto, always, never\]
+* `-h, --help` — Print help (see a summary with '-h')
+* `-V, --version` — Print version
 
-- [`em ebuild [FLAGS] <EBUILD_PATH> <PHASE>…`](ebuild.md)
-- [`em maint [FLAGS] <SUBCOMMAND>`](maint.md)
-- [`em maint binhost`](maint/binhost.md)
-- [`em maint binpkg <SUBCOMMAND>`](maint/binpkg.md)
-- [`em maint binpkg verify [--fix] [--require-signature]`](maint/binpkg/verify.md)
-- [`em maint binpkg list`](maint/binpkg/list.md)
-- [`em maint binpkg prune [--dry-run]`](maint/binpkg/prune.md)
-- [`em maint binpkg fingerprint [--full] [--host]`](maint/binpkg/fingerprint.md)
-- [`em maint binpkg gpg-import <KEYFILE>`](maint/binpkg/gpg-import.md)
-- [`em maint cleanconfmem`](maint/cleanconfmem.md)
-- [`em maint cleanresume [-f --fix]`](maint/cleanresume.md)
-- [`em maint logs [--fix] [-t --older-than <AGE>]`](maint/logs.md)
-- [`em maint merges`](maint/merges.md)
-- [`em maint movebin`](maint/movebin.md)
-- [`em maint moveinst`](maint/moveinst.md)
-- [`em maint regen-use [-o --output <PATH>]`](maint/regen-use.md)
-- [`em maint revisions [REPO]…`](maint/revisions.md)
-- [`em maint sync [REPOS]…`](maint/sync.md)
-- [`em maint world [-f --fix]`](maint/world.md)
-- [`em portageq <SUBCOMMAND>`](portageq.md)
-- [`em portageq has_version <EROOT> <ATOM>`](portageq/has_version.md)
-- [`em portageq best_version <EROOT> <ATOM>`](portageq/best_version.md)
-- [`em portageq match <EROOT> <ATOM>`](portageq/match.md)
-- [`em portageq mass_best_version <EROOT> [ATOM]…`](portageq/mass_best_version.md)
-- [`em sync [FLAGS] [REPOS]…`](sync.md)
-- [`em depclean [FLAGS] [ATOMS]…`](depclean.md)
-- [`em regen [FLAGS] [REPOS]…`](regen.md)
-- [`em quickpkg [FLAGS] <ATOMS>…`](quickpkg.md)
-- [`em mirrordist <FLAGS> [REPO]`](mirrordist.md)
-- [`em query [FLAGS] <SUBCOMMAND>`](query.md)
-- [`em query belongs <FILE>…`](query/belongs.md)
-- [`em query check [--format <FORMAT>] <ATOM>…`](query/check.md)
-- [`em query depends <ATOM>…`](query/depends.md)
-- [`em query depgraph [FLAGS] <ATOM>…`](query/depgraph.md)
-- [`em query files <ATOM>…`](query/files.md)
-- [`em query has <FIELD> [VALUE]`](query/has.md)
-- [`em query hasuse <FLAG>…`](query/hasuse.md)
-- [`em query keywords [--format <FORMAT>] <ATOM>…`](query/keywords.md)
-- [`em query list [-I --installed] [PATTERN]…`](query/list.md)
-- [`em query meta [--format <FORMAT>] <ATOM>…`](query/meta.md)
-- [`em query size <ATOM>…`](query/size.md)
-- [`em query uses <ATOM>…`](query/uses.md)
-- [`em query which <ATOM>…`](query/which.md)
-- [`em clean [FLAGS] <SUBCOMMAND>`](clean.md)
-- [`em clean dist [FLAGS]`](clean/dist.md)
-- [`em clean pkg [FLAGS]`](clean/pkg.md)
-- [`em clean all [FLAGS]`](clean/all.md)
-- [`em use [FLAGS]`](use.md)
-- [`em pkg [FLAGS] <SUBCOMMAND>`](pkg.md)
-- [`em pkg use [FLAGS] <ATOM>`](pkg/use.md)
-- [`em pkg keyword [FLAGS] <ATOM>`](pkg/keyword.md)
-- [`em pkg mask [FLAGS] <ATOM>`](pkg/mask.md)
-- [`em pkg env [FLAGS] <ATOM>`](pkg/env.md)
-- [`em revdep [FLAGS]`](revdep.md)
-- [`em read [FLAGS] [PACKAGE]`](read.md)
-- [`em log [FLAGS] [SUBCOMMAND]`](log.md)
-- [`em log current`](log/current.md)
-- [`em log list [LIMIT]`](log/list.md)
-- [`em log time [ATOM]`](log/time.md)
-- [`em log predict`](log/predict.md)
-- [`em grep [FLAGS] <PATTERN> [TARGETS]…`](grep.md)
-- [`em search [FLAGS] [PATTERN]`](search.md)
-- [`em atom <ATOMS>…`](atom.md)
-- [`em select [FLAGS] <SUBCOMMAND>`](select.md)
-- [`em select profile <SUBCOMMAND>`](select/profile.md)
-- [`em select profile list`](select/profile/list.md)
-- [`em select profile show`](select/profile/show.md)
-- [`em select profile set <TARGET>`](select/profile/set.md)
-- [`em select repository <SUBCOMMAND>`](select/repository.md)
-- [`em select repository list`](select/repository/list.md)
-- [`em select repository add <NAME> <LOCATION>`](select/repository/add.md)
-- [`em select repository remove <NAME>`](select/repository/remove.md)
-- [`em select repository create <NAME> [LOCATION]`](select/repository/create.md)
-- [`em select compiler <SUBCOMMAND>`](select/compiler.md)
-- [`em select compiler list [-t --target <TARGET>]`](select/compiler/list.md)
-- [`em select compiler show [-t --target <TARGET>]`](select/compiler/show.md)
-- [`em select compiler set [-t --target <TARGET>] <PROFILE>`](select/compiler/set.md)
-- [`em select binutils <SUBCOMMAND>`](select/binutils.md)
-- [`em select binutils list [-t --target <TARGET>]`](select/binutils/list.md)
-- [`em select binutils show [-t --target <TARGET>]`](select/binutils/show.md)
-- [`em select binutils set [-t --target <TARGET>] <PROFILE>`](select/binutils/set.md)
-- [`em select linker <SUBCOMMAND>`](select/linker.md)
-- [`em select linker list [-t --target <TARGET>]`](select/linker/list.md)
-- [`em select linker show [-t --target <TARGET>]`](select/linker/show.md)
-- [`em select linker set [-t --target <TARGET>] <PROFILE>`](select/linker/set.md)
-- [`em select clang <SUBCOMMAND>`](select/clang.md)
-- [`em select clang list`](select/clang/list.md)
-- [`em select clang show`](select/clang/show.md)
-- [`em select clang set <SLOT>`](select/clang/set.md)
-- [`em select pkgconf <SUBCOMMAND>`](select/pkgconf.md)
-- [`em select pkgconf list [-t --target <TARGET>]`](select/pkgconf/list.md)
-- [`em select pkgconf show [-t --target <TARGET>]`](select/pkgconf/show.md)
-- [`em select pkgconf set [-t --target <TARGET>] <BACKEND>`](select/pkgconf/set.md)
-- [`em select mirrors <SUBCOMMAND>`](select/mirrors.md)
-- [`em select mirrors list [-c --country <COUNTRY>] [-r --region <REGION>]`](select/mirrors/list.md)
-- [`em select mirrors show`](select/mirrors/show.md)
-- [`em select mirrors set [-c --country <COUNTRY>] [-r --region <REGION>] [URL]…`](select/mirrors/set.md)
-- [`em select news [SUBCOMMAND]`](select/news.md)
-- [`em select news count`](select/news/count.md)
-- [`em select news list`](select/news/list.md)
-- [`em select news read [IDS]…`](select/news/read.md)
-- [`em select news purge`](select/news/purge.md)
-- [`em select glsa [SUBCOMMAND]`](select/glsa.md)
-- [`em select glsa list`](select/glsa/list.md)
-- [`em select glsa check [IDS]…`](select/glsa/check.md)
-- [`em select glsa fix [IDS]…`](select/glsa/fix.md)
-- [`em active [FLAGS] [SUBCOMMAND]`](active.md)
-- [`em active show`](active/show.md)
-- [`em active set [REF]`](active/set.md)
-- [`em active clear [--all]`](active/clear.md)
-- [`em active env`](active/env.md)
-- [`em active list`](active/list.md)
-- [`em active add [NAME]`](active/add.md)
-- [`em active remove <REF>`](active/remove.md)
-- [`em setup [FLAGS]`](setup.md)
-- [`em crossdev [FLAGS]`](crossdev.md)
-- [`em toolchain [FLAGS]`](toolchain.md)
-- [`em stages [FLAGS]`](stages.md)
-- [`em etc [FLAGS] [SUBCOMMAND]`](etc.md)
-- [`em etc diff [PATH]`](etc/diff.md)
-- [`em etc merge`](etc/merge.md)
-- [`em env [FLAGS]`](env.md)
-- [`em completion <SHELL>`](completion.md)
-- [`em emerge [FLAGS] [ATOM]…`](emerge.md) (default)
+## Examples
+
+**Update @world**
+
+```
+$ em -ua @world
+```
+
+**Find a file's owner**
+
+```
+$ em query belongs /usr/bin/python
+```
+
+**List profiles**
+
+```
+$ em select profile list
+```

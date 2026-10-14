@@ -11,94 +11,96 @@
 //! `--search`/`--searchdesc`/`--nodeps` are not here: they select a different
 //! emerge *action* ([`super::EmergeModeArgs`]), or a per-step `EmergeOpts`
 //! override in the staged bootstrap.
-#[derive(usage::Args, Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    winnow_args::Args, Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize,
+)]
 #[serde(default)]
-#[usage(
+#[arg(
     next_help_heading = "Merge",
     heading("Merge", help = "How the solver and build scheduler behave.")
 )]
 pub struct MergeFlags {
     /// Ask for confirmation before performing actions
-    #[usage(short = 'a', long)]
+    #[arg(short = 'a', long)]
     pub ask: bool,
 
     /// Update installed packages to newest available versions
-    #[usage(short = 'u', long)]
+    #[arg(short = 'u', long)]
     pub update: bool,
 
     /// Write required USE changes to /etc/portage/package.use/
-    #[usage(long)]
+    #[arg(long)]
     pub autounmask_write: bool,
 
     /// Build and install packages but do not add them to the world file
-    #[usage(short = '1', long = "oneshot")]
+    #[arg(short = '1', long = "oneshot")]
     pub oneshot: bool,
 
     /// Only fetch distfiles, do not build or install
-    #[usage(short = 'f', long)]
+    #[arg(short = 'f', long)]
     pub fetchonly: bool,
 
     /// Instead of building, just fetch every SRC_URI file (regardless of
     /// USE setting) for the resolved packages.
-    #[usage(short = 'F', long)]
+    #[arg(short = 'F', long)]
     pub fetch_all_uri: bool,
 
     /// Build binary packages for all merged packages
-    #[usage(short = 'b', long)]
+    #[arg(short = 'b', long)]
     pub buildpkg: bool,
 
     /// Build binary packages without merging/installing them
     ///
     /// All build-time dependencies must already be satisfied on the system -- this does not
     /// resolve or install anything to make that true.
-    #[usage(short = 'B', long)]
+    #[arg(short = 'B', long)]
     pub buildpkgonly: bool,
 
     /// Use binary packages if available, otherwise fall back to source
-    #[usage(short = 'k', long)]
+    #[arg(short = 'k', long)]
     pub usepkg: bool,
 
     /// Only use binary packages, fail if none available
-    #[usage(short = 'K', long)]
+    #[arg(short = 'K', long)]
     pub usepkgonly: bool,
 
     /// Fetch binary packages for all requested packages
-    #[usage(short = 'g', long)]
+    #[arg(short = 'g', long)]
     pub getbinpkg: bool,
 
     /// Only fetch binary packages, do not install
-    #[usage(short = 'G', long)]
+    #[arg(short = 'G', long)]
     pub getbinpkgonly: bool,
 
     /// Treat every atom as not-yet-installed, rebuilding the whole dependency
     /// tree from scratch rather than only what is missing or outdated.
-    #[usage(short = 'e', long)]
+    #[arg(short = 'e', long)]
     pub emptytree: bool,
 
     /// Show the dependency tree, indenting each package under the one that
     /// pulled it in, before merging.
-    #[usage(short = 't', long)]
+    #[arg(short = 't', long)]
     pub tree: bool,
 
     /// Emit the depgraph as machine-parsable JSON instead of pretend text
     ///
     /// Takes precedence over `--tree`. Works with `-p` (including `-e`).
-    #[usage(long)]
+    #[arg(long)]
     pub json: bool,
 
     /// Only merge dependencies, not the specified packages themselves
-    #[usage(short = 'o', long)]
+    #[arg(short = 'o', long)]
     pub onlydeps: bool,
 
     /// Do not replace installed packages that are already the same version
-    #[usage(short = 'n', long)]
+    #[arg(short = 'n', long)]
     pub noreplace: bool,
 
     /// Build up to N packages in parallel, respecting build-dependency order (merges are still
     /// serialised)
     ///
     /// Default 1 (sequential).
-    #[usage(short = 'j', long, value_name = "N")]
+    #[arg(short = 'j', long, value_name = "N")]
     pub jobs: Option<u32>,
 
     /// Maximum 1-minute load average allowed when starting additional parallel builds (`--jobs`
@@ -107,11 +109,11 @@ pub struct MergeFlags {
     /// Once at least one job is running, further starts wait until load drops below LOAD
     /// (matches real Portage's own load-average throttling). The first concurrent job is
     /// always allowed. Displayed on the `Jobs:` status line regardless.
-    #[usage(short = 'l', long, value_name = "LOAD")]
+    #[arg(short = 'l', long, value_name = "LOAD")]
     pub load_average: Option<f64>,
 
     /// Continue merging as much as possible even if some packages fail
-    #[usage(
+    #[arg(
         long,
         warning = "Exists for portage parity; do not use it. A failed package must stop the run."
     )]
@@ -120,14 +122,14 @@ pub struct MergeFlags {
     /// Accepted so existing command lines keep parsing. Config writes follow
     /// `--autounmask-write` and whether this run is pretend or `--ask`; this
     /// flag is not consulted.
-    #[usage(long)]
+    #[arg(long)]
     pub autounmask: bool,
 
     /// Let the solver choose USE flags to satisfy REQUIRED_USE (Level C) rather than only
     /// reporting violations
     ///
     /// Off by default; flips are reported.
-    #[usage(long)]
+    #[arg(long)]
     pub autosolve_use: bool,
 
     /// With `-p`/`--pretend` or `-a`/`--ask`, print an "Expected time of
@@ -135,7 +137,7 @@ pub struct MergeFlags {
     /// activity history (median of recent successful merges per package;
     /// wall uses the build graph + `--jobs` when blockers are available).
     /// Shown even when the plan needs USE/mask changes to proceed.
-    #[usage(long = "eta")]
+    #[arg(long = "eta")]
     pub eta: bool,
 
     /// With `-u`/`--update` `-D`/`--deep`: when moving a version-pinned
@@ -144,18 +146,18 @@ pub struct MergeFlags {
     /// `llvm`), pull that package into the plan too instead of stopping
     /// halfway. Off by default: this can revert the upgrade instead if the
     /// retained package has no version satisfying the new pin.
-    #[usage(long)]
+    #[arg(long)]
     pub complete_graph: bool,
 
     /// Include build-time dependencies (BDEPEND) in the resolution.
     /// Default is false (exclude BDEPEND), matching emerge's default.
     /// When enabled, BDEPEND are included but filtered by what's already
     /// installed on the build host (BROOT).
-    #[usage(long)]
+    #[arg(long)]
     pub with_bdeps: bool,
 
     /// Exclude the specified atom from being merged
-    #[usage(short = 'X', long, value_name = "ATOM")]
+    #[arg(short = 'X', long, value_name = "ATOM")]
     pub exclude: Vec<String>,
 
     /// Only require RDEPEND (not DEPEND) to be satisfied in the merge target.
@@ -163,6 +165,6 @@ pub struct MergeFlags {
     /// cannot yet satisfy plain DEPEND (e.g. virtual/os-headers, acct-group/root)
     /// while its own toolchain is being built. `em crossdev --setup` always applies
     /// this unconditionally; elsewhere it defaults off.
-    #[usage(long = "root-deps")]
+    #[arg(long = "root-deps")]
     pub root_deps: bool,
 }

@@ -8,7 +8,7 @@ still run plain `cargo test` at least once if you need CI-identical behaviour
 (doctests + default libtest scheduling).
 
 `just check` runs the fmt, clippy, doc and test jobs plus the documentation
-checks (dead links, and whether `docs/user/cli` matches the spec). `just docs`
+checks (dead links, and whether `docs/user/cli` matches the command line). `just docs`
 regenerates that CLI reference; never edit its pages by hand.
 
 ```bash
@@ -72,7 +72,7 @@ Full testing strategy and live-`emerge` parity: [docs/design/testing.md](./docs/
 ## Architecture
 
 - Binary crate producing the `em` command; CLI built with
-  [usage-rs](https://usage.jdx.dev/rust/) derive macros, subcommands of the
+  [winnow-args](https://docs.rs/winnow-args) derive macros, subcommands of the
   top-level `Cli` struct. Keep `main.rs` thin; extract modules as complexity grows.
 - Business logic is delegated to the library crates (`portage-atom`,
   `portage-metadata`, `portage-solver`, `portage-resolve`, `portage-repo`,
@@ -102,7 +102,7 @@ Workspace members (14 library/binary crates + `portage-bench`):
 - `portage-cli` — the `em` binary (unpublished)
 - `portage-bench` — benchmark harness (excluded from most CI jobs; compile smoke only)
 
-CLI/runtime deps: `usage` (usage-rs 6), `tokio`, `anyhow`, `thiserror`.
+CLI/runtime deps: `winnow-args`, `tokio`, `anyhow`, `thiserror`.
 Workspace `clap` stays for `portage-repo` (ebuild helpers + examples) and
 `portage-bench`.
 
@@ -115,8 +115,7 @@ dependency table. Local checkouts and experiments go in gitignored
 `.cargo/config.toml` as `[patch.crates-io]` (`git` + `rev`, or a path). When
 committed code needs an unpublished commit that CI must also build, use a
 workspace `[patch.crates-io]` (`git` + `rev`) and delete it once the release
-ships; today that is `usage-*` at the `lu-zero/usage` fork. A config patch
-takes precedence over the manifest one.
+ships. A config patch takes precedence over the manifest one.
 
 Git-source workspace deps (`brush-*`, `pkgcraft`, `hakoniwa`) keep a `rev`
 in `Cargo.toml` — that is the source, not a crates.io pin.
@@ -138,8 +137,8 @@ brush-parser = { path = "../brush/brush-parser" }
 pkgcraft = { path = "../pkgcraft/crates/pkgcraft" }
 
 [patch.crates-io]
-usage-rs = { git = "https://github.com/jdx/usage.git", rev = "<rev>" }
-usage-lib = { git = "https://github.com/jdx/usage.git", rev = "<rev>" }
+winnow-args = { path = "../winnow-args/winnow-args" }
+winnow-args-derive = { path = "../winnow-args/winnow-args-derive" }
 ```
 
 ## Bumping the brush fork (routine, like a bench run)

@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Implemented on `usage-rs`; dual-mount overlay replaced by parse-retry |
+| Status | Superseded: `em` parses with winnow-args. Kept for the grammar decisions, which still hold |
 | Date | 2026-09-03 |
 | Author | Luca Barbato / design loop |
 | Scope | `portage-cli` (`em`) only |

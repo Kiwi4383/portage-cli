@@ -14,19 +14,19 @@ use gentoo_core::Arch;
 
 /// `-v`/`--verbose` (count), for applets whose output has phases/logs worth
 /// labeling.
-#[derive(usage::Args, Debug, Clone, Default)]
+#[derive(winnow_args::Args, Debug, Clone, Default)]
 pub struct VerboseArg {
     /// Increase verbosity: `-v` labels each build phase, `-vv`/`-vvv` add
     /// `em`'s own debug/trace logs (see also `RUST_LOG`).
-    #[usage(short = 'v', long, count, global)]
+    #[arg(short = 'v', long, count, global)]
     pub verbose: u8,
 }
 
 /// `-q`/`--quiet`, for applets whose output can be suppressed.
-#[derive(usage::Args, Debug, Clone, Default)]
+#[derive(winnow_args::Args, Debug, Clone, Default)]
 pub struct QuietArg {
     /// Suppress non-error output
-    #[usage(short = 'q', long, global)]
+    #[arg(short = 'q', long, global)]
     pub quiet: bool,
 }
 
@@ -37,18 +37,19 @@ pub struct QuietArg {
 /// this moves off root — see the caveat on `Cli` about a flag committing the
 /// line before a named applet is considered. `em -p toolchain` no longer
 /// selects `toolchain`; write `em toolchain -p` instead.
-#[derive(usage::Args, Debug, Clone, Default)]
+#[derive(winnow_args::Args, Debug, Clone, Default)]
 pub struct PretendArg {
     /// Show what would be done without actually performing any actions
-    #[usage(short = 'p', long, global)]
+    #[arg(short = 'p', long, global)]
     pub pretend: bool,
 }
 
 /// `--arch`, for applets whose logic branches on target architecture.
-#[derive(usage::Args, Debug, Clone)]
+#[derive(winnow_args::Args, Debug, Clone)]
 pub struct ArchArg {
     /// Target architecture for operations
-    #[usage(
+    #[arg(
+        from_str,
         long,
         global,
         value_name = "ARCH",
@@ -67,13 +68,13 @@ impl Default for ArchArg {
 }
 
 /// `--repo`, for applets that read from a single, possibly-overridden repository.
-#[derive(usage::Args, Debug, Clone, Default)]
+#[derive(winnow_args::Args, Debug, Clone, Default)]
 pub struct RepoArg {
     /// Pin search/query to a single repository
     ///
     /// When unset, repositories are auto-discovered from `repos.conf` (the main repo wins for
     /// single-repo applets; search walks all of them).
-    #[usage(long, global, value_name = "PATH", value_hint = usage::ValueHint::DirPath)]
+    #[arg(long, global, value_name = "PATH", hint = "dir")]
     pub repo: Option<String>,
 }
 
@@ -84,10 +85,10 @@ pub struct RepoArg {
 /// The install/merge write path (`ebuild.rs`'s `vdb_root_for`) always derives
 /// the VDB from `--root`/`--prefix`/`--local`, so this flag on `em ebuild` or
 /// `em toolchain` would parse but do nothing.
-#[derive(usage::Args, Debug, Clone, Default)]
+#[derive(winnow_args::Args, Debug, Clone, Default)]
 pub struct VdbArg {
     /// Override VDB path (default: $ROOT/var/db/pkg)
-    #[usage(long, global, value_name = "PATH", value_hint = usage::ValueHint::DirPath)]
+    #[arg(long, global, value_name = "PATH", hint = "dir")]
     pub vdb: Option<String>,
 }
 
@@ -95,18 +96,18 @@ pub struct VdbArg {
 /// (a matrix, a multi-field record, a list of pass/fail results) worth
 /// offering as JSON beside the human-readable default. The two-way sibling
 /// of `query::depgraph`'s `DepgraphFormat`, which also has `tree`.
-#[derive(usage::Args, Debug, Clone, Default)]
-#[usage(
+#[derive(winnow_args::Args, Debug, Clone, Default)]
+#[arg(
     output("pretty", default, help = "Human-readable text"),
     output("json", framing = "json", help = "Machine-parsable JSON")
 )]
 pub struct FormatArg {
-    #[usage(long, value_enum, default = "pretty")]
+    #[arg(long, default = "pretty")]
     pub format: OutputFormat,
 }
 
 /// See [`FormatArg`].
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, usage::ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, winnow_args::ValueEnum)]
 pub enum OutputFormat {
     /// Human-readable text (default)
     #[default]

@@ -1,13 +1,14 @@
 //! CLI dispatch: applet routing and shared helpers
 //!
-//! Named applets go through generated [`usage::RunAsyncWith`] on [`Applet`].
+//! Named applets go through generated [`winnow_args::run::RunAsync`] on [`Applet`].
 //! The root `Option` is decided here: generated dispatch cannot.
 
 use std::io::Write;
 use std::str::FromStr;
 
 use anyhow::{Context, bail};
-use usage::{RunAsyncWith, RunWith};
+use winnow_args::Args as _;
+use winnow_args::run::RunAsync;
 
 use crate::cli::{
     self, ActiveArgs, Applet, AtomArgs, CleanArgs, CompletionArgs, CrossdevArgs, DepcleanArgs,
@@ -33,9 +34,9 @@ pub(crate) async fn run(cli: &cli::Cli) -> Result<()> {
     if info_wins(cli) {
         return crate::info::run(cli).await;
     }
-    // `run_async_with` takes the applet by value; accessors still read `cli.applet`.
+    // `run_async` takes the applet by value; accessors still read `cli.applet`.
     match cli.applet.clone() {
-        Some(applet) => applet.run_async_with(cli).await,
+        Some(applet) => applet.run_async(cli).await,
         None => {
             crate::style::error_line!("no atoms or applet specified. Use --help for usage.");
             std::process::exit(1);
@@ -59,20 +60,20 @@ fn info_wins(cli: &cli::Cli) -> bool {
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for HelperArgs {
+impl RunAsync<&cli::Cli> for HelperArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, _cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, _cli: &cli::Cli) -> Self::Output {
         // Internal helper shim: run the helper and exit with its status
         // (the shim's caller — `find -exec`/`xargs` — checks it).
         std::process::exit(portage_repo::run_helper(&self.name, &self.args).await);
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for WorkerArgs {
+impl RunAsync<&cli::Cli> for WorkerArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, _cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, _cli: &cli::Cli) -> Self::Output {
         let worker_extra_path: Vec<camino::Utf8PathBuf> = self
             .extra_path
             .iter()
@@ -111,10 +112,10 @@ impl RunAsyncWith<&cli::Cli> for WorkerArgs {
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for EbuildArgs {
+impl RunAsync<&cli::Cli> for EbuildArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         let repo_override = cli.repo_flag();
         let repo_override = repo_override.as_deref();
         let roots = cli.roots();
@@ -138,18 +139,18 @@ impl RunAsyncWith<&cli::Cli> for EbuildArgs {
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for MaintArgs {
+impl RunAsync<&cli::Cli> for MaintArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         run_maint(&self.command, cli).await
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for PortageqArgs {
+impl RunAsync<&cli::Cli> for PortageqArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, _cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, _cli: &cli::Cli) -> Self::Output {
         let status = match &self.command {
             PortageqCommand::HasVersion { eroot, atom } => {
                 crate::portageq::has_version(eroot, atom)
@@ -170,27 +171,27 @@ impl RunAsyncWith<&cli::Cli> for PortageqArgs {
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for SyncArgs {
+impl RunAsync<&cli::Cli> for SyncArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         maint::sync::run(&self.repos, cli).await
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for DepcleanArgs {
+impl RunAsync<&cli::Cli> for DepcleanArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         let merge_flags = cli.merge_flags();
         crate::depclean::run_with_targets(cli, &self.atoms, &merge_flags).await
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for RegenArgs {
+impl RunAsync<&cli::Cli> for RegenArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         regen::run(
             cli,
             &self.repos,
@@ -204,10 +205,10 @@ impl RunAsyncWith<&cli::Cli> for RegenArgs {
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for QuickpkgArgs {
+impl RunAsync<&cli::Cli> for QuickpkgArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         crate::quickpkg::run(
             cli,
             &crate::quickpkg::QuickpkgOpts {
@@ -220,10 +221,10 @@ impl RunAsyncWith<&cli::Cli> for QuickpkgArgs {
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for MirrorDistArgs {
+impl RunAsync<&cli::Cli> for MirrorDistArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         let deletion_delay = humantime::parse_duration(&self.deletion_delay)
             .with_context(|| format!("--deletion-delay {:?}", self.deletion_delay))?;
         crate::mirrordist::run(
@@ -249,26 +250,26 @@ impl RunAsyncWith<&cli::Cli> for MirrorDistArgs {
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for QueryArgs {
+impl RunAsync<&cli::Cli> for QueryArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         run_query(&self.command, cli).await
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for CleanArgs {
+impl RunAsync<&cli::Cli> for CleanArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         crate::clean::run(cli, &self.target).await
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for UseArgs {
+impl RunAsync<&cli::Cli> for UseArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         use_flags::run(
             cli,
             &use_flags::UseOpts {
@@ -288,26 +289,26 @@ impl RunAsyncWith<&cli::Cli> for UseArgs {
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for PkgArgs {
+impl RunAsync<&cli::Cli> for PkgArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         pkg::run(&self.command, cli).await
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for RevdepArgs {
+impl RunAsync<&cli::Cli> for RevdepArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         crate::revdep::run(cli, self.library.as_deref()).await
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for ReadArgs {
+impl RunAsync<&cli::Cli> for ReadArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         crate::elog::run_read(
             cli,
             self.package.as_deref(),
@@ -319,10 +320,10 @@ impl RunAsyncWith<&cli::Cli> for ReadArgs {
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for GrepArgs {
+impl RunAsync<&cli::Cli> for GrepArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         let opts = crate::grep::Options {
             pattern: self.pattern,
             targets: self.targets,
@@ -347,10 +348,10 @@ impl RunAsyncWith<&cli::Cli> for GrepArgs {
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for SearchArgs {
+impl RunAsync<&cli::Cli> for SearchArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         search::run(
             &cli.search_repos(),
             self.pattern.as_deref(),
@@ -363,91 +364,91 @@ impl RunAsyncWith<&cli::Cli> for SearchArgs {
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for SelectArgs {
+impl RunAsync<&cli::Cli> for SelectArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         select::run(&self.command, cli).await
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for SetupArgs {
+impl RunAsync<&cli::Cli> for SetupArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         setup::run(cli, &self).await
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for CrossdevArgs {
+impl RunAsync<&cli::Cli> for CrossdevArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         crossdev::run(&self, cli).await
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for ToolchainArgs {
+impl RunAsync<&cli::Cli> for ToolchainArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         crossdev::toolchain(&self, cli).await
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for StagesArgs {
+impl RunAsync<&cli::Cli> for StagesArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         crossdev::stage1(&self, cli).await
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for EtcArgs {
+impl RunAsync<&cli::Cli> for EtcArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         crate::etc::run(cli, self.command.as_ref(), &self.opts).await
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for EmergeArgs {
+impl RunAsync<&cli::Cli> for EmergeArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         emerge::run_emerge(cli).await
     }
 }
 
-impl RunWith<&cli::Cli> for LogArgs {
+impl RunAsync<&cli::Cli> for LogArgs {
     type Output = Result<()>;
 
-    fn run_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         run_log(&self.command, cli)
     }
 }
 
-impl RunWith<&cli::Cli> for AtomArgs {
+impl RunAsync<&cli::Cli> for AtomArgs {
     type Output = Result<()>;
 
-    fn run_with(self, _cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, _cli: &cli::Cli) -> Self::Output {
         run_atom(&self.atoms);
         Ok(())
     }
 }
 
-impl RunWith<&cli::Cli> for ActiveArgs {
+impl RunAsync<&cli::Cli> for ActiveArgs {
     type Output = Result<()>;
 
-    fn run_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         crate::active::run(self.command.as_ref(), cli)
     }
 }
 
-impl RunWith<&cli::Cli> for EnvArgs {
+impl RunAsync<&cli::Cli> for EnvArgs {
     type Output = Result<()>;
 
-    fn run_with(self, cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         maint::env::env_update(cli.roots().merge_root())
     }
 }
@@ -787,13 +788,13 @@ fn run_log(command: &Option<LogCommand>, globals: &cli::Cli) -> Result<()> {
     }
 }
 
-impl RunAsyncWith<&cli::Cli> for CompletionArgs {
+impl RunAsync<&cli::Cli> for CompletionArgs {
     type Output = Result<()>;
 
-    async fn run_async_with(self, _cli: &cli::Cli) -> Self::Output {
-        let Some(shell) = usage::complete::Shell::from_name(&self.shell) else {
+    async fn run_async(self, _cli: &cli::Cli) -> Self::Output {
+        let Some(shell) = winnow_args::complete::Shell::from_name(&self.shell) else {
             bail!(
-                "unsupported shell {:?}; expected bash, zsh, fish, nu, powershell, or elvish",
+                "unsupported shell {:?}; expected bash, zsh, fish, powershell, or elvish",
                 self.shell
             );
         };

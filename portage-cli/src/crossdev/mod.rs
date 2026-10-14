@@ -117,8 +117,8 @@ pub async fn run(args: &CrossdevArgs, globals: &Cli) -> Result<()> {
         print!("{}", spec.to_toml()?);
         return Ok(());
     }
-    // `--root` after `crossdev` is a parse error; prefix `--root` is a try_into
-    // reject. Neither reaches this function.
+    // `--root` after `crossdev` is a parse error; prefix `--root` is refused by
+    // validation. Neither reaches this function.
     if args.init_target {
         return init_target(
             &target,
@@ -1848,6 +1848,7 @@ fn host_chost() -> String {
 mod tests {
 
     use super::*;
+    use winnow_args::Args as _;
 
     fn crossdev_args(show_target_cfg: bool) -> CrossdevArgs {
         CrossdevArgs {
@@ -1953,7 +1954,7 @@ mod tests {
             "/tmp/board",
             "--setup",
         ]);
-        assert!(Cli::try_parse_from(&argv).is_err());
+        assert!(Cli::parse_from_argv(&argv).is_err());
     }
 
     #[tokio::test]
@@ -1967,7 +1968,7 @@ mod tests {
             "/tmp/board",
             "--init-target",
         ]);
-        assert!(Cli::try_parse_from(&argv).is_err());
+        assert!(Cli::parse_from_argv(&argv).is_err());
     }
 
     // `--root` alongside `--show-target-cfg` used to be harmlessly ignored;
@@ -1984,7 +1985,7 @@ mod tests {
             "/tmp/board",
             "--show-target-cfg",
         ]);
-        assert!(Cli::try_parse_from(&argv).is_err());
+        assert!(Cli::parse_from_argv(&argv).is_err());
     }
 
     /// Parse `["em", "toolchain", ...argv]`; callers destructure `cli.applet`

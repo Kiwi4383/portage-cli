@@ -6,8 +6,7 @@ use gentoo_core::Arch;
 #[cfg(test)]
 use portage_atom_pubgrub::DepClass;
 use portage_resolve::Roots;
-use usage::ValidationError;
-use usage::spec::ValueEnum;
+use winnow_args::{Args as _, FromArg};
 
 mod activity;
 mod context;
@@ -29,7 +28,7 @@ fn default_arch() -> Arch {
 }
 
 /// When to colour terminal output (`--color`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, usage::ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, winnow_args::ValueEnum)]
 pub enum ColorChoice {
     /// Colour when stdout is a terminal.
     #[default]
@@ -52,8 +51,16 @@ impl ColorChoice {
     }
 }
 
-/// Parsed `em` invocation after `try_into` validation.
+/// Parsed `em` invocation after validation.
 pub struct Validated(pub Cli);
+
+/// What validation refuses, reported as a parse failure is.
+pub type ValidationError = winnow_args::Error;
+
+/// `value`, given for `field` (a flag or an environment variable), is refused for `reason`.
+fn invalid(field: &str, value: &str, reason: impl Into<String>) -> ValidationError {
+    winnow_args::Error::invalid_value(0, field, value.as_bytes(), reason.into())
+}
 
 impl TryFrom<Cli> for Validated {
     type Error = ValidationError;
@@ -73,9 +80,11 @@ fn validate(cli: &Cli) -> Result<(), ValidationError> {
             _ => None,
         };
         if let Some(name) = name {
-            return Err(ValidationError::field("--root")
-                .value(root)
-                .reason(format!("not valid with the '{name}' applet")));
+            return Err(invalid(
+                "--root",
+                root,
+                format!("not valid with the '{name}' applet"),
+            ));
         }
     }
     if applet_privilege(cli) == Privilege::Auto {
@@ -91,11 +100,13 @@ fn privilege_from_env() -> Result<Option<Privilege>, ValidationError> {
     let Ok(raw) = std::env::var("EM_PRIVILEGE") else {
         return Ok(None);
     };
-    match Privilege::from_choice(&raw.to_ascii_lowercase()) {
-        Some(privilege) => Ok(Some(privilege)),
-        None => Err(ValidationError::field("EM_PRIVILEGE")
-            .value(raw)
-            .reason(format!("expected one of {}", Privilege::CHOICES.join(", ")))),
+    match Privilege::from_arg(raw.to_ascii_lowercase().as_str().into()) {
+        Ok(privilege) => Ok(Some(privilege)),
+        Err(_) => Err(invalid(
+            "EM_PRIVILEGE",
+            &raw,
+            format!("expected one of {}", Privilege::CHOICES.join(", ")),
+        )),
     }
 }
 
@@ -106,9 +117,11 @@ fn env_bool(name: &'static str) -> Result<Option<bool>, ValidationError> {
     match raw.to_ascii_lowercase().as_str() {
         "1" | "true" | "yes" | "on" | "t" | "y" => Ok(Some(true)),
         "0" | "false" | "no" | "off" | "f" | "n" => Ok(Some(false)),
-        _ => Err(ValidationError::field(name)
-            .value(raw)
-            .reason("expected a boolean (1/true/yes or 0/false/no)")),
+        _ => Err(invalid(
+            name,
+            &raw,
+            "expected a boolean (1/true/yes or 0/false/no)",
+        )),
     }
 }
 
@@ -135,29 +148,17 @@ fn applet_activity(cli: &Cli) -> ActivityArgs {
     }
 }
 
-fn finish_parse(argv: &[OsString]) -> Validated {
-    match Cli::embedded_outcome_into_paletted(
-        &argv[1..],
-        usage::help::Palette::DEFAULT.metavar("cyan+bold"),
-    ) {
-        usage::embedded::Outcome::Parsed(validated) => validated,
-        usage::embedded::Outcome::Exit(exit) => {
-            if exit.stderr {
-                eprint!("{}", exit.text);
-            } else {
-                print!("{}", exit.text);
-            }
-            std::process::exit(exit.code);
-        }
-    }
-}
-
-/// Parse process argv into `Validated`. Exits on `--help`/`--version`/failure.
+/// Parse process argv into `Validated`. Exits on `--help`/`--version`/failure,
+/// and answers a completion script's callback.
 pub fn parse_cli_or_exit() -> Validated {
-    let raw: Vec<OsString> = std::env::args_os().collect();
-    match Cli::try_parse_into_from(&raw.iter().map(OsString::as_os_str).collect::<Vec<_>>()) {
-        Ok(v) => v,
-        Err(_) => finish_parse(&raw),
+    let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    if let Some(answer) = Cli::completion_request(&args) {
+        print!("{answer}");
+        std::process::exit(0);
+    }
+    match Cli::parse_from(&args).and_then(Validated::try_from) {
+        Ok(validated) => validated,
+        Err(error) => std::process::exit(winnow_args::report(&error, "em")),
     }
 }
 
@@ -171,30 +172,29 @@ pub fn parse_cli_or_exit() -> Validated {
 /// position by coincidentally also being emerge's own flag: `em -p pkg`
 /// previews an emerge, but `em -p toolchain` no longer selects `toolchain` —
 /// write `em toolchain -p` instead.
-#[derive(usage::Cli, Debug)]
-#[usage(
-    bin = "em",
+#[derive(winnow_args::Args, Debug)]
+#[arg(
+    name = "em",
     version,
     about = "Gentoo Portage package manager workalike",
+    long_about = "Gentoo Portage package manager workalike",
     arg_required_else_help,
     unknown_flags = "error",
     default_subcommand = "emerge",
     default_subcommand_flags,
     default_subcommand_help,
-    completion,
-    try_into = Validated,
     example("em -ua @world", header = "Update @world"),
     example("em query belongs /usr/bin/python", header = "Find a file's owner"),
     example("em select profile list", header = "List profiles")
 )]
 pub struct Cli {
-    #[usage(long, global, value_enum, default = "auto", value_name = "WHEN")]
+    #[arg(long, global, default = "auto", value_name = "WHEN")]
     pub color: ColorChoice,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub root_topology: RootTopology,
 
-    #[usage(subcommand)]
+    #[arg(subcommand)]
     pub applet: Option<Applet>,
 }
 
@@ -601,35 +601,31 @@ pub(crate) fn os_argv<'a>(argv: &'a [&'a str]) -> Vec<&'a OsStr> {
 /// Parse argv including argv0, through `default_subcommand_flags`' own routing.
 #[cfg(test)]
 pub(crate) fn parse_cli(argv: &[&str]) -> Cli {
-    let refs = os_argv(argv);
-    Cli::try_parse_from(&refs).unwrap_or_else(|e| {
-        panic!(
-            "expected parse of {argv:?}: {}",
-            Cli::render_failure(&refs, &e)
-        )
-    })
+    Cli::parse_from_argv(argv).unwrap_or_else(|e| panic!("expected parse of {argv:?}: {e}"))
 }
 
 #[cfg(test)]
 pub(crate) fn parse_cli_into(argv: &[&str]) -> Result<Cli, String> {
-    let refs = os_argv(argv);
-    Cli::try_parse_into_from(&refs)
+    Cli::parse_from_argv(argv)
+        .and_then(Validated::try_from)
         .map(|Validated(cli)| cli)
         .map_err(|e| err_name(&e))
 }
 
 #[cfg(test)]
-fn err_name(e: &usage::Error<'_, '_>) -> String {
-    match e {
-        usage::Error::UnknownFlag { token } => {
-            format!("UnknownFlag {}", String::from_utf8_lossy(token))
+fn err_name(e: &winnow_args::Error) -> String {
+    use winnow_args::ErrorKind;
+    let token = e.token().unwrap_or_default();
+    match e.kind() {
+        ErrorKind::UnknownFlag => format!("UnknownFlag {token}"),
+        ErrorKind::HelpRequested if e.is_bare_help() => "MissingArgsHelp".into(),
+        ErrorKind::HelpRequested => "Help".into(),
+        ErrorKind::VersionRequested => "Version".into(),
+        ErrorKind::InvalidValue | ErrorKind::InvalidChoice => format!("InvalidValue {token} {e}"),
+        ErrorKind::MissingRequired | ErrorKind::MissingArgument => {
+            format!("MissingRequired {token}")
         }
-        usage::Error::Help { .. } => "Help".into(),
-        usage::Error::Version { .. } => "Version".into(),
-        usage::Error::MissingArgsHelp { .. } => "MissingArgsHelp".into(),
-        usage::Error::InvalidValue(v) => format!("InvalidValue {} {}", v.name, v.reason),
-        usage::Error::MissingRequired { name } => format!("MissingRequired {name}"),
-        other => format!("{other:?}"),
+        other => format!("{other:?} {e}"),
     }
 }
 
@@ -648,15 +644,15 @@ mod tests {
         parse_cli(&v)
     }
 
-    #[test]
-    fn spec_is_valid() {
-        let _ = Cli::to_kdl();
-        let _ = Cli::spec();
+    /// What a shell is offered after `words`, the last one being typed.
+    fn candidates(words: &[&str]) -> Vec<String> {
+        let offered = winnow_args::complete::complete(Cli::HELP, words);
+        offered.candidates.into_iter().map(|c| c.value).collect()
     }
 
     #[test]
     fn completions_omit_hidden_applets_and_offer_emerge() {
-        let offered = usage::test::candidates(Cli::spec(), "em ");
+        let offered = candidates(&[""]);
         assert!(
             offered.iter().any(|w| w == "emerge"),
             "emerge missing: {offered:?}"
@@ -675,7 +671,7 @@ mod tests {
 
     #[test]
     fn completions_offer_prefix_after_toolchain() {
-        let offered = usage::test::candidates(Cli::spec(), "em toolchain --");
+        let offered = candidates(&["toolchain", "--"]);
         assert!(
             offered.iter().any(|w| w == "--prefix"),
             "--prefix missing after toolchain: {offered:?}"
@@ -691,44 +687,6 @@ mod tests {
         }
     }
 
-    fn kdl_cmd_line<'a>(kdl: &'a str, name: &str) -> &'a str {
-        let prefix = format!("cmd {name}");
-        kdl.lines()
-            .map(str::trim_start)
-            .find(|line| {
-                line.starts_with(&prefix)
-                    && line.as_bytes().get(prefix.len()).is_none_or(|b| *b == b' ')
-            })
-            .unwrap_or_else(|| panic!("missing `{prefix}` node"))
-    }
-
-    fn kdl_flag_line<'a>(kdl: &'a str, forms: &str) -> &'a str {
-        let prefix = format!("flag {forms}");
-        kdl.lines()
-            .map(str::trim_start)
-            .find(|line| {
-                line.starts_with(&prefix)
-                    && line.as_bytes().get(prefix.len()).is_none_or(|b| *b == b' ')
-            })
-            .unwrap_or_else(|| panic!("missing `{prefix}` node"))
-    }
-
-    #[test]
-    fn effects_reach_the_spec() {
-        let kdl = Cli::to_kdl();
-        let emerge = kdl_cmd_line(&kdl, "emerge");
-        assert!(emerge.contains("effect=write"), "{emerge}");
-        let depclean = kdl_cmd_line(&kdl, "depclean");
-        assert!(depclean.contains("effect=destructive"), "{depclean}");
-        let delete = kdl_flag_line(&kdl, "--delete");
-        assert!(delete.contains("effect=destructive"), "{delete}");
-        let pretend = kdl_flag_line(&kdl, "\"-p --pretend\"");
-        assert!(
-            !pretend.contains("effect="),
-            "--pretend must not lower effect: {pretend}"
-        );
-    }
-
     #[test]
     fn completion_request_is_not_an_emerge_atom() {
         let argv = vec![
@@ -742,16 +700,6 @@ mod tests {
         assert!(answer.contains("emerge"), "{answer}");
         assert!(!answer.contains("__helper"), "{answer}");
         assert!(!answer.contains("__worker"), "{answer}");
-    }
-
-    #[test]
-    fn spec_request_is_not_an_emerge_atom() {
-        let argv = [std::ffi::OsStr::new(usage::SPEC_REQUEST)];
-        let answer = Cli::spec_request(&argv).expect("recognized");
-        assert!(
-            answer.contains("bin \"em\"") || answer.contains("bin em"),
-            "{answer}"
-        );
     }
 
     #[test]
@@ -1525,39 +1473,39 @@ mod tests {
     }
 
     #[test]
-    fn prefix_root_then_crossdev_is_try_into_reject() {
+    fn prefix_root_then_crossdev_is_refused_by_validation() {
         let cli = parse_cli(&["em", "--root", "/tmp/r", "crossdev", "--setup"]);
         assert_eq!(cli.root_topology.root.as_deref(), Some("/tmp/r"));
         assert!(matches!(cli.applet, Some(Applet::Crossdev(_))));
         let err = parse_cli_into(&["em", "--root", "/tmp/r", "crossdev", "--setup"]).unwrap_err();
         assert!(
             err.contains("InvalidValue --root"),
-            "try_into must reject prefix --root with crossdev, got {err}"
+            "validation must reject prefix --root with crossdev, got {err}"
         );
     }
 
     #[test]
-    fn prefix_root_then_worker_is_try_into_reject() {
+    fn prefix_root_then_worker_is_refused_by_validation() {
         let mut argv = worker_argv(&[]);
         argv.insert(1, "--root");
         argv.insert(2, "/srv");
         let err = parse_cli_into(&argv).unwrap_err();
         assert!(
             err.contains("InvalidValue --root"),
-            "try_into must reject prefix --root with __worker, got {err}"
+            "validation must reject prefix --root with __worker, got {err}"
         );
     }
 
     #[test]
-    fn try_into_reject_messages_name_the_actual_conflict() {
-        let words = os_argv(&["em", "--root", "/tmp/r", "crossdev", "--setup"]);
-        let err = match Cli::try_parse_into_from(&words) {
-            Ok(_) => panic!("expected a try_into reject"),
+    fn validation_messages_name_the_actual_conflict() {
+        let words = ["em", "--root", "/tmp/r", "crossdev", "--setup"];
+        let err = match Cli::parse_from_argv(words).and_then(Validated::try_from) {
+            Ok(_) => panic!("expected validation to refuse it"),
             Err(e) => e,
         };
-        let rendered = Cli::render_failure(&words, &err);
+        let rendered = err.render(winnow_args::help::Style::PLAIN);
         assert!(
-            rendered.contains("invalid value '/tmp/r' for '--root'")
+            rendered.contains("invalid value `/tmp/r` for `--root`")
                 && rendered.contains("'crossdev' applet"),
             "got {rendered}"
         );
@@ -1565,12 +1513,12 @@ mod tests {
 
     #[test]
     fn version_is_not_emerge() {
-        use usage::test::{self as harness, Outcome};
-        let words = harness::argv(["--version"]);
-        let Outcome::Version(_) = harness::outcome(Cli::spec(), &words.words(), Cli::parse_from)
-        else {
-            panic!("--version should be Version");
-        };
+        let err = Cli::parse_from(["--version"]).unwrap_err();
+        assert_eq!(
+            err.kind(),
+            winnow_args::ErrorKind::VersionRequested,
+            "--version should be Version"
+        );
     }
 
     #[test]
@@ -1753,7 +1701,7 @@ mod tests {
     #[test]
     fn prefix_ask_before_a_word_naming_an_applet_is_swallowed_as_an_atom() {
         // Once `-a` (emerge-only) commits the line to the default subcommand,
-        // usage-rs's `default_subcommand_flags` no longer looks ahead for a
+        // `default_subcommand_flags` does not look ahead for a
         // real applet name — later words become emerge's own atoms instead.
         let cli = parse_cli(&["em", "-a", "search", "zlib"]);
         assert!(cli.merge_flags().ask);
@@ -1829,7 +1777,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_em_privilege_is_try_into_reject() {
+    fn invalid_em_privilege_is_refused_by_validation() {
         let _env_lock = crate::test_support::home_lock();
         let saved = std::env::var("EM_PRIVILEGE").ok();
         unsafe { std::env::set_var("EM_PRIVILEGE", "typo") };
@@ -1843,7 +1791,7 @@ mod tests {
         let err = err.unwrap_err();
         assert!(
             err.contains("InvalidValue EM_PRIVILEGE"),
-            "bad EM_PRIVILEGE must fail try_into, got {err}"
+            "bad EM_PRIVILEGE must fail validation, got {err}"
         );
     }
 
@@ -1863,7 +1811,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_em_emergelog_is_try_into_reject() {
+    fn invalid_em_emergelog_is_refused_by_validation() {
         let _env_lock = crate::test_support::home_lock();
         let saved = std::env::var("EM_EMERGELOG").ok();
         unsafe { std::env::set_var("EM_EMERGELOG", "nope") };
@@ -1877,7 +1825,7 @@ mod tests {
         let err = err.unwrap_err();
         assert!(
             err.contains("InvalidValue EM_EMERGELOG"),
-            "bad EM_EMERGELOG must fail try_into, got {err}"
+            "bad EM_EMERGELOG must fail validation, got {err}"
         );
     }
 
@@ -2117,89 +2065,89 @@ mod tests {
 /// argv from `privilege.rs`'s re-exec, not something a person types. `--config-root`
 /// is Topology's; this child takes `--worker-config-root` so the two never
 /// share a spelling.
-#[derive(usage::Args, Debug, Clone)]
+#[derive(winnow_args::Args, Debug, Clone)]
 pub struct WorkerArgs {
-    #[usage(long)]
+    #[arg(long)]
     pub quiet: bool,
-    #[usage(long)]
+    #[arg(long)]
     pub ebuild: String,
     /// The resolved plan entry's authoritative cpv — see
     /// `privilege::WorkerArgs::cpv`.
-    #[usage(long)]
+    #[arg(long)]
     pub cpv: String,
-    #[usage(long)]
+    #[arg(long)]
     pub use_flags: String,
-    #[usage(long)]
+    #[arg(long)]
     pub work_base: String,
-    #[usage(long)]
+    #[arg(long)]
     pub root: String,
-    #[usage(long)]
+    #[arg(long)]
     pub distdir: Option<String>,
-    #[usage(long)]
+    #[arg(long)]
     pub worker_config_root: Option<String>,
-    #[usage(long)]
+    #[arg(long)]
     pub sysroot: Option<String>,
-    #[usage(long)]
+    #[arg(long)]
     pub eprefix: Option<String>,
     /// Where BDEPEND-class build tools live (`Cli::host_roots()`'s merge root)
-    #[usage(long)]
+    #[arg(long)]
     pub broot: Option<String>,
     /// See `ebuild::RootContext::self_contained_bootstrap`
-    #[usage(long)]
+    #[arg(long)]
     pub self_contained_bootstrap: bool,
     /// See `ebuild::RootContext::extra_path`, `:`-joined
-    #[usage(long)]
+    #[arg(long)]
     pub extra_path: Option<String>,
     /// A pre-built GPKG to merge (`-k`/`-g`)
-    #[usage(long)]
+    #[arg(long)]
     pub binpkg: Option<String>,
     /// `binpkg`'s origin forces cryptographic GPG signature
     /// verification (a `binrepos.conf` entry with
     /// `verify-signature = yes`), independent of
     /// `FEATURES=binpkg-request-signature`.
-    #[usage(long)]
+    #[arg(long)]
     pub force_verify_signature: bool,
-    #[usage(long)]
+    #[arg(long)]
     pub buildpkg: bool,
     /// Parent activity session id — live FS phase updates only
-    #[usage(long)]
+    #[arg(long)]
     pub activity_job_id: Option<String>,
-    #[usage(long)]
+    #[arg(long)]
     pub activity_parent_job_id: Option<String>,
     /// Filesystem root of the parent's live activity sink
-    #[usage(long)]
+    #[arg(long)]
     pub activity_live_root: Option<String>,
     /// `host` or `target` package side for inflight paths
-    #[usage(long)]
+    #[arg(long)]
     pub activity_side: Option<String>,
     /// Unix socket path: stream phase JSONL back to the parent activity bus
-    #[usage(long)]
+    #[arg(long)]
     pub activity_reemit_path: Option<String>,
 }
 
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // __worker carries many CLI strings
-#[usage(run_async_with)]
+#[arg(run_async)]
 pub enum Applet {
     /// Run one do*/new* install helper standalone against the exported build env
     ///
     /// Internal: backs the PATH shims dropped during a build so `find -exec doman` /
     /// `xargs do*` reach helpers that are in-shell builtins. Not for direct use.
-    #[usage(name = "__helper", hide)]
+    #[arg(name = "__helper", hide)]
     Helper(HelperArgs),
 
     /// Internal: the privilege-wrapped install worker (install+qmerge+binpkg
     /// for one package; spawned per package by `build_and_merge`).
-    #[usage(name = "__worker", hide)]
+    #[arg(name = "__worker", hide)]
     Worker(WorkerArgs),
 
-    #[usage(help = "Execute ebuild phases")]
+    #[arg(help = "Execute ebuild phases")]
     Ebuild(EbuildArgs),
 
-    #[usage(help = "System maintenance and health checks")]
+    #[arg(help = "System maintenance and health checks")]
     Maint(MaintArgs),
 
-    #[usage(help = "Query Portage internal variables and data")]
+    #[arg(help = "Query Portage internal variables and data")]
     Portageq(PortageqArgs),
 
     /// Sync ebuild repositories from `repos.conf` (`git` and `rsync`)
@@ -2214,19 +2162,19 @@ pub enum Applet {
     /// because `sync` is common enough to deserve a short invocation,
     /// matching real Portage having both `emerge --sync` and `emaint sync`.
     // Both dispatch to `crate::maint::sync::run`.
-    #[usage(help = "Sync repositories (git, rsync)")]
+    #[arg(help = "Sync repositories (git, rsync)")]
     Sync(SyncArgs),
 
-    #[usage(help = "Remove orphaned/unused packages")]
+    #[arg(help = "Remove orphaned/unused packages")]
     Depclean(DepcleanArgs),
 
-    #[usage(help = "Regenerate metadata cache")]
+    #[arg(help = "Regenerate metadata cache")]
     Regen(RegenArgs),
 
-    #[usage(help = "Create binary packages from installed files")]
+    #[arg(help = "Create binary packages from installed files")]
     Quickpkg(QuickpkgArgs),
 
-    #[usage(
+    #[arg(
         name = "mirrordist",
         alias_hidden = "emirrordist",
         help = "Build/maintain a distfiles mirror (emirrordist workalike)",
@@ -2234,138 +2182,136 @@ pub enum Applet {
     )]
     MirrorDist(MirrorDistArgs),
 
-    #[usage(help = "Query package information")]
+    #[arg(help = "Query package information")]
     Query(QueryArgs),
 
-    #[usage(help = "Clean distfiles and/or binary packages")]
+    #[arg(help = "Clean distfiles and/or binary packages")]
     Clean(CleanArgs),
 
-    #[usage(help = "Enable/disable/query USE flags in make.conf")]
+    #[arg(help = "Enable/disable/query USE flags in make.conf")]
     Use(UseArgs),
 
-    #[usage(help = "Edit per-package configuration (package.use, .keywords, .mask, .env)")]
+    #[arg(help = "Edit per-package configuration (package.use, .keywords, .mask, .env)")]
     Pkg(PkgArgs),
 
-    #[usage(help = "Rebuild packages with broken shared library deps")]
+    #[arg(help = "Rebuild packages with broken shared library deps")]
     Revdep(RevdepArgs),
 
-    #[usage(help = "Display Portage elog files")]
+    #[arg(help = "Display Portage elog files")]
     Read(ReadArgs),
 
-    #[usage(help = "Analyze emerge.log", run)]
+    #[arg(help = "Analyze emerge.log")]
     Log(LogArgs),
 
-    #[usage(help = "Search inside ebuilds and eclasses")]
+    #[arg(help = "Search inside ebuilds and eclasses")]
     Grep(GrepArgs),
 
-    #[usage(help = "Search package names and descriptions")]
+    #[arg(help = "Search package names and descriptions")]
     Search(SearchArgs),
 
-    #[usage(help = "Parse/split atom strings", run)]
+    #[arg(help = "Parse/split atom strings")]
     Atom(AtomArgs),
 
-    #[usage(help = "Native config selectors (profile, repos) — eselect-like")]
+    #[arg(help = "Native config selectors (profile, repos) — eselect-like")]
     Select(SelectArgs),
 
     /// Register a default `--prefix` / `--local` so bare `em <pkg>` picks it up (dogfooding)
     ///
     /// Explicit `--prefix`/`--local`/`--root` still win. State is stored under
     /// `$XDG_STATE_HOME/em/active`.
-    #[usage(
-        help = "Register a default --prefix/--local for bare em invocations",
-        run
-    )]
+    #[arg(help = "Register a default --prefix/--local for bare em invocations")]
     Active(ActiveArgs),
 
-    #[usage(help = "Bootstrap a prefix layout (use with --local or --prefix)")]
+    #[arg(help = "Bootstrap a prefix layout (use with --local or --prefix)")]
     Setup(SetupArgs),
 
-    #[usage(help = "Set up a cross-compilation target (sysroot + overlay) — crossdev workalike")]
+    #[arg(help = "Set up a cross-compilation target (sysroot + overlay) — crossdev workalike")]
     Crossdev(CrossdevArgs),
 
-    #[usage(help = "Bootstrap a self-hosting native toolchain (--root / --prefix / --local)")]
+    #[arg(help = "Bootstrap a self-hosting native toolchain (--root / --prefix / --local)")]
     Toolchain(ToolchainArgs),
 
-    #[usage(help = "Assemble stage-build artifacts (stage1 packages.build) into --root")]
+    #[arg(help = "Assemble stage-build artifacts (stage1 packages.build) into --root")]
     Stages(StagesArgs),
 
-    #[usage(
+    #[arg(
         help = "Reconcile pending config files (etc-update / dispatch-conf)",
         alias_hidden = "config",
         alias_hidden = "dispatch"
     )]
     Etc(EtcArgs),
 
-    #[usage(help = "Regenerate /etc/profile.env and ld.so cache", run)]
+    #[arg(help = "Regenerate /etc/profile.env and ld.so cache")]
     Env(EnvArgs),
 
-    #[usage(help = "Print a shell completion script")]
+    #[arg(help = "Print a shell completion script")]
     Completion(CompletionArgs),
 
     /// Resolve and merge/unmerge packages (emerge workalike).
     ///
     /// `em <atoms>` and `em emerge <atoms>` parse into the same arguments.
-    #[usage(help = "Resolve and merge/unmerge packages (emerge workalike)")]
+    #[arg(help = "Resolve and merge/unmerge packages (emerge workalike)")]
     Emerge(EmergeArgs),
 }
 
 /// Hidden `em __helper` shim — PATH helper dispatched by `find -exec`/`xargs`.
-#[derive(usage::Args, Debug, Clone)]
+#[derive(winnow_args::Args, Debug, Clone)]
 pub struct HelperArgs {
     /// Helper name (e.g. `doman`, `dolib.a`). Automatic so hyphen-prefixed
     /// helper args parse without a `--` (`find -exec doman -m …`).
-    #[usage(double_dash = "automatic")]
+    #[arg(positional, double_dash = "automatic")]
     pub name: String,
     /// Arguments passed through to the helper
-    #[usage(double_dash = "automatic")]
+    #[arg(positional, double_dash = "automatic")]
     pub args: Vec<String>,
 }
 
 /// `em ebuild` — execute ebuild phases
-#[derive(usage::Args, Debug, Clone)]
+#[derive(winnow_args::Args, Debug, Clone)]
 pub struct EbuildArgs {
     /// Path to the `.ebuild` file to execute
+    #[arg(positional)]
     pub ebuild_path: String,
     /// Phase(s) to run in order (e.g. `compile`, `install`, `qmerge`)
-    #[usage(required)]
+    #[arg(positional, required)]
     pub phase: Vec<String>,
     /// Override the build work directory (default: `/var/tmp/portage/<cat>/<pf>`)
-    #[usage(short = 'w', long, value_name = "DIR")]
+    #[arg(from_str, short = 'w', long, value_name = "DIR")]
     pub work_dir: Option<camino::Utf8PathBuf>,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub repo_arg: RepoArg,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub pretend_arg: PretendArg,
 }
 
 /// `em maint` — system maintenance and health checks
-#[derive(usage::Args, Debug, Clone)]
-#[usage(flatten_help)]
+#[derive(winnow_args::Args, Debug, Clone)]
+#[arg(flatten_help)]
 pub struct MaintArgs {
-    #[usage(subcommand)]
+    #[arg(subcommand)]
     pub command: MaintCommand,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub verbose_arg: VerboseArg,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub quiet_arg: QuietArg,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub arch_arg: ArchArg,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub repo_arg: RepoArg,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub pretend_arg: PretendArg,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub vdb_arg: VdbArg,
 }
 
 /// `em portageq` — a subset of Portage's own query interface (byte-compatible
 /// where implemented; only the installed-package query group exists)
-#[derive(usage::Args, Debug, Clone)]
-#[usage(
+#[derive(winnow_args::Args, Debug, Clone)]
+#[arg(
     effect = "read",
     exit_code(0, "query succeeded"),
     exit_code(1, "no match / unset variable"),
@@ -2374,196 +2320,199 @@ pub struct MaintArgs {
     example = "em portageq has_version / sys-apps/portage"
 )]
 pub struct PortageqArgs {
-    #[usage(subcommand)]
+    #[arg(subcommand)]
     pub command: PortageqCommand,
 }
 
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 pub enum PortageqCommand {
-    #[usage(
+    #[arg(
         name = "has_version",
         help = "Exit 0 if ATOM is installed under EROOT, 1 otherwise"
     )]
     HasVersion {
-        #[usage(value_name = "EROOT")]
+        #[arg(positional, value_name = "EROOT")]
         eroot: String,
-        #[usage(value_name = "ATOM")]
+        #[arg(positional, value_name = "ATOM")]
         atom: String,
     },
-    #[usage(
+    #[arg(
         name = "best_version",
         help = "Print the highest installed version matching ATOM under EROOT"
     )]
     BestVersion {
-        #[usage(value_name = "EROOT")]
+        #[arg(positional, value_name = "EROOT")]
         eroot: String,
-        #[usage(value_name = "ATOM")]
+        #[arg(positional, value_name = "ATOM")]
         atom: String,
     },
-    #[usage(
+    #[arg(
         name = "match",
         help = "List every installed CPV matching ATOM under EROOT, one per line"
     )]
     Match {
-        #[usage(value_name = "EROOT")]
+        #[arg(positional, value_name = "EROOT")]
         eroot: String,
         /// Empty string matches every installed package
-        #[usage(value_name = "ATOM")]
+        #[arg(positional, value_name = "ATOM")]
         atom: String,
     },
-    #[usage(
+    #[arg(
         name = "mass_best_version",
         help = "Print `atom:cpv` for each of several atoms' best installed version"
     )]
     MassBestVersion {
-        #[usage(value_name = "EROOT")]
+        #[arg(positional, value_name = "EROOT")]
         eroot: String,
-        #[usage(value_name = "ATOM")]
+        #[arg(positional, value_name = "ATOM")]
         atoms: Vec<String>,
     },
 }
 
 /// `em sync` — sync repositories (git, rsync)
-#[derive(usage::Args, Debug, Clone)]
+#[derive(winnow_args::Args, Debug, Clone)]
 pub struct SyncArgs {
     /// Repo names from repos.conf (default: auto-sync enabled repos)
+    #[arg(positional)]
     pub repos: Vec<String>,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub verbose_arg: VerboseArg,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub quiet_arg: QuietArg,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub pretend_arg: PretendArg,
 }
 
 /// `em depclean` — remove orphaned/unused packages
-#[derive(usage::Args, Debug, Clone)]
-#[usage(effect = "destructive")]
+#[derive(winnow_args::Args, Debug, Clone)]
+#[arg(effect = "destructive")]
 pub struct DepcleanArgs {
     /// Restrict cleaning to these atoms' dependency closure (every other
     /// installed package is protected). Default: the whole `@world` set
-    #[usage(double_dash = "automatic")]
+    #[arg(positional, double_dash = "automatic")]
     pub atoms: Vec<String>,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
     /// `--exclude`/`--with-bdeps` only — the rest of `MergeFlags` means
     /// nothing to depclean's own read-then-remove walk.
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub merge_flags: MergeFlags,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub pretend_arg: PretendArg,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub vdb_arg: VdbArg,
 }
 
 /// `em regen` — regenerate metadata cache
-#[derive(usage::Args, Debug, Clone)]
+#[derive(winnow_args::Args, Debug, Clone)]
 pub struct RegenArgs {
     /// Repo names or paths to regenerate (default: every repo except the
     /// main one, whose cache is normally maintained upstream)
+    #[arg(positional)]
     pub repos: Vec<String>,
     /// Write cache files to this directory instead of metadata/md5-cache
-    #[usage(short = 'o', long, value_name = "DIR")]
+    #[arg(short = 'o', long, value_name = "DIR")]
     pub output: Option<std::path::PathBuf>,
     /// Directory containing master repositories
-    #[usage(long, value_name = "DIR")]
+    #[arg(long, value_name = "DIR")]
     pub repos_dir: Option<String>,
     /// Number of parallel workers
-    #[usage(short = 'j', long)]
+    #[arg(short = 'j', long)]
     pub jobs: Option<usize>,
     /// Deduplicate top-level dep tokens before writing
-    #[usage(long)]
+    #[arg(long)]
     pub dedup: bool,
     /// Activity-output flags (`--activity-fd`/`--activity-jsonl`/
     /// `--emergelog`) — `em regen` drives its own activity bus.
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub activity: ActivityArgs,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub verbose_arg: VerboseArg,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub quiet_arg: QuietArg,
 }
 
 /// `em quickpkg` — create binary packages from installed files
-#[derive(usage::Args, Debug, Clone)]
+#[derive(winnow_args::Args, Debug, Clone)]
 pub struct QuickpkgArgs {
     /// Atoms, package sets (`@system`), or VDB paths (`/var/db/pkg/cat/pf`)
-    #[usage(required)]
+    #[arg(positional, required)]
     pub atoms: Vec<String>,
     /// Include CONFIG_PROTECT files
-    #[usage(long)]
+    #[arg(long)]
     pub include_config: bool,
     /// Include unmodified CONFIG_PROTECT files
-    #[usage(long)]
+    #[arg(long)]
     pub include_unmodified_config: bool,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub vdb_arg: VdbArg,
 }
 
 /// `em mirrordist` — build/maintain a distfiles mirror
-#[derive(usage::Args, Debug, Clone)]
-#[usage(effect = "write")]
+#[derive(winnow_args::Args, Debug, Clone)]
+#[arg(effect = "write")]
 pub struct MirrorDistArgs {
     /// repos.conf name or path
     ///
     /// Defaults to the main repo (opposite default from `em regen`, which excludes it).
+    #[arg(positional)]
     pub repo: Option<String>,
     /// Directory containing master repositories
-    #[usage(long, value_name = "DIR")]
+    #[arg(long, value_name = "DIR")]
     pub repos_dir: Option<String>,
     /// Distfiles directory to populate
-    #[usage(long, value_name = "DIR")]
+    #[arg(from_str, long, value_name = "DIR")]
     pub distfiles: camino::Utf8PathBuf,
     /// Concurrent downloads
-    #[usage(short = 'j', long)]
+    #[arg(short = 'j', long)]
     pub jobs: Option<usize>,
     /// Delete distfiles no longer referenced by any ebuild
-    #[usage(long, effect = "destructive")]
+    #[arg(long, effect = "destructive")]
     pub delete: bool,
     /// Grace period before an orphaned file is deleted (e.g. `7d`, `72h`)
-    #[usage(long, value_name = "DURATION", default = "7d")]
+    #[arg(long, value_name = "DURATION", default = "7d")]
     pub deletion_delay: String,
     /// Deletion-grace state file (default: `$XDG_STATE_HOME/em/mirrordist/<repo>-*.json`)
-    #[usage(long, value_name = "FILE")]
+    #[arg(from_str, long, value_name = "FILE")]
     pub deletion_db: Option<camino::Utf8PathBuf>,
     /// Tab-delimited log of fetched files (appended)
-    #[usage(long, value_name = "FILE")]
+    #[arg(from_str, long, value_name = "FILE")]
     pub success_log: Option<camino::Utf8PathBuf>,
     /// Tab-delimited log of fetch failures (appended)
-    #[usage(long, value_name = "FILE")]
+    #[arg(from_str, long, value_name = "FILE")]
     pub failure_log: Option<camino::Utf8PathBuf>,
     /// Report of files scheduled for deletion, grouped by date (rewritten)
-    #[usage(long, value_name = "FILE")]
+    #[arg(from_str, long, value_name = "FILE")]
     pub scheduled_deletion_log: Option<camino::Utf8PathBuf>,
     /// File(s) listing distfile names --delete must never remove (one
     /// name per line, `#`-comments ignored).
-    #[usage(long, value_name = "FILE")]
+    #[arg(from_str, long, value_name = "FILE")]
     pub whitelist_from: Vec<camino::Utf8PathBuf>,
     /// Re-hash already-present files instead of trusting their size
-    #[usage(long)]
+    #[arg(long)]
     pub verify_existing_digest: bool,
     /// Also try GENTOO_MIRRORS after the ebuild's own URIs (real
     /// emirrordist never does this — off by default).
-    #[usage(long)]
+    #[arg(long)]
     pub gentoo_mirrors_fallback: bool,
     /// Allow --delete even when some ebuilds had no metadata cache entry
-    #[usage(long)]
+    #[arg(long)]
     pub delete_allow_incomplete: bool,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub pretend_arg: PretendArg,
 }
 
 /// `em query` — query package information
-#[derive(usage::Args, Debug, Clone)]
-#[usage(
+#[derive(winnow_args::Args, Debug, Clone)]
+#[arg(
     flatten_help,
     effect = "read",
     example = "em query depgraph zlib",
@@ -2571,45 +2520,45 @@ pub struct MirrorDistArgs {
     example = "em query list -I"
 )]
 pub struct QueryArgs {
-    #[usage(subcommand)]
+    #[arg(subcommand)]
     pub command: QueryCommand,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub verbose_arg: VerboseArg,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub arch_arg: ArchArg,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub repo_arg: RepoArg,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub vdb_arg: VdbArg,
 }
 
 /// `em clean` — clean distfiles and/or binary packages
-#[derive(usage::Args, Debug, Clone)]
-#[usage(flatten_help, effect = "destructive")]
+#[derive(winnow_args::Args, Debug, Clone)]
+#[arg(flatten_help, effect = "destructive")]
 pub struct CleanArgs {
-    #[usage(subcommand)]
+    #[arg(subcommand)]
     pub target: CleanTarget,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub pretend_arg: PretendArg,
 }
 
 /// `em use` — enable/disable/query USE flags in make.conf
-#[derive(usage::Args, Debug, Clone)]
+#[derive(winnow_args::Args, Debug, Clone)]
 pub struct UseArgs {
     /// Add (enable) flags — euse calls this --enable/-E
-    #[usage(short = 'E', short = 'a', long = "add", value_name = "FLAG")]
+    #[arg(short = 'E', short = 'a', long = "add", value_name = "FLAG")]
     pub add: Vec<String>,
     /// Subtract flags (written with leading '-', e.g. -themes) — euse
     /// calls this --disable/-D
-    #[usage(short = 'D', short = 's', long = "subtract", value_name = "FLAG")]
+    #[arg(short = 'D', short = 's', long = "subtract", value_name = "FLAG")]
     pub subtract: Vec<String>,
     /// Drop flags entirely (removes both flag and -flag forms) — euse
     /// calls this --remove/-R or --prune/-P
-    #[usage(
+    #[arg(
         short = 'R',
         short = 'P',
         short = 'd',
@@ -2618,15 +2567,15 @@ pub struct UseArgs {
     )]
     pub drop: Vec<String>,
     /// Preview the resulting value without writing make.conf
-    #[usage(short = 'n', long = "dry-run")]
+    #[arg(short = 'n', long = "dry-run")]
     pub dry_run: bool,
     /// Target a USE_EXPAND variable (e.g. VIDEO_CARDS) instead of USE —
     /// -a/-s/-d then edit that variable's value the same way
-    #[usage(short = 'e', long = "expand", value_name = "VAR")]
+    #[arg(short = 'e', long = "expand", value_name = "VAR")]
     pub expand: Option<String>,
     /// List every USE_EXPAND variable known to the active profile, each
     /// with its current make.conf value
-    #[usage(
+    #[arg(
         short = 'L',
         long = "list-expand",
         conflicts("add", "subtract", "drop", "expand")
@@ -2635,7 +2584,7 @@ pub struct UseArgs {
     /// Show descriptions for the given USE flags (profiles/use.desc and
     /// use.local.desc, searching both unless -g/-l restricts it). With
     /// no flags given, lists every flag in scope
-    #[usage(
+    #[arg(
         short = 'i',
         long = "info",
         value_name = "FLAG",
@@ -2643,7 +2592,7 @@ pub struct UseArgs {
     )]
     pub info: Vec<String>,
     /// Restrict -i to global flags only (profiles/use.desc)
-    #[usage(
+    #[arg(
         short = 'g',
         long = "global",
         conflicts("add", "subtract", "drop", "expand", "list_expand", "local_desc")
@@ -2652,7 +2601,7 @@ pub struct UseArgs {
     /// Restrict -i to per-package local flags only (profiles/use.local.desc,
     /// searched across every package — see `em query uses <atom>` for a
     /// single package's flags instead)
-    #[usage(
+    #[arg(
         short = 'l',
         long = "local-desc",
         conflicts("add", "subtract", "drop", "expand", "list_expand", "global")
@@ -2660,259 +2609,262 @@ pub struct UseArgs {
     pub local_desc: bool,
     /// Path to make.conf (default: resolved like other config commands,
     /// following --config-root/--local/--prefix)
-    #[usage(long = "make-conf", value_name = "PATH")]
+    #[arg(from_str, long = "make-conf", value_name = "PATH")]
     pub make_conf: Option<camino::Utf8PathBuf>,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
 }
 
 /// `em pkg` — edit per-package configuration
-#[derive(usage::Args, Debug, Clone)]
+#[derive(winnow_args::Args, Debug, Clone)]
 pub struct PkgArgs {
-    #[usage(subcommand)]
+    #[arg(subcommand)]
     pub command: PkgCommand,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub arch_arg: ArchArg,
 }
 
 /// `em revdep` — rebuild packages with broken shared library deps
-#[derive(usage::Args, Debug, Clone)]
+#[derive(winnow_args::Args, Debug, Clone)]
 pub struct RevdepArgs {
     /// Only consider consumers of libraries whose soname contains NAME
-    #[usage(short = 'L', long, value_name = "NAME")]
+    #[arg(short = 'L', long, value_name = "NAME")]
     pub library: Option<String>,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub merge_flags: MergeFlags,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub pretend_arg: PretendArg,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub vdb_arg: VdbArg,
 }
 
 /// `em read` — display Portage elog files
-#[derive(usage::Args, Debug, Clone)]
+#[derive(winnow_args::Args, Debug, Clone)]
 pub struct ReadArgs {
     /// Only show packages whose `<category>/<pf>` contains this text
+    #[arg(positional)]
     pub package: Option<String>,
     /// List what is filed instead of printing the messages
-    #[usage(short, long)]
+    #[arg(short, long)]
     pub list: bool,
     /// Show only this many of the most recent packages; 0 for all
-    #[usage(short = 'n', long, default = "10")]
+    #[arg(short = 'n', long, default = "10")]
     pub limit: usize,
     /// Remove each file once it has been shown
-    #[usage(long)]
+    #[arg(long)]
     pub delete: bool,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
 }
 
 /// `em log` — analyze emerge.log
-#[derive(usage::Args, Debug, Clone)]
-#[usage(effect = "read")]
+#[derive(winnow_args::Args, Debug, Clone)]
+#[arg(effect = "read")]
 pub struct LogArgs {
-    #[usage(subcommand)]
+    #[arg(subcommand)]
     pub command: Option<LogCommand>,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
 }
 
 /// `em grep` — search inside ebuilds and eclasses (qgrep workalike)
-#[derive(usage::Args, Debug, Clone)]
-#[usage(
+#[derive(winnow_args::Args, Debug, Clone)]
+#[arg(
     effect = "read",
     example = "em grep PYTHON_COMPAT dev-python/setuptools"
 )]
 pub struct GrepArgs {
     /// Pattern to search for (a literal substring unless -e/-x)
+    #[arg(positional)]
     pub pattern: String,
 
     /// Restrict the search to these atoms (`cat/pkg`, `cat/`, a bare package
     /// name, or a full dependency atom like `>=cat/pkg-1.2`); default: every
     /// package in scope
-    #[usage(double_dash = "automatic")]
+    #[arg(positional, double_dash = "automatic")]
     pub targets: Vec<String>,
 
     /// Invert the match: print lines that do NOT match
-    #[usage(short = 'I', long = "invert-match")]
+    #[arg(short = 'I', long = "invert-match")]
     pub invert_match: bool,
 
     /// Case-insensitive match
-    #[usage(short = 'i', long = "ignore-case")]
+    #[arg(short = 'i', long = "ignore-case")]
     pub ignore_case: bool,
 
     /// Label matches with `cat/pkg-ver` instead of the ebuild's path
-    #[usage(short = 'N', long = "atom-name")]
+    #[arg(short = 'N', long = "atom-name")]
     pub atom_name: bool,
 
     /// Print each matching file's label and its match count instead of the
     /// matching lines
-    #[usage(short = 'c', long = "count", conflicts("list", "list_invert"))]
+    #[arg(short = 'c', long = "count", conflicts("list", "list_invert"))]
     pub count: bool,
 
     /// Print only the labels of files that match
-    #[usage(short = 'l', long = "list", conflicts("count", "list_invert"))]
+    #[arg(short = 'l', long = "list", conflicts("count", "list_invert"))]
     pub list: bool,
 
     /// Print only the labels of files that do NOT match
-    #[usage(short = 'L', long = "invert-list", conflicts("count", "list"))]
+    #[arg(short = 'L', long = "invert-list", conflicts("count", "list"))]
     pub list_invert: bool,
 
     /// Treat PATTERN (and -S) as a regular expression instead of a literal
     /// substring
-    #[usage(short = 'e', long = "regexp", short = 'x', long = "extended")]
+    #[arg(short = 'e', long = "regexp", short = 'x', long = "extended")]
     pub regexp: bool,
 
     /// Search installed packages' own ebuild copies (under
     /// --root/--prefix/--local) instead of the repo tree
-    #[usage(short = 'J', long = "installed")]
+    #[arg(short = 'J', long = "installed")]
     pub installed: bool,
 
     /// Search eclasses instead of ebuilds (targets are ignored)
-    #[usage(short = 'E', long = "eclass")]
+    #[arg(short = 'E', long = "eclass")]
     pub eclass: bool,
 
     /// Skip lines that are comments (first non-blank character is `#`)
-    #[usage(short = 's', long = "skip-comments")]
+    #[arg(short = 's', long = "skip-comments")]
     pub skip_comments: bool,
 
     /// Label matches with `cat/pkg-ver::repo` instead of a path; implies -N
-    #[usage(short = 'R', long = "show-repo")]
+    #[arg(short = 'R', long = "show-repo")]
     pub show_repo: bool,
 
     /// Also skip lines matching this pattern (same literal/regex/case mode
     /// as PATTERN)
-    #[usage(short = 'S', long = "skip", value_name = "PATTERN")]
+    #[arg(short = 'S', long = "skip", value_name = "PATTERN")]
     pub skip: Option<String>,
 
     /// Print N lines of context before each match
-    #[usage(short = 'B', long = "before", value_name = "N")]
+    #[arg(short = 'B', long = "before", value_name = "N")]
     pub before: Option<usize>,
 
     /// Print N lines of context after each match
-    #[usage(short = 'A', long = "after", value_name = "N")]
+    #[arg(short = 'A', long = "after", value_name = "N")]
     pub after: Option<usize>,
 
     /// Print bare matching lines with no label
-    #[usage(short = 'q', long = "no-filename")]
+    #[arg(short = 'q', long = "no-filename")]
     pub no_filename: bool,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub repo_arg: RepoArg,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub verbose_arg: VerboseArg,
 }
 
 /// `em search` — search package names and descriptions
-#[derive(usage::Args, Debug, Clone)]
-#[usage(effect = "read", example = "em search firefox")]
+#[derive(winnow_args::Args, Debug, Clone)]
+#[arg(effect = "read", example = "em search firefox")]
 pub struct SearchArgs {
     /// List all packages (no pattern required)
-    #[usage(short = 'a', long)]
+    #[arg(short = 'a', long)]
     pub all: bool,
     /// Search package descriptions instead of names
-    #[usage(short = 'S', long = "desc")]
+    #[arg(short = 'S', long = "desc")]
     pub desc: bool,
     /// Show only package name, no description
-    #[usage(short = 'N', long = "name-only")]
+    #[arg(short = 'N', long = "name-only")]
     pub name_only: bool,
     /// Show homepage instead of description
-    #[usage(short = 'H', long)]
+    #[arg(short = 'H', long)]
     pub homepage: bool,
     /// Pattern to search (required unless --all)
-    #[usage(required_unless = "all")]
+    #[arg(positional, required_unless = "all")]
     pub pattern: Option<String>,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub repo_arg: RepoArg,
 }
 
 /// `em atom` — parse/split atom strings
-#[derive(usage::Args, Debug, Clone)]
-#[usage(effect = "read", example = "em atom >=dev-lang/python-3.10")]
+#[derive(winnow_args::Args, Debug, Clone)]
+#[arg(effect = "read", example = "em atom >=dev-lang/python-3.10")]
 pub struct AtomArgs {
     /// Atom strings to parse and print back in normalized form
-    #[usage(required)]
+    #[arg(positional, required)]
     pub atoms: Vec<String>,
 }
 
 /// `em select` — native config selectors (profile, repos)
-#[derive(usage::Args, Debug, Clone)]
-#[usage(flatten_help)]
+#[derive(winnow_args::Args, Debug, Clone)]
+#[arg(flatten_help)]
 pub struct SelectArgs {
-    #[usage(subcommand)]
+    #[arg(subcommand)]
     pub command: SelectCommand,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub arch_arg: ArchArg,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub repo_arg: RepoArg,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub pretend_arg: PretendArg,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub vdb_arg: VdbArg,
 }
 
 /// `em active` — register a default `--prefix`/`--local` for bare invocations
-#[derive(usage::Args, Debug, Clone)]
-#[usage(
+#[derive(winnow_args::Args, Debug, Clone)]
+#[arg(
     example("em active set --local=", header = "Register ~/.gentoo"),
     example("em active --local= set", header = "Flags may precede set")
 )]
 pub struct ActiveArgs {
-    #[usage(subcommand)]
+    #[arg(subcommand)]
     pub command: Option<ActiveCommand>,
 
     /// No `--root` — active is for unprivileged prefix/local dogfooding
     /// only (see `resolve_set_target` in active.rs).
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: Topology,
 }
 
 /// `em etc` — reconcile pending config files
-#[derive(usage::Args, Debug, Clone)]
+#[derive(winnow_args::Args, Debug, Clone)]
 pub struct EtcArgs {
-    #[usage(subcommand)]
+    #[arg(subcommand)]
     pub command: Option<EtcCommand>,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub opts: EtcOpts,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub quiet_arg: QuietArg,
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub pretend_arg: PretendArg,
 }
 
 /// `em env` — regenerate `/etc/profile.env` and ld.so cache
-#[derive(usage::Args, Debug, Clone)]
+#[derive(winnow_args::Args, Debug, Clone)]
 pub struct EnvArgs {
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
 }
 
 /// `em completion` — print a shell completion script for `em`.
-#[derive(usage::Args, Debug, Clone)]
+#[derive(winnow_args::Args, Debug, Clone)]
 pub struct CompletionArgs {
     /// Shell to generate the script for
-    #[usage(
+    #[arg(
+        positional,
         value_name = "SHELL",
-        choices("bash", "zsh", "fish", "nu", "powershell", "elvish")
+        choices("bash", "zsh", "fish", "powershell", "elvish")
     )]
     pub shell: String,
 }
 
 /// `em setup` — bootstrap a prefix layout
-#[derive(usage::Args, Default, Debug, Clone)]
-#[usage(
+#[derive(winnow_args::Args, Default, Debug, Clone)]
+#[arg(
     effect = "write",
     example("em setup --local", header = "Bootstrap ~/.gentoo")
 )]
@@ -2925,38 +2877,38 @@ pub struct SetupArgs {
     /// Gentoo toolchain, which also hides a hand-installed GNU sed/grep from
     /// the very first merges. `em setup --local` finds the usual locations by
     /// itself; this is for anywhere else you keep them.
-    #[usage(long, value_name = "DIR")]
+    #[arg(from_str, long, value_name = "DIR")]
     pub extra_path: Vec<camino::Utf8PathBuf>,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub merge_flags: MergeFlags,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub depgraph_flags: DepgraphFlags,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub activity: ActivityArgs,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub verbose_arg: VerboseArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub quiet_arg: QuietArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub arch_arg: ArchArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub repo_arg: RepoArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub pretend_arg: PretendArg,
 
     /// Privilege backend for this setup run
-    #[usage(long, value_enum, default = "auto", help_heading = "Merge")]
+    #[arg(long, default = "auto", help_heading = "Merge")]
     pub privilege: Privilege,
 }
 
@@ -2966,31 +2918,31 @@ pub struct SetupArgs {
 /// `--root` is not accepted by `crossdev` — the cross toolchain always
 /// installs into `/usr/<tuple>` (or the target sysroot under `--target`);
 /// there is no separate destination to redirect.
-#[derive(usage::Args, Debug, Clone)]
+#[derive(winnow_args::Args, Debug, Clone)]
 pub struct CrossdevArgs {
     /// Use the LLVM/Clang model (`cross_llvm-*`: host clang cross-targets, no per-target
     /// compiler)
     ///
     /// Rejects glibc — use musl or a bare-metal target.
-    #[usage(short = 'L', long)]
+    #[arg(short = 'L', long)]
     pub llvm: bool,
 
     /// Lay down the overlay + sysroot config without building anything
-    #[usage(long)]
+    #[arg(long)]
     pub init_target: bool,
 
     /// Bootstrap the cross toolchain into the prefix (`/usr/<tuple>`): the full
     /// intertwined sequence (binutils → headers → gcc-stage1 → libc →
     /// gcc-stage2). Implies `--init-target`.
-    #[usage(long)]
+    #[arg(long)]
     pub setup: bool,
 
     /// Print the derived target configuration and exit (no writes)
-    #[usage(long)]
+    #[arg(long)]
     pub show_target_cfg: bool,
 
     /// Print the target's built-in sysroot spec as TOML and exit (no writes)
-    #[usage(long)]
+    #[arg(long)]
     pub print_spec: bool,
 
     /// Build an extra package onto the established cross target (may be given multiple times)
@@ -3000,45 +2952,45 @@ pub struct CrossdevArgs {
     ///
     /// Applies to `--init-target`/`--setup` only; named per invocation,
     /// like real crossdev — not remembered across a later run that omits it.
-    #[usage(long, value_name = "CATEGORY/PN")]
+    #[arg(long, value_name = "CATEGORY/PN")]
     pub ex_pkg: Vec<String>,
 
     /// Build a cross gdb (`dev-debug/gdb`) — shorthand for `--ex-pkg
     /// dev-debug/gdb`, crossdev's own `--ex-gdb`.
-    #[usage(long)]
+    #[arg(long)]
     pub ex_gdb: bool,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub merge_flags: MergeFlags,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub depgraph_flags: DepgraphFlags,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub activity: ActivityArgs,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub verbose_arg: VerboseArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub quiet_arg: QuietArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub arch_arg: ArchArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub repo_arg: RepoArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub pretend_arg: PretendArg,
 
     /// No `--root` — see `Topology`'s own doc for why this needs the bare
     /// (root-less) mixin instead of `RootedTopology`.
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: Topology,
 
     /// Privilege backend for this crossdev run
-    #[usage(long, value_enum, default = "auto", help_heading = "Merge")]
+    #[arg(long, default = "auto", help_heading = "Merge")]
     pub privilege: Privilege,
 }
 
@@ -3050,8 +3002,8 @@ pub struct CrossdevArgs {
 /// the compiler the `em stages` production (stage1 `packages.build`, stage3
 /// `--emptytree @system`) then builds against. Kept separate from the stages on
 /// purpose (catalyst/crossdev-stages do the same: toolchain, then the stages).
-#[derive(usage::Args, Debug, Clone)]
-#[usage(
+#[derive(winnow_args::Args, Debug, Clone)]
+#[arg(
     effect = "write",
     example(
         "em toolchain --prefix /p --setup",
@@ -3061,45 +3013,45 @@ pub struct CrossdevArgs {
 pub struct ToolchainArgs {
     /// Build and install the toolchain into `--root` (the only action for now;
     /// required, mirroring `crossdev --setup`).
-    #[usage(long)]
+    #[arg(long)]
     pub setup: bool,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub merge_flags: MergeFlags,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub depgraph_flags: DepgraphFlags,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub activity: ActivityArgs,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub verbose_arg: VerboseArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub quiet_arg: QuietArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub arch_arg: ArchArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub repo_arg: RepoArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub pretend_arg: PretendArg,
 
     /// Privilege backend for this toolchain run
-    #[usage(long, value_enum, default = "auto", help_heading = "Merge")]
+    #[arg(long, default = "auto", help_heading = "Merge")]
     pub privilege: Privilege,
 }
 
 // `em stages` — assemble stage-build artifacts (stage1/stage3/stage4) *using*
 // a toolchain already built by `em toolchain --setup`.
-#[derive(usage::Args, Debug, Clone)]
-#[usage(
+#[derive(winnow_args::Args, Debug, Clone)]
+#[arg(
     effect = "write",
     example(
         "em stages --root /var/tmp/stage1 --stage1",
@@ -3111,7 +3063,7 @@ pub struct StagesArgs {
     /// baselayout (USE=build, --nodeps) then the minimal stage1 package list
     /// (USE="-* build"), mirroring catalyst's `stage1/chroot.sh`. Requires a
     /// working toolchain already in the root (`em toolchain --setup`).
-    #[usage(long)]
+    #[arg(long)]
     pub stage1: bool,
 
     /// Emptytree rebuild of `@system` into `--root` (catalyst `stage3/chroot.sh`:
@@ -3119,38 +3071,38 @@ pub struct StagesArgs {
     /// --with-bdeps` on top of other merge flags; seeds PKGDIR with `-b` like
     /// stage1. No stage2 (crossdev model). Requires a usable root (typically
     /// after `--stage1` or an unpacked seed).
-    #[usage(long)]
+    #[arg(long)]
     pub stage3: bool,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub merge_flags: MergeFlags,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub depgraph_flags: DepgraphFlags,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub activity: ActivityArgs,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub verbose_arg: VerboseArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub quiet_arg: QuietArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub arch_arg: ArchArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub repo_arg: RepoArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub pretend_arg: PretendArg,
 
     /// Privilege backend for this stages run
-    #[usage(long, value_enum, default = "auto", help_heading = "Merge")]
+    #[arg(long, default = "auto", help_heading = "Merge")]
     pub privilege: Privilege,
 }
 
@@ -3158,8 +3110,8 @@ pub struct StagesArgs {
 ///
 /// The explicit, self-contained form of the bare `em <atoms>` path — see
 /// [`Applet::Emerge`]'s doc comment.
-#[derive(usage::Args, Debug, Clone, Default)]
-#[usage(
+#[derive(winnow_args::Args, Debug, Clone, Default)]
+#[arg(
     effect = "write",
     example = "em emerge firefox",
     output(
@@ -3169,103 +3121,104 @@ pub struct StagesArgs {
     )
 )]
 pub struct EmergeArgs {
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub mode: EmergeModeArgs,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub merge_flags: MergeFlags,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub depgraph_flags: DepgraphFlags,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub topology: RootedTopology,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub activity: ActivityArgs,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub verbose_arg: VerboseArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub quiet_arg: QuietArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub arch_arg: ArchArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub repo_arg: RepoArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub pretend_arg: PretendArg,
 
-    #[usage(flatten)]
+    #[arg(flatten)]
     pub vdb_arg: VdbArg,
 
     /// Privilege backend for this merge
-    #[usage(long, value_enum, default = "auto", help_heading = "Merge")]
+    #[arg(long, default = "auto", help_heading = "Merge")]
     pub privilege: Privilege,
 
     /// Atoms, package sets (`@world`), or ebuild paths to act on
-    #[usage(value_name = "ATOM")]
+    #[arg(positional, value_name = "ATOM")]
     pub atoms: Vec<String>,
 }
 
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 pub enum MaintCommand {
-    #[usage(help = "Generate binary package metadata index")]
+    #[arg(help = "Generate binary package metadata index")]
     Binhost,
-    #[usage(help = "Inspect/verify/prune local binary packages (em-only, no emaint equivalent)")]
+    #[arg(help = "Inspect/verify/prune local binary packages (em-only, no emaint equivalent)")]
     Binpkg {
-        #[usage(subcommand)]
+        #[arg(subcommand)]
         action: BinpkgAction,
     },
-    #[usage(help = "No-op: em keeps no config-memory file to go stale")]
+    #[arg(help = "No-op: em keeps no config-memory file to go stale")]
     Cleanconfmem,
-    #[usage(help = "Discard saved resume lists")]
+    #[arg(help = "Discard saved resume lists")]
     Cleanresume {
         /// Actually delete the saved resume/resume-backup lists (default:
         /// just report what's there).
-        #[usage(short, long)]
+        #[arg(short, long)]
         fix: bool,
     },
-    #[usage(help = "Prune the build.log files finished merges leave in the build tree")]
+    #[arg(help = "Prune the build.log files finished merges leave in the build tree")]
     Logs {
         /// Remove them; without this the logs are only listed
-        #[usage(long)]
+        #[arg(long)]
         fix: bool,
         /// Only consider logs at least this old (e.g. `30d`, `2weeks`)
-        #[usage(short = 't', long, value_name = "AGE")]
+        #[arg(short = 't', long, value_name = "AGE")]
         older_than: Option<String>,
     },
-    #[usage(help = "Unavailable: em keeps no failed-merge registry")]
+    #[arg(help = "Unavailable: em keeps no failed-merge registry")]
     Merges,
-    #[usage(help = "Apply package moves to binary packages")]
+    #[arg(help = "Apply package moves to binary packages")]
     Movebin,
-    #[usage(help = "Apply package moves to installed packages")]
+    #[arg(help = "Apply package moves to installed packages")]
     Moveinst,
-    #[usage(help = "Regenerate profiles/use.local.desc from metadata.xml")]
+    #[arg(help = "Regenerate profiles/use.local.desc from metadata.xml")]
     RegenUse {
         /// Write output here instead of profiles/use.local.desc ('-' for stdout)
-        #[usage(short, long, value_name = "PATH")]
+        #[arg(short, long, value_name = "PATH")]
         output: Option<String>,
     },
-    #[usage(help = "Purge repo revision history from repo_revisions")]
+    #[arg(help = "Purge repo revision history from repo_revisions")]
     Revisions {
         /// Purge only these repos (default: all)
-        #[usage(value_name = "REPO")]
+        #[arg(positional, value_name = "REPO")]
         repos: Vec<String>,
     },
     /// Same as `em sync` — shared implementation
-    #[usage(help = "Sync repositories (git, rsync)")]
+    #[arg(help = "Sync repositories (git, rsync)")]
     Sync {
         /// Repo names from repos.conf (default: auto-sync enabled repos)
+        #[arg(positional)]
         repos: Vec<String>,
     },
-    #[usage(help = "Check (and optionally fix) problems in the world file")]
+    #[arg(help = "Check (and optionally fix) problems in the world file")]
     World {
         /// Remove orphaned entries from the world file
-        #[usage(short, long)]
+        #[arg(short, long)]
         fix: bool,
     },
 }
@@ -3276,238 +3229,247 @@ pub enum MaintCommand {
 // rationale stays a plain comment: there is no real-portage `emaint` module
 // for this (only `emaint binhost`, which just regenerates the index) — it is
 // an em-only extension, built on the `Packages` index/reader substrate.
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 pub enum BinpkgAction {
-    #[usage(help = "Check each indexed binpkg's size/MD5/SHA1 against the file on disk")]
+    #[arg(help = "Check each indexed binpkg's size/MD5/SHA1 against the file on disk")]
     Verify {
         /// Quarantine corrupt containers (rename to `.corrupt`) and drop
         /// missing/corrupt entries from the index by regenerating it.
-        #[usage(long)]
+        #[arg(long)]
         fix: bool,
         /// Reject a container with no OpenPGP signature at all (matches
         /// FEATURES=binpkg-request-signature); with a verify keyring
         /// present (`em maint binpkg gpg-import`), signatures are always
         /// cryptographically checked regardless of this flag.
-        #[usage(long)]
+        #[arg(long)]
         require_signature: bool,
     },
-    #[usage(help = "List indexed binary packages (cpv, build-id, size, path)")]
+    #[arg(help = "List indexed binary packages (cpv, build-id, size, path)")]
     List,
-    #[usage(help = "Keep only the newest BUILD_ID per package, deleting older ones")]
+    #[arg(help = "Keep only the newest BUILD_ID per package, deleting older ones")]
     Prune {
         /// Report what would be deleted without deleting or reindexing
-        #[usage(long)]
+        #[arg(long)]
         dry_run: bool,
     },
-    #[usage(help = "Print the build-env key for the current roots' make.conf flags")]
+    #[arg(help = "Print the build-env key for the current roots' make.conf flags")]
     Fingerprint {
         /// Print the full key (space-joined sokgi hashes) instead of the
         /// short path-safe slug.
-        #[usage(long)]
+        #[arg(long)]
         full: bool,
         /// Fingerprint the host (BROOT) config instead of the target roots
         /// (only differs under --target).
-        #[usage(long)]
+        #[arg(long)]
         host: bool,
     },
-    #[usage(help = "Import an armored OpenPGP public key into the GPG verify keyring")]
+    #[arg(help = "Import an armored OpenPGP public key into the GPG verify keyring")]
     GpgImport {
         /// Path to an armored public-key file (e.g. exported via
         /// `gpg --armor --export <key-id>`).
+        #[arg(from_str, positional)]
         keyfile: camino::Utf8PathBuf,
     },
 }
 
 /// `em select <module>` — native, eselect-like config selectors
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 pub enum SelectCommand {
-    #[usage(help = "Select the system/sysroot profile (cross-aware)")]
+    #[arg(help = "Select the system/sysroot profile (cross-aware)")]
     Profile {
-        #[usage(subcommand)]
+        #[arg(subcommand)]
         action: ProfileAction,
     },
-    #[usage(alias = "repos", help = "Manage local repositories (overlays)")]
+    #[arg(alias = "repos", help = "Manage local repositories (overlays)")]
     Repository {
-        #[usage(subcommand)]
+        #[arg(subcommand)]
         action: RepositoryAction,
     },
-    #[usage(
+    #[arg(
         alias = "gcc",
         help = "Select the active compiler profile (gcc-config/eselect gcc workalike)"
     )]
     Compiler {
-        #[usage(subcommand)]
+        #[arg(subcommand)]
         action: CompilerAction,
     },
-    #[usage(
-        help = "Select the active binutils profile (binutils-config/eselect binutils workalike)"
-    )]
+    #[arg(help = "Select the active binutils profile (binutils-config/eselect binutils workalike)")]
     Binutils {
-        #[usage(subcommand)]
+        #[arg(subcommand)]
         action: BinutilsAction,
     },
-    #[usage(help = "Select the active linker profile")]
+    #[arg(help = "Select the active linker profile")]
     Linker {
-        #[usage(subcommand)]
+        #[arg(subcommand)]
         action: LinkerAction,
     },
-    #[usage(help = "Select the active LLVM/clang slot")]
+    #[arg(help = "Select the active LLVM/clang slot")]
     Clang {
-        #[usage(subcommand)]
+        #[arg(subcommand)]
         action: ClangAction,
     },
-    #[usage(help = "Select the pkg-config backend and create the <CTARGET>-pkg-config wrapper")]
+    #[arg(help = "Select the pkg-config backend and create the <CTARGET>-pkg-config wrapper")]
     Pkgconf {
-        #[usage(subcommand)]
+        #[arg(subcommand)]
         action: PkgconfAction,
     },
-    #[usage(
+    #[arg(
         alias = "mirror",
         help = "Manage Gentoo distfile mirrors (mirrorselect workalike)"
     )]
     Mirrors {
-        #[usage(subcommand)]
+        #[arg(subcommand)]
         action: MirrorAction,
     },
-    #[usage(help = "Read/manage GLEP 42 news items (eselect news workalike)")]
+    #[arg(help = "Read/manage GLEP 42 news items (eselect news workalike)")]
     News {
-        #[usage(subcommand)]
+        #[arg(subcommand)]
         command: Option<NewsCommand>,
     },
-    #[usage(help = "Check/fix Gentoo Linux Security Advisories (glsa-check workalike)")]
+    #[arg(help = "Check/fix Gentoo Linux Security Advisories (glsa-check workalike)")]
     Glsa {
-        #[usage(subcommand)]
+        #[arg(subcommand)]
         command: Option<GlsaCommand>,
     },
 }
 
 /// `em select profile <action>`
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 pub enum ProfileAction {
-    #[usage(help = "List available profiles (marks the current one)")]
+    #[arg(help = "List available profiles (marks the current one)")]
     List,
-    #[usage(help = "Show the current profile")]
+    #[arg(help = "Show the current profile")]
     Show,
-    #[usage(help = "Set the profile by list number or path (cross-aware: no arch check)")]
+    #[arg(help = "Set the profile by list number or path (cross-aware: no arch check)")]
     Set {
         /// Profile list number (from `list`) or path (e.g. `default/linux/riscv/23.0/rv64/lp64d`)
+        #[arg(positional)]
         target: String,
     },
 }
 
 /// `em select repository <action>` — local repos only (remote sync is a TODO)
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 pub enum RepositoryAction {
-    #[usage(help = "List configured repositories")]
+    #[arg(help = "List configured repositories")]
     List,
-    #[usage(help = "Register an existing local repository")]
+    #[arg(help = "Register an existing local repository")]
     Add {
         /// Repository name
+        #[arg(positional)]
         name: String,
         /// Existing local path to the repository
+        #[arg(positional)]
         location: String,
     },
-    #[usage(alias = "rm", help = "Remove a repository's repos.conf entry")]
+    #[arg(alias = "rm", help = "Remove a repository's repos.conf entry")]
     Remove {
         /// Repository name
+        #[arg(positional)]
         name: String,
     },
-    #[usage(help = "Create a new local overlay (skeleton + repos.conf entry)")]
+    #[arg(help = "Create a new local overlay (skeleton + repos.conf entry)")]
     Create {
         /// Repository name
+        #[arg(positional)]
         name: String,
         /// Location (default: `<config-root>/var/db/repos/<name>`)
+        #[arg(positional)]
         location: Option<String>,
     },
 }
 
 /// `em select compiler <action>` — gcc-config workalike
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 pub enum CompilerAction {
-    #[usage(help = "List available compiler profiles")]
+    #[arg(help = "List available compiler profiles")]
     List {
         /// Target tuple (CTARGET) to list profiles for
-        #[usage(short, long)]
+        #[arg(short, long)]
         target: Option<String>,
     },
-    #[usage(help = "Show the current compiler profile")]
+    #[arg(help = "Show the current compiler profile")]
     Show {
         /// Target tuple (CTARGET) to show profile for
-        #[usage(short, long)]
+        #[arg(short, long)]
         target: Option<String>,
     },
-    #[usage(help = "Set the active compiler profile")]
+    #[arg(help = "Set the active compiler profile")]
     Set {
         /// Compiler profile to activate (e.g., `riscv64-unknown-linux-gnu-16` or `1` for list number)
+        #[arg(positional)]
         profile: String,
         /// Target tuple (CTARGET) for cross-compiler selection
-        #[usage(short, long)]
+        #[arg(short, long)]
         target: Option<String>,
     },
 }
 
 /// `em select binutils <action>` — binutils-config workalike
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 pub enum BinutilsAction {
-    #[usage(help = "List available binutils profiles")]
+    #[arg(help = "List available binutils profiles")]
     List {
         /// Target tuple (CTARGET) to list profiles for
-        #[usage(short, long)]
+        #[arg(short, long)]
         target: Option<String>,
     },
-    #[usage(help = "Show the current binutils profile")]
+    #[arg(help = "Show the current binutils profile")]
     Show {
         /// Target tuple (CTARGET) to show profile for
-        #[usage(short, long)]
+        #[arg(short, long)]
         target: Option<String>,
     },
-    #[usage(help = "Set the active binutils profile")]
+    #[arg(help = "Set the active binutils profile")]
     Set {
         /// Binutils profile to activate (e.g., `riscv64-unknown-linux-gnu-2.46.0` or `1` for list number)
+        #[arg(positional)]
         profile: String,
         /// Target tuple (CTARGET) for cross-binutils selection
-        #[usage(short, long)]
+        #[arg(short, long)]
         target: Option<String>,
     },
 }
 
 /// `em select linker <action>` — linker profile selection
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 pub enum LinkerAction {
-    #[usage(help = "List available linker profiles")]
+    #[arg(help = "List available linker profiles")]
     List {
         /// Target tuple (CTARGET) to list profiles for
-        #[usage(short, long)]
+        #[arg(short, long)]
         target: Option<String>,
     },
-    #[usage(help = "Show the current linker profile")]
+    #[arg(help = "Show the current linker profile")]
     Show {
         /// Target tuple (CTARGET) to show profile for
-        #[usage(short, long)]
+        #[arg(short, long)]
         target: Option<String>,
     },
-    #[usage(help = "Set the active linker profile")]
+    #[arg(help = "Set the active linker profile")]
     Set {
         /// Linker profile to activate (e.g., `riscv64-unknown-linux-gnu-lld-18` or `1` for list number)
+        #[arg(positional)]
         profile: String,
         /// Target tuple (CTARGET) for cross-linker selection
-        #[usage(short, long)]
+        #[arg(short, long)]
         target: Option<String>,
     },
 }
 
 /// `em select clang <action>` — LLVM/clang slot selection
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 pub enum ClangAction {
-    #[usage(help = "List available LLVM/clang slots")]
+    #[arg(help = "List available LLVM/clang slots")]
     List,
-    #[usage(help = "Show the current LLVM/clang slot")]
+    #[arg(help = "Show the current LLVM/clang slot")]
     Show,
-    #[usage(help = "Set the active LLVM/clang slot")]
+    #[arg(help = "Set the active LLVM/clang slot")]
     Set {
         /// LLVM slot to activate: a slot (`22`), a slot qualified by where it
         /// lives (`22@host`, `22@prefix`), or a `list` number. A bare slot present
         /// in both resolves to the prefix's..
+        #[arg(positional)]
         slot: String,
     },
 }
@@ -3516,40 +3478,41 @@ pub enum ClangAction {
 /// and creates the `<CTARGET>-pkg-config` wrapper real crossdev provides but
 /// `em` otherwise never builds (`toolchain-funcs.eclass`'s `tc-getPKG_CONFIG`
 /// searches `$PATH` for exactly this name).
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 pub enum PkgconfAction {
-    #[usage(help = "List available pkg-config backends (pkgconf, pkg-config)")]
+    #[arg(help = "List available pkg-config backends (pkgconf, pkg-config)")]
     List {
         /// Target tuple (CTARGET) to show the wrapper for
-        #[usage(short, long)]
+        #[arg(short, long)]
         target: Option<String>,
     },
-    #[usage(help = "Show the backend the <target>-pkg-config wrapper currently points at")]
+    #[arg(help = "Show the backend the <target>-pkg-config wrapper currently points at")]
     Show {
         /// Target tuple (CTARGET) to show the wrapper for
-        #[usage(short, long)]
+        #[arg(short, long)]
         target: Option<String>,
     },
-    #[usage(help = "Create/update the <target>-pkg-config wrapper")]
+    #[arg(help = "Create/update the <target>-pkg-config wrapper")]
     Set {
         /// Backend to wrap (`pkgconf`, `pkg-config`, or a list number from `list`)
+        #[arg(positional)]
         backend: String,
         /// Target tuple (CTARGET) to create the wrapper for
-        #[usage(short, long)]
+        #[arg(short, long)]
         target: Option<String>,
     },
 }
 
 /// `em select mirrors <action>` — mirrorselect workalike for `GENTOO_MIRRORS`
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 pub enum MirrorAction {
     /// List available Gentoo distfile mirrors (marks those already selected)
     List {
         /// Keep only mirrors in this ISO country code (e.g. `US`, `DE`)
-        #[usage(short, long)]
+        #[arg(short, long)]
         country: Option<String>,
         /// Keep only mirrors in this region (e.g. `Europe`, `North America`)
-        #[usage(short, long)]
+        #[arg(short, long)]
         region: Option<String>,
     },
     /// Show the currently configured `GENTOO_MIRRORS` value
@@ -3559,34 +3522,35 @@ pub enum MirrorAction {
         /// Explicit mirror URLs to use
         ///
         /// If omitted, mirrors are picked from `--country`/`--region` instead.
-        #[usage(value_name = "URL")]
+        #[arg(positional, value_name = "URL")]
         urls: Vec<String>,
         /// Use every mirror in this ISO country code
-        #[usage(short, long)]
+        #[arg(short, long)]
         country: Option<String>,
         /// Use every mirror in this region
-        #[usage(short, long)]
+        #[arg(short, long)]
         region: Option<String>,
     },
 }
 
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 pub enum PkgCommand {
-    #[usage(help = "Edit per-package USE flags in package.use")]
+    #[arg(help = "Edit per-package USE flags in package.use")]
     Use {
         /// Package atom (e.g. sys-boot/grub or >=dev-libs/foo-1.0)
+        #[arg(positional)]
         atom: String,
         /// Add flags (written verbatim, e.g. truetype) — euse calls this
         /// --enable/-E
-        #[usage(short = 'E', short = 'a', long = "add", value_name = "FLAG")]
+        #[arg(short = 'E', short = 'a', long = "add", value_name = "FLAG")]
         add: Vec<String>,
         /// Subtract flags (written with leading '-', e.g. -themes) — euse
         /// calls this --disable/-D
-        #[usage(short = 'D', short = 's', long = "subtract", value_name = "FLAG")]
+        #[arg(short = 'D', short = 's', long = "subtract", value_name = "FLAG")]
         subtract: Vec<String>,
         /// Drop flags entirely (removes both flag and -flag forms) — euse
         /// calls this --remove/-R or --prune/-P
-        #[usage(
+        #[arg(
             short = 'R',
             short = 'P',
             short = 'd',
@@ -3595,12 +3559,12 @@ pub enum PkgCommand {
         )]
         drop: Vec<String>,
         /// Preview the resulting entry without writing package.use
-        #[usage(short = 'n', long = "dry-run")]
+        #[arg(short = 'n', long = "dry-run")]
         dry_run: bool,
         /// Show descriptions for the given USE flags on this package
         /// (metadata.xml/use.local.desc first, falling back to the global
         /// profiles/use.desc)
-        #[usage(
+        #[arg(
             short = 'i',
             long = "info",
             value_name = "FLAG",
@@ -3608,239 +3572,246 @@ pub enum PkgCommand {
         )]
         info: Vec<String>,
         /// Target file inside package.use/ (default: `<cat>-<pkg>`)
-        #[usage(long, value_name = "FILE")]
+        #[arg(from_str, long, value_name = "FILE")]
         path: Option<camino::Utf8PathBuf>,
     },
-    #[usage(help = "Edit per-package keywords in package.accept_keywords")]
+    #[arg(help = "Edit per-package keywords in package.accept_keywords")]
     Keyword {
         /// Package atom (e.g. sys-boot/grub or >=dev-libs/foo-1.0)
+        #[arg(positional)]
         atom: String,
         /// Add keyword tokens (e.g. `~amd64`, `-*`)
-        #[usage(short = 'a', long = "add", value_name = "KW")]
+        #[arg(short = 'a', long = "add", value_name = "KW")]
         add: Vec<String>,
         /// Subtract keyword tokens (written with leading '-', e.g. `-~amd64`)
-        #[usage(short = 's', long = "subtract", value_name = "KW")]
+        #[arg(short = 's', long = "subtract", value_name = "KW")]
         subtract: Vec<String>,
         /// Drop keyword tokens entirely (removes both the token and its negated form)
-        #[usage(short = 'd', long = "drop", value_name = "KW")]
+        #[arg(short = 'd', long = "drop", value_name = "KW")]
         drop: Vec<String>,
         /// Target file inside package.accept_keywords/ (default: `<cat>-<pkg>`)
-        #[usage(long, value_name = "FILE")]
+        #[arg(from_str, long, value_name = "FILE")]
         path: Option<camino::Utf8PathBuf>,
     },
-    #[usage(help = "Add/remove a package from package.mask")]
+    #[arg(help = "Add/remove a package from package.mask")]
     Mask {
         /// Package atom (e.g. sys-boot/grub or >=dev-libs/foo-1.0)
+        #[arg(positional)]
         atom: String,
         /// Add the atom to package.mask
-        #[usage(short = 'a', long = "add")]
+        #[arg(short = 'a', long = "add")]
         add: bool,
         /// Remove the atom from package.mask
-        #[usage(short = 'd', long = "drop")]
+        #[arg(short = 'd', long = "drop")]
         drop: bool,
         /// Target file inside package.mask/ (default: `<cat>-<pkg>`)
-        #[usage(long, value_name = "FILE")]
+        #[arg(from_str, long, value_name = "FILE")]
         path: Option<camino::Utf8PathBuf>,
     },
-    #[usage(help = "Edit per-package env files in package.env")]
+    #[arg(help = "Edit per-package env files in package.env")]
     Env {
         /// Package atom (e.g. sys-boot/grub or >=dev-libs/foo-1.0)
+        #[arg(positional)]
         atom: String,
         /// Add env file name(s) (from `/etc/portage/env/`) to apply to this package
-        #[usage(short = 'a', long = "add", value_name = "ENVFILE")]
+        #[arg(short = 'a', long = "add", value_name = "ENVFILE")]
         add: Vec<String>,
         /// Drop env file name(s) from this package's entry
-        #[usage(short = 'd', long = "drop", value_name = "ENVFILE")]
+        #[arg(short = 'd', long = "drop", value_name = "ENVFILE")]
         drop: Vec<String>,
         /// Target file inside package.env/ (default: `<cat>-<pkg>`)
-        #[usage(long, value_name = "FILE")]
+        #[arg(from_str, long, value_name = "FILE")]
         path: Option<camino::Utf8PathBuf>,
     },
 }
 
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 pub enum QueryCommand {
-    #[usage(help = "Find which package owns a file", alias_hidden = "b")]
+    #[arg(help = "Find which package owns a file", alias_hidden = "b")]
     Belongs {
         /// File path(s) to look up in the VDB contents records
-        #[usage(required)]
+        #[arg(positional, required)]
         file: Vec<String>,
     },
-    #[usage(help = "Verify checksums of installed package", alias_hidden = "k")]
+    #[arg(help = "Verify checksums of installed package", alias_hidden = "k")]
     Check {
         /// Installed package atom(s) to verify
-        #[usage(required)]
+        #[arg(positional, required)]
         atom: Vec<String>,
-        #[usage(flatten)]
+        #[arg(flatten)]
         format_arg: FormatArg,
     },
-    #[usage(help = "List packages depending on an atom", alias_hidden = "d")]
+    #[arg(help = "List packages depending on an atom", alias_hidden = "d")]
     Depends {
         /// Atom(s) whose dependents to list
-        #[usage(required)]
+        #[arg(positional, required)]
         atom: Vec<String>,
     },
-    #[usage(
+    #[arg(
         help = "Display full dependency tree",
         alias_hidden = "g",
         example = "em query depgraph zlib"
     )]
     Depgraph {
         /// Atom(s) to resolve and display the dependency tree for
-        #[usage(required)]
+        #[arg(positional, required)]
         atom: Vec<String>,
-        #[usage(flatten)]
+        #[arg(flatten)]
         format_arg: DepgraphFormatArg,
         /// Let the solver choose USE flags to satisfy REQUIRED_USE (Level C)
-        #[usage(long)]
+        #[arg(long)]
         autosolve_use: bool,
-        #[usage(flatten)]
+        #[arg(flatten)]
         depgraph_flags: DepgraphFlags,
         /// Treat every atom as not-yet-installed (emerge's `-e`/`--emptytree`)
-        #[usage(short = 'e', long)]
+        #[arg(short = 'e', long)]
         emptytree: bool,
         /// Only show dependencies, excluding the given atoms themselves from the tree
-        #[usage(short = 'o', long)]
+        #[arg(short = 'o', long)]
         onlydeps: bool,
         /// Include build-time dependencies (BDEPEND) in the resolution
-        #[usage(long)]
+        #[arg(long)]
         with_bdeps: bool,
         /// emerge's `--root-deps[=rdeps]`: only require RDEPEND (not DEPEND)
         /// to be satisfiable in the merge target.
-        #[usage(long = "root-deps")]
+        #[arg(long = "root-deps")]
         root_deps: bool,
     },
-    #[usage(help = "List files installed by a package", alias_hidden = "f")]
+    #[arg(help = "List files installed by a package", alias_hidden = "f")]
     Files {
         /// Atom(s) whose installed file list to show
-        #[usage(required)]
+        #[arg(positional, required)]
         atom: Vec<String>,
     },
-    #[usage(
+    #[arg(
         help = "List installed packages by a VDB field value",
         alias_hidden = "a"
     )]
     Has {
         /// VDB field to match, e.g. `SLOT`, `USE`, `repository`
+        #[arg(positional)]
         field: String,
         /// Value the field must contain; omit to list every package whose
         /// field is set at all
+        #[arg(positional)]
         value: Option<String>,
     },
-    #[usage(
+    #[arg(
         help = "List packages with a given USE flag in IUSE",
         alias_hidden = "h"
     )]
     Hasuse {
         /// USE flag name(s) to search for in IUSE
-        #[usage(required)]
+        #[arg(positional, required)]
         flag: Vec<String>,
     },
-    #[usage(
+    #[arg(
         help = "Display keyword status across architectures",
         alias_hidden = "y"
     )]
     Keywords {
         /// Atom(s) to show keyword status for
-        #[usage(required)]
+        #[arg(positional, required)]
         atom: Vec<String>,
-        #[usage(flatten)]
+        #[arg(flatten)]
         format_arg: FormatArg,
     },
-    #[usage(help = "List installed/available packages matching a pattern")]
+    #[arg(help = "List installed/available packages matching a pattern")]
     List {
         /// List only installed packages (from VDB), not available ones
-        #[usage(short = 'I', long = "installed")]
+        #[arg(short = 'I', long = "installed")]
         installed: bool,
         /// Glob or substring pattern(s); omit to list all packages
+        #[arg(positional)]
         pattern: Vec<String>,
     },
-    #[usage(
+    #[arg(
         help = "Display package metadata (maintainer, homepage, etc.)",
         alias_hidden = "m"
     )]
     Meta {
         /// Atom(s) whose metadata to display
-        #[usage(required)]
+        #[arg(positional, required)]
         atom: Vec<String>,
-        #[usage(flatten)]
+        #[arg(flatten)]
         format_arg: FormatArg,
     },
-    #[usage(help = "Display total file size of a package", alias_hidden = "s")]
+    #[arg(help = "Display total file size of a package", alias_hidden = "s")]
     Size {
         /// Atom(s) whose installed file size to sum
-        #[usage(required)]
+        #[arg(positional, required)]
         atom: Vec<String>,
     },
-    #[usage(help = "Display USE flags for a package", alias_hidden = "u")]
+    #[arg(help = "Display USE flags for a package", alias_hidden = "u")]
     Uses {
         /// Atom(s) whose USE flags to display
-        #[usage(required)]
+        #[arg(positional, required)]
         atom: Vec<String>,
     },
-    #[usage(
+    #[arg(
         help = "Print full path to the ebuild for a package",
         alias_hidden = "w"
     )]
     Which {
         /// Atom(s) to resolve to an ebuild path
-        #[usage(required)]
+        #[arg(positional, required)]
         atom: Vec<String>,
     },
 }
 
 /// `em etc <command>`
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 pub enum EtcCommand {
-    #[usage(help = "Show what each pending file would change")]
+    #[arg(help = "Show what each pending file would change")]
     Diff {
         /// Only files whose path contains this text
+        #[arg(positional)]
         path: Option<String>,
     },
-    #[usage(help = "Resolve each pending file interactively")]
+    #[arg(help = "Resolve each pending file interactively")]
     Merge,
 }
 
 /// Batch resolutions for `em etc`
 ///
 /// Mutually exclusive with each other; without any of them `em etc` lists.
-#[derive(usage::Args, Clone, Debug, Default)]
+#[derive(winnow_args::Args, Clone, Debug, Default)]
 pub struct EtcOpts {
     /// Install every pending file over its target
-    #[usage(long, conflicts("use_old", "auto"))]
+    #[arg(long, conflicts("use_old", "auto"))]
     pub use_new: bool,
     /// Discard every pending file, keeping what is installed
-    #[usage(long, conflicts("use_new", "auto"))]
+    #[arg(long, conflicts("use_new", "auto"))]
     pub use_old: bool,
     /// Resolve only what needs no decision: identical files, and those
     /// differing from the installed one in comments or whitespace alone
-    #[usage(long, conflicts("use_new", "use_old"))]
+    #[arg(long, conflicts("use_new", "use_old"))]
     pub auto: bool,
 }
 
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 pub enum CleanTarget {
-    #[usage(
+    #[arg(
         help = "Remove distfiles no ebuild references",
         alias_hidden = "distfiles",
         alias_hidden = "d"
     )]
     Dist {
-        #[usage(flatten)]
+        #[arg(flatten)]
         opts: CleanOpts,
     },
-    #[usage(
+    #[arg(
         help = "Remove binary packages no ebuild references",
         alias_hidden = "packages",
         alias_hidden = "p"
     )]
     Pkg {
-        #[usage(flatten)]
+        #[arg(flatten)]
         opts: CleanOpts,
     },
-    #[usage(help = "Everything above, plus the build logs finished merges leave behind")]
+    #[arg(help = "Everything above, plus the build logs finished merges leave behind")]
     All {
-        #[usage(flatten)]
+        #[arg(flatten)]
         opts: CleanOpts,
     },
 }
@@ -3850,51 +3821,54 @@ pub enum CleanTarget {
 /// Deliberately narrower than `eclean`'s: the destructive/interactive modes it
 /// grew are covered here by the global `-p` plus `--deep`, and everything else
 /// it offers is a filter on the same candidate set.
-#[derive(usage::Args, Clone, Debug, Default)]
+#[derive(winnow_args::Args, Clone, Debug, Default)]
 pub struct CleanOpts {
     /// Keep only what installed packages still reference, rather than
     /// everything any ebuild in the tree references
-    #[usage(short = 'd', long)]
+    #[arg(short = 'd', long)]
     pub deep: bool,
     /// Skip files smaller than this (e.g. `10M`, `1G`) — clears the big wins
     /// without touching a long tail of small files
-    #[usage(short = 's', long, value_name = "SIZE")]
+    #[arg(short = 's', long, value_name = "SIZE")]
     pub size_limit: Option<String>,
     /// Keep files modified more recently than this (e.g. `2weeks`, `30d`)
-    #[usage(short = 't', long, value_name = "AGE")]
+    #[arg(short = 't', long, value_name = "AGE")]
     pub time_limit: Option<String>,
 }
 
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 pub enum NewsCommand {
-    #[usage(help = "Count unread news items")]
+    #[arg(help = "Count unread news items")]
     Count,
-    #[usage(help = "List news items")]
+    #[arg(help = "List news items")]
     List,
-    #[usage(
+    #[arg(
         help = "Read news items (numbers/names from `list`; \"new\"/\"all\", or none for all unread)"
     )]
     Read {
         /// Item numbers/names from `list`, the single keyword "new" (every
         /// unread item) or "all" (every item), or omit for "new".
+        #[arg(positional)]
         ids: Vec<String>,
     },
-    #[usage(help = "Purge read news items")]
+    #[arg(help = "Purge read news items")]
     Purge,
 }
 
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 pub enum GlsaCommand {
-    #[usage(help = "List all GLSAs")]
+    #[arg(help = "List all GLSAs")]
     List,
-    #[usage(help = "Check for affected GLSAs")]
+    #[arg(help = "Check for affected GLSAs")]
     Check {
         /// GLSA id(s) to check (default: every GLSA in the repo)
+        #[arg(positional)]
         ids: Vec<String>,
     },
-    #[usage(help = "Apply a GLSA fix")]
+    #[arg(help = "Apply a GLSA fix")]
     Fix {
         /// GLSA id(s) to fix (default: every affected GLSA)
+        #[arg(positional)]
         ids: Vec<String>,
     },
 }
@@ -3906,10 +3880,10 @@ pub enum GlsaCommand {
 /// collide with the globals.
 ///
 /// Entries can be referenced by name, index (0-based), or exact path.
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 pub enum ActiveCommand {
     /// Show the registered active context (default when no subcommand)
-    #[usage(help = "Show the registered active prefix/local")]
+    #[arg(help = "Show the registered active prefix/local")]
     Show,
     /// Register the invocation's `--prefix` or `--local` as the active context
     ///
@@ -3923,28 +3897,28 @@ pub enum ActiveCommand {
     ///   `em active set my-name`     # by name
     ///   `em active set 0`           # by index
     ///   `em active set /path/to/dir` # by exact path
-    #[usage(help = "Register --prefix/--local as active or activate an existing entry")]
+    #[arg(help = "Register --prefix/--local as active or activate an existing entry")]
     Set {
         /// Reference to an existing entry (name, index, or path) to activate
         ///
         /// If not provided, creates a new entry from --prefix/--local flags.
-        #[usage(value_name = "REF")]
+        #[arg(positional, value_name = "REF")]
         reference: Option<String>,
     },
     /// Clear the registered active context
     ///
     /// Use `--all` to remove all entries, not just the active pointer.
-    #[usage(help = "Clear the active context (or all entries with --all)")]
+    #[arg(help = "Clear the active context (or all entries with --all)")]
     Clear {
         /// Clear all entries, not just the active pointer
-        #[usage(long)]
+        #[arg(long)]
         all: bool,
     },
     /// Print shell exports for `eval "$(em active env)"` (PATH + markers)
-    #[usage(help = "Print shell exports for the active context")]
+    #[arg(help = "Print shell exports for the active context")]
     Env,
     /// List all registered entries
-    #[usage(help = "List all registered prefix/local entries")]
+    #[arg(help = "List all registered prefix/local entries")]
     List,
     /// Add a new entry without activating it
     ///
@@ -3952,10 +3926,10 @@ pub enum ActiveCommand {
     ///   `em active add --prefix /home/me/prefix my-prefix`
     ///   `em active add --local /home/me/.gentoo my-gentoo`
     ///   `em active add --local=`  # adds ~/.gentoo with auto-generated name
-    #[usage(help = "Add a new prefix/local entry")]
+    #[arg(help = "Add a new prefix/local entry")]
     Add {
         /// Optional name for the entry. If not provided, uses path basename
-        #[usage(value_name = "NAME")]
+        #[arg(positional, value_name = "NAME")]
         name: Option<String>,
     },
     /// Remove an entry by name, index, or path
@@ -3964,34 +3938,36 @@ pub enum ActiveCommand {
     ///   `em active remove my-name`
     ///   `em active remove 0`           # by index
     ///   `em active remove /path/to/dir` # by exact path
-    #[usage(help = "Remove a registered entry")]
+    #[arg(help = "Remove a registered entry")]
     Remove {
         /// Reference to the entry to remove (name, index, or path)
-        #[usage(value_name = "REF")]
+        #[arg(positional, value_name = "REF")]
         reference: String,
     },
 }
 
-#[derive(usage::Subcommands, Debug, Clone)]
+#[derive(winnow_args::Subcommand, Debug, Clone)]
 pub enum LogCommand {
-    #[usage(help = "Show currently running merges")]
+    #[arg(help = "Show currently running merges")]
     Current,
-    #[usage(help = "Show recent merge history from activity JSONL")]
+    #[arg(help = "Show recent merge history from activity JSONL")]
     List {
         /// Max rows (default 20)
+        #[arg(positional)]
         limit: Option<u32>,
     },
-    #[usage(help = "Show merge times for a package (or global median)")]
+    #[arg(help = "Show merge times for a package (or global median)")]
     Time {
         /// Package name/atom substring to filter by; omit for the global median
+        #[arg(positional)]
         atom: Option<String>,
     },
-    #[usage(help = "ETA for remainder of a live activity session")]
+    #[arg(help = "ETA for remainder of a live activity session")]
     Predict,
 }
 
 /// How an unprivileged build gets root for `chown`/setuid (see `--privilege`)
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, usage::ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, winnow_args::ValueEnum)]
 pub enum Privilege {
     /// Best compiled-in fake root (pseudoroot, else none) when
     /// unprivileged, real chowns when already root (default).
@@ -4010,20 +3986,20 @@ pub enum Privilege {
 }
 
 /// `--format` for `em query depgraph`
-#[derive(usage::Args, Debug, Clone, Copy)]
-#[usage(
+#[derive(winnow_args::Args, Debug, Clone, Copy)]
+#[arg(
     output("pretty", default, help = "emerge -p style pretend output"),
     output("json", framing = "json", help = "Machine-parsable JSON"),
     output("tree", help = "cargo tree style dependency tree")
 )]
 pub struct DepgraphFormatArg {
     /// Output format
-    #[usage(long, short, value_enum, default = "pretty")]
+    #[arg(long, short, default = "pretty")]
     pub format: DepgraphFormat,
 }
 
 /// Output format for `em query depgraph`
-#[derive(Clone, Copy, Debug, usage::ValueEnum)]
+#[derive(Clone, Copy, Debug, winnow_args::ValueEnum)]
 pub enum DepgraphFormat {
     /// emerge -p style pretend output
     Pretty,

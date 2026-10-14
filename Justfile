@@ -24,9 +24,9 @@ doc:
 test:
     cargo test --workspace --exclude portage-bench
 
-# Regenerate the CLI reference in docs/user/cli from em's usage spec
+# Regenerate the CLI reference in docs/user/cli from what em's derives write
 docs:
-    UPDATE_CLI_DOCS=1 cargo test -p portage-cli --test cli_docs
+    WINNOW_ARGS_SPEC="$PWD/target/cli-spec/$(date +%s%N)" UPDATE_CLI_DOCS=1 cargo test -p portage-cli --test cli_docs
 
 # Fail if docs/user/cli is stale by content (CI only checks the page set); regenerates in place
 docs-check:
@@ -35,7 +35,7 @@ docs-check:
     before=$(mktemp -d)
     trap 'rm -rf "$before"' EXIT
     cp -r docs/user/cli/. "$before"
-    UPDATE_CLI_DOCS=1 cargo test -q -p portage-cli --test cli_docs
+    WINNOW_ARGS_SPEC="$PWD/target/cli-spec/$(date +%s%N)" UPDATE_CLI_DOCS=1 cargo test -q -p portage-cli --test cli_docs
     if ! diff -r "$before" docs/user/cli >/dev/null; then
         echo "docs/user/cli was out of date and has been regenerated; review and commit it" >&2
         exit 1

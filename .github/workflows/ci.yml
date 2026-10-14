@@ -106,5 +106,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: stable
-      # In-process Cli::to_kdl() → usage-lib markdown. Does not invoke em __usage_spec__.
-      - run: cargo test -p portage-cli --test cli_docs
+      # The derives write em's command line as fragments when this is set; the
+      # test renders them with winnow-args-markdown. Unset, it checks nothing.
+      - run: WINNOW_ARGS_SPEC="$PWD/target/cli-spec" cargo test -p portage-cli --test cli_docs

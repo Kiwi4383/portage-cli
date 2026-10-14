@@ -51,15 +51,15 @@ fn opt_path(s: &Option<String>) -> Option<Utf8PathBuf> {
 /// deliberately a separate mixin — see [`RootArg`]. `--vdb` is narrower still
 /// (a read-only query override, not part of this resolution at all) — see
 /// [`super::context::VdbArg`].
-#[derive(usage::Args, Debug, Clone, Default)]
-#[usage(
+#[derive(winnow_args::Args, Debug, Clone, Default)]
+#[arg(
     next_help_heading = "Roots",
     heading("Roots", help = "Which tree this invocation reads and writes.")
 )]
 pub struct Topology {
     /// Unprivileged offset: ROOT/VDB/distfiles/build trees under DIR; config
     /// still from the host (use --root for a config offset).
-    #[usage(long, global, value_name = "DIR", value_hint = usage::ValueHint::DirPath)]
+    #[arg(long, global, value_name = "DIR", hint = "dir")]
     pub prefix: Option<String>,
 
     /// Unprivileged, standalone Gentoo-Prefix: own VDB/BROOT/config, not
@@ -67,17 +67,11 @@ pub struct Topology {
     /// ~/.gentoo (EPREFIX=~/.gentoo) when no DIR is given (`--local=`).
     ///
     /// A bare `--local` takes the next word as DIR.
-    #[usage(
-        long,
-        global,
-        default_missing = "",
-        value_name = "DIR",
-        value_hint = usage::ValueHint::DirPath
-    )]
+    #[arg(long, global, default_missing = "", value_name = "DIR", hint = "dir")]
     pub local: Option<String>,
 
     /// Read config (profile, make.conf) from this root instead of `--root`
-    #[usage(long, global, value_name = "PATH", value_hint = usage::ValueHint::DirPath)]
+    #[arg(long, global, value_name = "PATH", hint = "dir")]
     pub config_root: Option<String>,
 
     /// Cross-build/setup for a crossdev target tuple
@@ -90,7 +84,7 @@ pub struct Topology {
     /// Cross context (CHOST/CBUILD, `--root-deps=rdeps`) is read from the
     /// sysroot make.conf. One flag for both roles — `crossdev` no longer
     /// has its own `-t`/`--target`.
-    #[usage(long, short = 'T', global, value_name = "TUPLE")]
+    #[arg(long, short = 'T', global, value_name = "TUPLE")]
     pub target: Option<String>,
 }
 
@@ -116,15 +110,15 @@ pub fn resolved_root(root: &RootArg) -> Option<String> {
 /// `RootArg` is no longer flattened on its own anywhere). Inner fields stay
 /// `global` so they cascade into e.g. `em maint sync --root R`, same as
 /// `Topology`'s did and `RootArg`'s used to.
-#[derive(usage::Args, Debug, Clone, Default)]
-#[usage(
+#[derive(winnow_args::Args, Debug, Clone, Default)]
+#[arg(
     next_help_heading = "Roots",
     heading("Roots", help = "Which tree this invocation reads and writes.")
 )]
 pub struct RootedTopology {
     /// Unprivileged offset: ROOT/VDB/distfiles/build trees under DIR; config
     /// still from the host (use --root for a config offset).
-    #[usage(long, global, value_name = "DIR", value_hint = usage::ValueHint::DirPath)]
+    #[arg(long, global, value_name = "DIR", hint = "dir")]
     pub prefix: Option<String>,
 
     /// Unprivileged, standalone Gentoo-Prefix: own VDB/BROOT/config, not
@@ -132,17 +126,11 @@ pub struct RootedTopology {
     /// ~/.gentoo (EPREFIX=~/.gentoo) when no DIR is given (`--local=`).
     ///
     /// A bare `--local` takes the next word as DIR.
-    #[usage(
-        long,
-        global,
-        default_missing = "",
-        value_name = "DIR",
-        value_hint = usage::ValueHint::DirPath
-    )]
+    #[arg(long, global, default_missing = "", value_name = "DIR", hint = "dir")]
     pub local: Option<String>,
 
     /// Read config (profile, make.conf) from this root instead of `--root`
-    #[usage(long, global, value_name = "PATH", value_hint = usage::ValueHint::DirPath)]
+    #[arg(long, global, value_name = "PATH", hint = "dir")]
     pub config_root: Option<String>,
 
     /// Cross-build/setup for a crossdev target tuple
@@ -155,11 +143,11 @@ pub struct RootedTopology {
     /// Cross context (CHOST/CBUILD, `--root-deps=rdeps`) is read from the
     /// sysroot make.conf. One flag for both roles — `crossdev` no longer
     /// has its own `-t`/`--target`.
-    #[usage(long, short = 'T', global, value_name = "TUPLE")]
+    #[arg(long, short = 'T', global, value_name = "TUPLE")]
     pub target: Option<String>,
 
     /// Installation root (the offset an applet installs into / queries)
-    #[usage(long, global, value_name = "PATH", value_hint = usage::ValueHint::DirPath)]
+    #[arg(long, global, value_name = "PATH", hint = "dir")]
     pub root: Option<String>,
 }
 
@@ -195,11 +183,11 @@ impl RootedTopology {
 /// via `RootedTopology`, so showing them here duplicated the "Roots:" block
 /// on `em --help`. `hide` only affects help and completion, not parsing or
 /// routing; completion still lists them via the merged default-subcommand flags.
-#[derive(usage::Args, Debug, Clone, Default)]
+#[derive(winnow_args::Args, Debug, Clone, Default)]
 pub struct RootTopology {
     /// Unprivileged offset: ROOT/VDB/distfiles/build trees under DIR; config
     /// still from the host (use --root for a config offset).
-    #[usage(long, hide, value_name = "DIR", value_hint = usage::ValueHint::DirPath)]
+    #[arg(long, hide, value_name = "DIR", hint = "dir")]
     pub prefix: Option<String>,
 
     /// Unprivileged, standalone Gentoo-Prefix: own VDB/BROOT/config, not
@@ -207,26 +195,20 @@ pub struct RootTopology {
     /// ~/.gentoo (EPREFIX=~/.gentoo) when no DIR is given (`--local=`).
     ///
     /// A bare `--local` takes the next word as DIR.
-    #[usage(
-        long,
-        hide,
-        default_missing = "",
-        value_name = "DIR",
-        value_hint = usage::ValueHint::DirPath
-    )]
+    #[arg(long, hide, default_missing = "", value_name = "DIR", hint = "dir")]
     pub local: Option<String>,
 
     /// Read config (profile, make.conf) from this root instead of `--root`
-    #[usage(long, hide, value_name = "PATH", value_hint = usage::ValueHint::DirPath)]
+    #[arg(long, hide, value_name = "PATH", hint = "dir")]
     pub config_root: Option<String>,
 
     /// Cross-build/setup for a crossdev target tuple
-    #[usage(long, short = 'T', hide, value_name = "TUPLE")]
+    #[arg(long, short = 'T', hide, value_name = "TUPLE")]
     pub target: Option<String>,
 
     /// Prefix-position `--root` for default emerge. Not global; must not
     /// leak into crossdev/active/worker.
-    #[usage(long, hide, value_name = "PATH", value_hint = usage::ValueHint::DirPath)]
+    #[arg(long, hide, value_name = "PATH", hint = "dir")]
     pub root: Option<String>,
 }
 

@@ -1,20 +1,24 @@
-//! Generate `docs/user/cli/` from `Cli::to_kdl()` in-process.
+//! Generate `docs/user/cli/` from what `em`'s derives write.
 //!
-//! Hidden applets must not appear. Omission is driven by the spec `hide`
-//! flag, not an applet-name allowlist.
+//! The pages come from the fragments winnow-args' derives write when `em` is
+//! compiled with `WINNOW_ARGS_SPEC` set: `just docs` and `just docs-check` set
+//! it. Unset, there is nothing to render and the tests that need pages pass
+//! without looking.
 //!
-//! Refresh committed pages with `UPDATE_CLI_DOCS=1 cargo test -p portage-cli --test cli_docs`.
+//! Hidden applets must not appear. Omission is driven by `hide`, not an
+//! applet-name allowlist.
+//!
+//! Refresh committed pages with `just docs`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use portage_cli::cli::Cli;
-use usage::spec::CommandMeta;
-use usage_lib::docs::markdown::MarkdownRenderer;
-use usage_lib::{Spec, SpecCommand};
+use winnow_args::Args as _;
+use winnow_args_spec::{Catalog, Command, Effect};
 
-const GENERATED_HEADER: &str = "<!-- @generated from em's usage spec; do not edit -->\n";
+const GENERATED_HEADER: &str = "<!-- @generated from em's command line; do not edit -->\n";
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -27,78 +31,20 @@ fn cli_docs_dir() -> PathBuf {
     workspace_root().join("docs/user/cli")
 }
 
-fn is_hidden_applet(cmd: &SpecCommand) -> bool {
-    cmd.hide
+/// `em`'s command line as the derives documented it, when this build wrote
+/// the fragments.
+fn documented() -> Option<Command> {
+    let dir = option_env!("WINNOW_ARGS_SPEC").filter(|dir| !dir.is_empty())?;
+    let catalog = Catalog::load(Path::new(dir)).unwrap_or_else(|err| panic!("{err}"));
+    Some(
+        catalog
+            .stitch("Cli")
+            .unwrap_or_else(|err| panic!("em's fragments must stitch: {err}")),
+    )
 }
 
-fn omit_hidden(spec: &mut Spec) {
-    fn walk(cmd: &mut SpecCommand) {
-        cmd.subcommands.retain(|_, child| !is_hidden_applet(child));
-        for child in cmd.subcommands.values_mut() {
-            walk(child);
-        }
-    }
-    walk(&mut spec.cmd);
-}
-
-fn parse_spec() -> Spec {
-    let kdl = Cli::to_kdl();
-    kdl.parse()
-        .unwrap_or_else(|err| panic!("Cli::to_kdl() must parse as a usage spec:\n{err}\n{kdl}"))
-}
-
-/// Site-root `/foo.md` → a path relative to `from_page`.
-fn relative_href(from_page: &str, target: &str) -> String {
-    let (path, frag) = target
-        .split_once('#')
-        .map(|(p, f)| (p, Some(f)))
-        .unwrap_or((target, None));
-    let from_dir: Vec<&str> = match from_page.rsplit_once('/') {
-        Some((dir, _)) => dir.split('/').filter(|s| !s.is_empty()).collect(),
-        None => Vec::new(),
-    };
-    let to_parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-    let mut i = 0;
-    while i < from_dir.len() && i < to_parts.len() && from_dir[i] == to_parts[i] {
-        i += 1;
-    }
-    let mut rel = vec![".."; from_dir.len() - i];
-    rel.extend(to_parts[i..].iter().copied());
-    let href = if rel.is_empty() {
-        from_page
-            .rsplit_once('/')
-            .map(|(_, name)| name)
-            .unwrap_or(from_page)
-            .to_string()
-    } else {
-        rel.join("/")
-    };
-    match frag {
-        Some(f) => format!("{href}#{f}"),
-        None => href,
-    }
-}
-
-fn relativize_links(from_page: &str, md: &str) -> String {
-    let mut out = String::with_capacity(md.len());
-    let mut rest = md;
-    while let Some(idx) = rest.find("](/") {
-        out.push_str(&rest[..idx]);
-        out.push_str("](");
-        rest = &rest[idx + 3..];
-        let end = rest
-            .find(')')
-            .unwrap_or_else(|| panic!("unclosed markdown link in {from_page}"));
-        out.push_str(&relative_href(from_page, &rest[..end]));
-        out.push(')');
-        rest = &rest[end + 1..];
-    }
-    out.push_str(rest);
-    out
-}
-
-/// Inverse of [`relative_href`]: resolve an href found inside `from_page`'s
-/// body back to the page-tree-relative key it points at.
+/// Resolve an href found inside `from_page`'s body to the page-tree-relative
+/// key it points at.
 fn resolve_href(from_page: &str, href: &str) -> String {
     let path = href.split_once('#').map_or(href, |(p, _)| p);
     let mut parts: Vec<&str> = match from_page.rsplit_once('/') {
@@ -137,46 +83,25 @@ fn markdown_links(body: &str) -> Vec<&str> {
     out
 }
 
-fn finish_page(page: &str, md: &str) -> String {
-    format!("{GENERATED_HEADER}{}\n", relativize_links(page, md.trim()))
-}
-
-/// One page per visible command, matching `usage generate markdown --multi`.
-fn generated_pages() -> BTreeMap<String, String> {
-    let mut spec = parse_spec();
-    omit_hidden(&mut spec);
-    let renderer = MarkdownRenderer::new(spec.clone())
-        .with_multi(true)
-        .with_html_encode(false);
-
+/// One page per visible command: `index.md` for `em`, `query.md`, then
+/// `query/belongs.md`.
+fn generated_pages(root: &Command) -> BTreeMap<String, String> {
     let mut pages = BTreeMap::new();
-    for cmd in spec.cmd.all_subcommands() {
-        if is_hidden_applet(cmd) {
-            continue;
-        }
-        let md = renderer
-            .render_cmd(cmd)
-            .unwrap_or_else(|err| panic!("render `{}`: {err}", cmd.name));
-        let parent = cmd.full_cmd[..cmd.full_cmd.len().saturating_sub(1)].join("/");
-        let rel = if parent.is_empty() {
-            format!("{}.md", cmd.name)
-        } else {
-            format!("{parent}/{}.md", cmd.name)
+    for page in winnow_args_spec::pages(root, "em").unwrap_or_else(|err| panic!("{err}")) {
+        let words = &page.path[1..];
+        let rel = match words {
+            [] => "index.md".to_owned(),
+            words => format!("{}.md", words.join("/")),
         };
-        pages.insert(rel.clone(), finish_page(&rel, &md));
-    }
-
-    let index = renderer
-        .render_index()
-        .unwrap_or_else(|err| panic!("render index: {err}"));
-    pages.insert("index.md".into(), finish_page("index.md", &index));
-
-    let config = renderer
-        .render_config()
-        .unwrap_or_else(|err| panic!("render config: {err}"));
-    if !config.trim().is_empty() {
-        let name = renderer.config_page();
-        pages.insert(name.into(), finish_page(name, &config));
+        // The renderer names a page after its whole path, `em-query-belongs.md`,
+        // beside its parent. Here a command's children are in its directory.
+        let beside = format!("]({}-", page.stem());
+        let below = match words.last() {
+            None => "](".to_owned(),
+            Some(last) => format!("]({last}/"),
+        };
+        let md = winnow_args_markdown::render(&page).replace(&beside, &below);
+        pages.insert(rel, format!("{GENERATED_HEADER}{}\n", md.trim()));
     }
     pages
 }
@@ -271,109 +196,104 @@ fn assert_omits_hidden(pages: &BTreeMap<String, String>) {
     }
 }
 
-fn flag_longs_argv(cmd: &CommandMeta<'_>) -> BTreeSet<String> {
-    cmd.cmd
-        .flags
-        .iter()
-        .flat_map(|flag| flag.longs.iter().map(|s| (*s).to_string()))
-        .collect()
+/// The long names of a command's visible and hidden flags.
+fn flag_longs<'a>(longs: impl Iterator<Item = Option<&'a str>>) -> BTreeSet<String> {
+    longs.flatten().map(str::to_owned).collect()
 }
 
-fn flag_longs_kdl(cmd: &SpecCommand) -> BTreeSet<String> {
-    cmd.flags
-        .iter()
-        .flat_map(|flag| flag.long.iter().cloned())
-        .collect()
-}
-
-fn declared_flag_longs(mut flags: BTreeSet<String>) -> BTreeSet<String> {
-    // usage-lib injects --help/--version when reading KDL; Cli::spec() does not list them.
-    flags.remove("help");
-    flags.remove("version");
-    flags
-}
-
-fn assert_cmd_matches(path: &str, argv: &CommandMeta<'_>, kdl: &SpecCommand) {
-    assert_eq!(argv.hide, kdl.hide, "hide mismatch at {path:?}");
-    if !path.is_empty() {
-        assert_eq!(argv.cmd.name, kdl.name, "name mismatch at {path:?}");
-    }
+/// What is documented is what is parsed: the same commands, with the same
+/// flags, hidden where the parser hides them.
+fn assert_cmd_matches(path: &str, parsed: &winnow_args::help::Command, documented: &Command) {
+    let flags = |positional: bool| !positional;
     assert_eq!(
-        declared_flag_longs(flag_longs_argv(argv)),
-        declared_flag_longs(flag_longs_kdl(kdl)),
+        flag_longs(
+            parsed
+                .items
+                .iter()
+                .filter(|item| flags(item.positional))
+                .map(|item| item.long)
+        ),
+        flag_longs(
+            documented
+                .items
+                .iter()
+                .filter(|item| flags(item.positional))
+                .map(|item| item.long.as_deref())
+        ),
         "flag longs mismatch at {path:?}"
     );
-    let argv_subs: BTreeSet<&str> = argv.subcommands.iter().map(|sub| sub.cmd.name).collect();
-    let kdl_subs: BTreeSet<&str> = kdl.subcommands.keys().map(String::as_str).collect();
-    assert_eq!(argv_subs, kdl_subs, "subcommands mismatch at {path:?}");
-    for sub in argv.subcommands {
-        let child = kdl
-            .subcommands
-            .get(sub.cmd.name)
-            .unwrap_or_else(|| panic!("KDL missing subcommand {} under {path:?}", sub.cmd.name));
+    let parsed_subs: Vec<(&str, bool)> = parsed
+        .subcommands
+        .iter()
+        .map(|sub| (sub.name, sub.hide))
+        .collect();
+    let documented_subs: Vec<(&str, bool)> = documented
+        .subcommands
+        .iter()
+        .map(|sub| (sub.name.as_str(), sub.hide))
+        .collect();
+    assert_eq!(
+        parsed_subs, documented_subs,
+        "subcommands mismatch at {path:?}"
+    );
+    for (sub, child) in parsed.subcommands.iter().zip(&documented.subcommands) {
         let child_path = if path.is_empty() {
-            sub.cmd.name.to_string()
+            sub.name.to_string()
         } else {
-            format!("{path}/{}", sub.cmd.name)
+            format!("{path}/{}", sub.name)
         };
-        assert_cmd_matches(&child_path, sub, child);
+        assert_cmd_matches(&child_path, sub.command, &child.command);
     }
 }
 
-#[test]
-fn relative_href_keeps_nested_pages_in_their_directory() {
-    assert_eq!(relative_href("index.md", "emerge.md"), "emerge.md");
-    assert_eq!(
-        relative_href("index.md", "query/belongs.md"),
-        "query/belongs.md"
-    );
-    assert_eq!(
-        relative_href("query.md", "query/belongs.md"),
-        "query/belongs.md"
-    );
-    assert_eq!(
-        relative_href("select/profile.md", "select/profile/list.md"),
-        "profile/list.md"
-    );
-    assert_eq!(
-        relative_href("select/profile/list.md", "select.md"),
-        "../../select.md"
-    );
+fn sub<'a>(command: &'a Command, name: &str) -> &'a winnow_args_spec::Sub {
+    let found = command.subcommands.iter().find(|sub| sub.name == name);
+    found.unwrap_or_else(|| panic!("no `{name}` under `{}`", command.name))
 }
 
 #[test]
-fn spec_round_trips_through_usage_lib() {
-    let spec = parse_spec();
-    assert_eq!(spec.bin, "em");
-    let helper = spec
-        .cmd
-        .subcommands
-        .get("__helper")
-        .expect("__helper must remain in the spec (hide, not delete)");
-    assert!(
-        helper.hide,
-        "__helper must be hide=true in the portable spec"
-    );
-    let worker = spec
-        .cmd
-        .subcommands
-        .get("__worker")
-        .expect("__worker must remain in the spec (hide, not delete)");
-    assert!(
-        worker.hide,
-        "__worker must be hide=true in the portable spec"
-    );
-    assert!(spec.cmd.subcommands.contains_key("emerge"));
-    assert!(spec.cmd.subcommands.contains_key("query"));
+fn the_documented_command_line_is_the_parsed_one() {
+    let Some(root) = documented() else { return };
+    assert_eq!(root.name, "em");
+    for hidden in ["__helper", "__worker"] {
+        assert!(
+            sub(&root, hidden).hide,
+            "{hidden} must remain documented as hidden (hide, not delete)"
+        );
+    }
+    assert!(!sub(&root, "emerge").hide);
+    assert!(!sub(&root, "query").hide);
+    assert_cmd_matches("", Cli::HELP, &root);
+}
 
-    let argv = Cli::spec();
-    assert_eq!(argv.bin.unwrap_or(argv.name), spec.bin);
-    assert_cmd_matches("", argv.root, &spec.cmd);
+#[test]
+fn effects_reach_the_documentation() {
+    let Some(root) = documented() else { return };
+    let emerge = &sub(&root, "emerge").command;
+    assert_eq!(emerge.effect, Some(Effect::Write));
+    assert_eq!(
+        sub(&root, "depclean").command.effect,
+        Some(Effect::Destructive)
+    );
+    let flag = |command: &Command, long: &str| {
+        let found = command
+            .items
+            .iter()
+            .find(|item| item.long.as_deref() == Some(long));
+        found.unwrap_or_else(|| panic!("no --{long}")).effect
+    };
+    assert_eq!(flag(emerge, "depclean"), Some(Effect::Destructive));
+    assert_eq!(
+        flag(emerge, "pretend"),
+        None,
+        "--pretend must not lower effect"
+    );
 }
 
 #[test]
 fn generated_markdown_omits_hidden_applets() {
-    let pages = generated_pages();
+    let Some(root) = documented() else { return };
+    let pages = generated_pages(&root);
     assert_omits_hidden(&pages);
     let profile = pages.get("select/profile.md").expect("select/profile.md");
     assert!(
@@ -382,19 +302,22 @@ fn generated_markdown_omits_hidden_applets() {
     );
     let index = pages.get("index.md").expect("index.md");
     assert!(
-        index.contains("](emerge.md)") && index.contains("](query/belongs.md)"),
-        "index links should be repo-relative from docs/user/cli:\n{index}"
+        index.contains("](emerge.md)") && index.contains("](query.md)"),
+        "index links should be relative to docs/user/cli:\n{index}"
     );
+    let query = pages.get("query.md").expect("query.md");
+    assert!(query.contains("](query/belongs.md)"), "{query}");
 }
 
 /// Structural staleness, not byte-exact rendering. Deliberately does NOT
-/// compare rendered bytes — a pure upstream `usage-lib` rendering change
+/// compare rendered bytes — a pure rendering change in winnow-args-markdown
 /// isn't a staleness bug and shouldn't fail this; a new/removed applet
 /// without a matching regen is. See docs/design/testing.md or ask before
 /// tightening this back to an exact-match assertion.
 #[test]
 fn committed_cli_docs_match_spec() {
-    let pages = generated_pages();
+    let Some(root) = documented() else { return };
+    let pages = generated_pages(&root);
     let dir = cli_docs_dir();
     if std::env::var_os("UPDATE_CLI_DOCS").is_some() {
         write_pages(&dir, &pages);
@@ -407,14 +330,12 @@ fn committed_cli_docs_match_spec() {
     let missing: Vec<_> = generated_keys.difference(&committed_keys).collect();
     assert!(
         missing.is_empty(),
-        "docs/user/cli is missing pages for: {missing:?}. \
-         UPDATE_CLI_DOCS=1 cargo test -p portage-cli --test cli_docs"
+        "docs/user/cli is missing pages for: {missing:?}. Run `just docs`"
     );
     let orphaned: Vec<_> = committed_keys.difference(&generated_keys).collect();
     assert!(
         orphaned.is_empty(),
-        "docs/user/cli has stale pages no longer in the spec: {orphaned:?}. \
-         UPDATE_CLI_DOCS=1 cargo test -p portage-cli --test cli_docs"
+        "docs/user/cli has stale pages no longer in the command line: {orphaned:?}. Run `just docs`"
     );
 
     for (path, body) in &committed {

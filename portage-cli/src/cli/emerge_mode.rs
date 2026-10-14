@@ -4,8 +4,8 @@
 //! emerge actions. Prefix-position `em -r` reaches these via the emerge retry.
 
 /// Emerge's own action-selecting mode switches.
-#[derive(usage::Args, Debug, Clone, Default, PartialEq)]
-#[usage(
+#[derive(winnow_args::Args, Debug, Clone, Default, PartialEq)]
+#[arg(
     next_help_heading = "Actions",
     heading("Actions", help = "Pick a different operation than a merge.")
 )]
@@ -17,25 +17,25 @@ pub struct EmergeModeArgs {
     /// applet (`--all`/`--desc`/`--name-only`/`--homepage`). Same split as
     /// real Portage's `emerge -s` vs `equery`, not accidental duplication.
     // Drives `crate::search::run_emerge_style`; the applet drives `crate::search::run`.
-    #[usage(short = 's', long)]
+    #[arg(short = 's', long)]
     pub search: bool,
 
     /// Search package names and descriptions
     ///
     /// Same split as `-s`/`em search` above: emerge-style output here,
     /// `em search --desc` is the equery-style applet.
-    #[usage(short = 'S', long)]
+    #[arg(short = 'S', long)]
     pub searchdesc: bool,
 
     /// Skip dependency resolution and only merge specified packages
-    #[usage(short = 'O', long)]
+    #[arg(short = 'O', long)]
     pub nodeps: bool,
 
     /// Remove the matching installed packages completely, without regard to dependencies
     ///
     /// Matches every installed slot/version of each atom. For removing unneeded dependencies
     /// too, use `depclean` instead.
-    #[usage(short = 'C', long, effect = "destructive")]
+    #[arg(short = 'C', long, effect = "destructive")]
     pub unmerge: bool,
 
     /// Remove installed packages that are not needed by @world (with no
@@ -48,29 +48,29 @@ pub struct EmergeModeArgs {
     /// for scripting convenience within a single `emerge`-style invocation.
     // crate::depclean::run forwards to run_with_targets — identical
     // implementation, not merely similar behavior.
-    #[usage(short = 'c', long, effect = "destructive")]
+    #[arg(short = 'c', long, effect = "destructive")]
     pub depclean: bool,
 
     /// Remove all but the highest installed version of each atom given,
     /// ignoring dependencies (real emerge's own historical caveat applies —
     /// prefer `--depclean` for a dependency-aware clean).
-    #[usage(short = 'P', long, effect = "destructive")]
+    #[arg(short = 'P', long, effect = "destructive")]
     pub prune: bool,
 
     /// Remove atoms and/or `@set`s from the world file, without unmerging
     /// anything.
-    #[usage(short = 'W', long)]
+    #[arg(short = 'W', long)]
     pub deselect: bool,
 
     /// Resume the last saved merge (see `em maint cleanresume` to discard it instead)
     ///
     /// Atoms are not accepted together with this flag — the package list comes from the saved
     /// state. Combine with other flags (e.g. `-r -X stuck/atom`) to adjust the resumed run.
-    #[usage(short = 'r', long)]
+    #[arg(short = 'r', long)]
     pub resume: bool,
 
     /// Print system/build info (`emerge --info` workalike). Takes no atoms.
-    #[usage(
+    #[arg(
         long,
         long_help = "`emerge --info` workalike. Takes no atoms. Print system/build info: profile, CHOST/CFLAGS/FEATURES/USE (with USE_EXPAND groups like VIDEO_CARDS broken out), ACCEPT_KEYWORDS/ACCEPT_LICENSE, and configured repositories. Combine with `--json` for structured output, or `-v` to also list every known `@name` set and its resolved atoms (neither has a real-emerge equivalent)."
     )]

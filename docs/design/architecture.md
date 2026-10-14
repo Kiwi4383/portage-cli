@@ -9,7 +9,7 @@ validation, and known divergences from emerge.
 
 Related: [`docs/design/testing.md`](./testing.md) (how correctness is established),
 [`docs/design/benchmarks.md`](./benchmarks.md) (how performance is measured),
-[`usage-rs.md`](./usage-rs.md) (`em` CLI: clap → usage-rs).
+[`usage-rs.md`](./usage-rs.md) (the grammar decisions behind `em`'s CLI, which now parses with winnow-args).
 
 ## Crate layering
 
@@ -279,7 +279,7 @@ Stage3 tarball fetch and cache management.
 
 Resolution-policy and plan layer used by `em -p` / the merge path. Migrated
 out of `portage-cli`'s former `query/depgraph/*` (2026-07-16). Depends on
-`portage-repo` / `portage-vdb` / `portage-atom-pubgrub`; **no** usage-rs or
+`portage-repo` / `portage-vdb` / `portage-atom-pubgrub`; **no** winnow-args or
 anstream dependency (argv parsing and rendering stay in `portage-cli`).
 
 - `struct Roots` — multi-root topology (BROOT / config / target / EPREFIX)

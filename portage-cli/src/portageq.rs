@@ -1,11 +1,13 @@
 //! `em portageq` — Portage's own query interface (subset)
 //!
-//! The VDB group and `envvar` work; everything else does not exist yet.
+//! The VDB group, `envvar` and the settings one-liners work; repos and
+//! everything else do not exist yet.
 //!
 //! Eroot-taking commands read host global defaults plus the eroot's own
-//! user config; `envvar` uses `em`'s own roots.
+//! user config; config-only commands use `em`'s own roots.
 
 use anyhow::{Context, Result};
+use camino::{Utf8Path, Utf8PathBuf};
 use portage_atom::{Cpv, Dep};
 use portage_vdb::{InstalledPackage, Vdb};
 
@@ -195,6 +197,129 @@ pub(crate) async fn run_envvar(
         })
         .collect();
     write_values(names, verbose, &values, out)
+}
+
+/// Single profile value on one line; unset prints empty and exits 1.
+pub(crate) async fn run_settings_var(
+    cli: &crate::cli::Cli,
+    var: &str,
+    out: &mut dyn std::io::Write,
+) -> Result<u8> {
+    if var == "CONFIG_PROTECT" || var == "CONFIG_PROTECT_MASK" {
+        let lists = crate::ebuild::protect::ConfigProtect::from_roots(&cli.roots()).await;
+        let mut dirs: Vec<String> = if var == "CONFIG_PROTECT" {
+            lists.protected_dirs().to_vec()
+        } else {
+            lists.masked_dirs().to_vec()
+        };
+        // Verified live: real portageq prints the accumulated list sorted.
+        dirs.sort();
+        writeln!(out, "{}", dirs.join(" "))?;
+        return Ok(0);
+    }
+    let shell = profile_shell(cli).await?;
+    match crate::info::resolve_info_var(&shell, var) {
+        Some(v) => {
+            writeln!(out, "{v}")?;
+            Ok(0)
+        }
+        None => {
+            writeln!(out)?;
+            Ok(1)
+        }
+    }
+}
+
+/// `<merge_root>/var/db/pkg`, no shell involved.
+pub(crate) fn vdb_path(cli: &crate::cli::Cli, out: &mut dyn std::io::Write) -> Result<u8> {
+    writeln!(out, "{}", cli.roots().merge_root().join("var/db/pkg"))?;
+    Ok(0)
+}
+
+/// Legacy path plus its deprecation warning on stderr.
+pub(crate) fn portdir(
+    cli: &crate::cli::Cli,
+    out: &mut dyn std::io::Write,
+    err: &mut dyn std::io::Write,
+) -> Result<u8> {
+    writeln!(out, "{}", cli.repo_path())?;
+    writeln!(
+        err,
+        "WARNING: 'portageq portdir' is deprecated. Use the get_repo_path command instead. \
+         eg: 'portageq get_repo_path / gentoo' instead."
+    )?;
+    Ok(0)
+}
+
+/// Legacy overlays: `PORTDIR_OVERLAY` when set, else non-main repos.
+pub(crate) fn portdir_overlay(
+    cli: &crate::cli::Cli,
+    out: &mut dyn std::io::Write,
+    err: &mut dyn std::io::Write,
+) -> Result<u8> {
+    let roots = cli.roots();
+    let mut overlays: Vec<String> = roots
+        .portdir_overlay()
+        .iter()
+        .map(|p| p.to_string())
+        .collect();
+    if overlays.is_empty()
+        && let Ok(conf) = eroot_repos_conf(&roots)
+    {
+        overlays = fallback_overlays(&conf);
+    }
+    writeln!(out, "{}", overlays.join(" "))?;
+    writeln!(
+        err,
+        "WARNING: 'portageq portdir_overlay' is deprecated. Use the get_repos and get_repo_path \
+         commands or the repos_config command instead. eg: 'portageq repos_config /'"
+    )?;
+    Ok(0)
+}
+
+/// Non-main repo locations for the legacy overlay query.
+fn fallback_overlays(conf: &portage_repo::ReposConf) -> Vec<String> {
+    let main = conf.main_repo().map(|r| &r.name);
+    conf.repos()
+        .iter()
+        .filter(|r| Some(&r.name) != main)
+        .filter_map(repo_location)
+        .collect()
+}
+
+/// Printable repo location, lossy only for non-UTF-8 paths.
+fn repo_location(entry: &portage_repo::RepoEntry) -> Option<String> {
+    let path = entry.location.as_path()?;
+    Some(
+        Utf8Path::from_path(path)
+            .map(|p| p.to_string())
+            .unwrap_or_else(|| path.to_string_lossy().into_owned()),
+    )
+}
+
+/// Repos for an eroot-taking command: host global defaults plus the
+/// eroot's own user config, the combination real portageq reads.
+fn eroot_repos_conf(roots: &portage_resolve::Roots) -> Result<portage_repo::ReposConf> {
+    let cfg = roots.config().unwrap_or(Utf8Path::new("/"));
+    repos_conf_from(
+        Utf8Path::new("/usr/share/portage/config/repos.conf"),
+        Some(&cfg.join("etc/portage/repos.conf")),
+        &roots.portdir_overlay(),
+    )
+}
+
+/// Repos from explicit global and user paths; missing paths are skipped.
+fn repos_conf_from(
+    global: &Utf8Path,
+    user: Option<&Utf8PathBuf>,
+    overlays: &[Utf8PathBuf],
+) -> Result<portage_repo::ReposConf> {
+    let mut paths = vec![global.to_path_buf()];
+    if let Some(u) = user {
+        paths.push(u.clone());
+    }
+    let conf = portage_repo::ReposConf::load_from(&paths)?;
+    Ok(conf.with_portdir_overlay(overlays))
 }
 
 pub(crate) fn mass_best_version(eroot: &str, atoms: &[String]) -> Result<u8> {
@@ -388,5 +513,47 @@ mod tests {
             1
         );
         assert_eq!(out_v, b"CFLAGS='-O2 -pipe'\n\n");
+    }
+
+    /// Hermetic load: a missing global path is skipped, the user conf
+    /// alone decides membership and order.
+    fn test_conf() -> (tempfile::TempDir, portage_repo::ReposConf) {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().to_string_lossy().into_owned();
+        std::fs::create_dir_all(format!("{root}/user")).unwrap();
+        std::fs::write(
+            format!("{root}/user/test.conf"),
+            format!("[mmm]\nlocation = {root}/mmm\n\n[zzz]\nlocation = {root}/zzz\n"),
+        )
+        .unwrap();
+        let conf = crate::portageq::repos_conf_from(
+            &Utf8PathBuf::from(format!("{root}/noglobal.conf")),
+            Some(&Utf8PathBuf::from(format!("{root}/user"))),
+            &[],
+        )
+        .unwrap();
+        (tmp, conf)
+    }
+
+    #[test]
+    fn user_repos_resolve_in_reverse_order() {
+        let (_tmp, conf) = test_conf();
+        let names: Vec<String> = conf
+            .repos()
+            .iter()
+            .rev()
+            .map(|r| r.name.to_string())
+            .collect();
+        assert_eq!(names, ["zzz", "mmm"]);
+    }
+
+    #[test]
+    fn overlay_fallback_lists_non_main_repos() {
+        let (tmp, conf) = test_conf();
+        let root = tmp.path().to_string_lossy().into_owned();
+        assert_eq!(
+            crate::portageq::fallback_overlays(&conf),
+            [format!("{root}/mmm"), format!("{root}/zzz")]
+        );
     }
 }

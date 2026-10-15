@@ -2374,6 +2374,25 @@ pub enum PortageqCommand {
         #[arg(positional, value_name = "NAME")]
         names: Vec<String>,
     },
+    #[arg(name = "vdb_path", help = "Print the installed-package database path")]
+    VdbPath,
+    #[arg(name = "pkgdir", help = "Print the binary-package directory")]
+    Pkgdir,
+    #[arg(name = "distdir", help = "Print the distfiles directory")]
+    Distdir,
+    #[arg(name = "gentoo_mirrors", help = "Print the mirrors setting")]
+    GentooMirrors,
+    #[arg(name = "config_protect", help = "Print the protected-paths setting")]
+    ConfigProtect,
+    #[arg(
+        name = "config_protect_mask",
+        help = "Print the protection-mask setting"
+    )]
+    ConfigProtectMask,
+    #[arg(name = "portdir", help = "Print the main repo path (deprecated)")]
+    Portdir,
+    #[arg(name = "portdir_overlay", help = "Print overlay paths (deprecated)")]
+    PortdirOverlay,
 }
 
 /// `em sync` — sync repositories (git, rsync)

@@ -166,6 +166,37 @@ impl RunAsync<&cli::Cli> for PortageqArgs {
                 let mut out = std::io::stdout();
                 crate::portageq::run_envvar(cli, names, *verbose, &mut out).await
             }
+            PortageqCommand::VdbPath => crate::portageq::vdb_path(cli, &mut std::io::stdout()),
+            PortageqCommand::Pkgdir => {
+                let mut out = std::io::stdout();
+                crate::portageq::run_settings_var(cli, "PKGDIR", &mut out).await
+            }
+            PortageqCommand::Distdir => {
+                let mut out = std::io::stdout();
+                crate::portageq::run_settings_var(cli, "DISTDIR", &mut out).await
+            }
+            PortageqCommand::GentooMirrors => {
+                let mut out = std::io::stdout();
+                crate::portageq::run_settings_var(cli, "GENTOO_MIRRORS", &mut out).await
+            }
+            PortageqCommand::ConfigProtect => {
+                let mut out = std::io::stdout();
+                crate::portageq::run_settings_var(cli, "CONFIG_PROTECT", &mut out).await
+            }
+            PortageqCommand::ConfigProtectMask => {
+                let mut out = std::io::stdout();
+                crate::portageq::run_settings_var(cli, "CONFIG_PROTECT_MASK", &mut out).await
+            }
+            PortageqCommand::Portdir => {
+                let mut out = std::io::stdout();
+                let mut err = std::io::stderr();
+                crate::portageq::portdir(cli, &mut out, &mut err)
+            }
+            PortageqCommand::PortdirOverlay => {
+                let mut out = std::io::stdout();
+                let mut err = std::io::stderr();
+                crate::portageq::portdir_overlay(cli, &mut out, &mut err)
+            }
         }?;
         if status != 0 {
             std::io::Write::flush(&mut std::io::stdout()).ok();

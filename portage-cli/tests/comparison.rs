@@ -267,6 +267,21 @@ fn portageq_envvar_matches_real() {
 
 #[test]
 #[ignore]
+fn portageq_settings_match_real() {
+    check_pq_parity(&[
+        &["vdb_path"],
+        &["pkgdir"],
+        &["distdir"],
+        &["gentoo_mirrors"],
+        &["config_protect"],
+        &["config_protect_mask"],
+        &["portdir"],
+        &["portdir_overlay"],
+    ]);
+}
+
+#[test]
+#[ignore]
 fn portageq_env_from_process_environment_matches_real() {
     if !have_portageq() {
         eprintln!("skipping: /usr/bin/portageq not present");

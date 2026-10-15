@@ -1,16 +1,11 @@
 //! `em portageq` — Portage's own query interface (subset)
 //!
-//! Implements the "VDB group" of real `portageq`'s subcommands
-//! (`has_version`/`best_version`/`match`/`mass_best_version`), the ones
-//! with real-world consumers. The settings, repos, metadata/contents/owners,
-//! best_visible and protect/eclass/license groups are not implemented.
+//! The VDB group and `envvar` work; everything else does not exist yet.
 //!
-//! Every command here takes `<EROOT>` as its own positional argument (real
-//! portageq's `uses_eroot` convention), independent of `em`'s own
-//! `--root`/`--prefix`/`--local` — this applet deliberately carries none of
-//! those (see `cli/topology.rs`'s module doc).
+//! Eroot-taking commands read host global defaults plus the eroot's own
+//! user config; `envvar` uses `em`'s own roots.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use portage_atom::{Cpv, Dep};
 use portage_vdb::{InstalledPackage, Vdb};
 
@@ -116,6 +111,90 @@ pub(crate) fn run_match(eroot: &str, atom: &str) -> Result<u8> {
         println!("{cpv}");
     }
     Ok(0)
+}
+
+/// Missing operands, reported the way portageq does.
+fn check_arity(names: &[String], out: &mut dyn std::io::Write) -> Result<Option<u8>> {
+    if names.is_empty() {
+        writeln!(out, "ERROR: insufficient parameters!")?;
+        Ok(Some(2))
+    } else {
+        Ok(None)
+    }
+}
+
+/// `envvar -v` line: `NAME=value` bare when safe, else single-quoted.
+pub(crate) fn format_verbose(name: &str, value: &str) -> String {
+    if value.is_empty() {
+        return format!("{name}=''");
+    }
+    let safe = value
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b"@%_+=:,./-".contains(&b));
+    if safe {
+        format!("{name}={value}")
+    } else {
+        format!("{name}='{}'", value.replace('\'', "'\"'\"'"))
+    }
+}
+
+/// Writes one line per name: the value or an empty line when unset.
+pub(crate) fn write_values(
+    names: &[String],
+    verbose: bool,
+    values: &[Option<String>],
+    out: &mut dyn std::io::Write,
+) -> Result<u8> {
+    let mut code = 0;
+    for (name, value) in names.iter().zip(values.iter()) {
+        match value {
+            Some(v) => {
+                if verbose {
+                    writeln!(out, "{}", format_verbose(name, v))?;
+                } else {
+                    writeln!(out, "{v}")?;
+                }
+            }
+            None => {
+                writeln!(out)?;
+                code = 1;
+            }
+        }
+    }
+    Ok(code)
+}
+
+/// Profile shell with the root's config already applied.
+async fn profile_shell(cli: &crate::cli::Cli) -> Result<portage_repo::EbuildShell> {
+    let roots = cli.roots();
+    let repo = crate::crossdev::main_repo(cli)?;
+    let mut shell = repo.shell().await.context("creating shell")?;
+    crate::ebuild::apply_profile_env(&mut shell, roots.config(), roots.config_overlay()).await?;
+    Ok(shell)
+}
+
+/// Full `envvar` path: profile shell lookup, then shared rendering.
+///
+/// Ambient environment wins over the shell, set-but-empty included.
+pub(crate) async fn run_envvar(
+    cli: &crate::cli::Cli,
+    names: &[String],
+    verbose: bool,
+    out: &mut dyn std::io::Write,
+) -> Result<u8> {
+    if let Some(code) = check_arity(names, out)? {
+        return Ok(code);
+    }
+    let shell = profile_shell(cli).await?;
+    let values: Vec<Option<String>> = names
+        .iter()
+        .map(|n| {
+            std::env::var(n)
+                .ok()
+                .or_else(|| crate::info::resolve_info_var(&shell, n))
+        })
+        .collect();
+    write_values(names, verbose, &values, out)
 }
 
 pub(crate) fn mass_best_version(eroot: &str, atoms: &[String]) -> Result<u8> {
@@ -259,5 +338,55 @@ mod tests {
         let pkgs = installed_packages(&vdb.eroot);
         assert_eq!(pkgs.len(), 1);
         assert_eq!(pkgs[0].slot().unwrap().to_string(), "1");
+    }
+
+    #[test]
+    fn missing_operands_report_exit_2() {
+        let mut out = Vec::new();
+        assert_eq!(
+            crate::portageq::check_arity(&[], &mut out).unwrap(),
+            Some(2)
+        );
+        assert_eq!(out, b"ERROR: insufficient parameters!\n");
+        let mut out = Vec::new();
+        assert_eq!(
+            crate::portageq::check_arity(&["CFLAGS".to_string()], &mut out).unwrap(),
+            None
+        );
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn envvar_verbose_quotes_only_when_needed() {
+        assert_eq!(
+            crate::portageq::format_verbose("PORTAGE_TMPDIR", "/var/tmp"),
+            "PORTAGE_TMPDIR=/var/tmp"
+        );
+        assert_eq!(
+            crate::portageq::format_verbose("CFLAGS", "-O2 -march=native -pipe"),
+            "CFLAGS='-O2 -march=native -pipe'"
+        );
+        assert_eq!(
+            crate::portageq::format_verbose("FOO", "a'b"),
+            "FOO='a'\"'\"'b'"
+        );
+    }
+
+    #[test]
+    fn envvar_write_values_mixed_hit_and_miss() {
+        let names = vec!["CFLAGS".to_string(), "NOPE_UNSET_XYZ".to_string()];
+        let values = vec![Some("-O2 -pipe".to_string()), None];
+        let mut out = Vec::new();
+        assert_eq!(
+            crate::portageq::write_values(&names, false, &values, &mut out).unwrap(),
+            1
+        );
+        assert_eq!(out, b"-O2 -pipe\n\n");
+        let mut out_v = Vec::new();
+        assert_eq!(
+            crate::portageq::write_values(&names, true, &values, &mut out_v).unwrap(),
+            1
+        );
+        assert_eq!(out_v, b"CFLAGS='-O2 -pipe'\n\n");
     }
 }

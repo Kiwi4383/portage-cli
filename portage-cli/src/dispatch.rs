@@ -150,7 +150,7 @@ impl RunAsync<&cli::Cli> for MaintArgs {
 impl RunAsync<&cli::Cli> for PortageqArgs {
     type Output = Result<()>;
 
-    async fn run_async(self, _cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         let status = match &self.command {
             PortageqCommand::HasVersion { eroot, atom } => {
                 crate::portageq::has_version(eroot, atom)
@@ -161,6 +161,10 @@ impl RunAsync<&cli::Cli> for PortageqArgs {
             PortageqCommand::Match { eroot, atom } => crate::portageq::run_match(eroot, atom),
             PortageqCommand::MassBestVersion { eroot, atoms } => {
                 crate::portageq::mass_best_version(eroot, atoms)
+            }
+            PortageqCommand::Envvar { verbose, names } => {
+                let mut out = std::io::stdout();
+                crate::portageq::run_envvar(cli, names, *verbose, &mut out).await
             }
         }?;
         if status != 0 {

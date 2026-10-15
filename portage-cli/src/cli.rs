@@ -2367,6 +2367,13 @@ pub enum PortageqCommand {
         #[arg(positional, value_name = "ATOM")]
         atoms: Vec<String>,
     },
+    #[arg(name = "envvar", help = "Print profile variable values by name")]
+    Envvar {
+        #[arg(short = 'v', help = "Print NAME='value' instead of bare values")]
+        verbose: bool,
+        #[arg(positional, value_name = "NAME")]
+        names: Vec<String>,
+    },
 }
 
 /// `em sync` — sync repositories (git, rsync)

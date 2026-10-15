@@ -282,6 +282,19 @@ fn portageq_settings_match_real() {
 
 #[test]
 #[ignore]
+fn portageq_repos_match_real() {
+    check_pq_parity(&[
+        &["get_repos", "/"],
+        &["get_repos", "/no/such/eroot"],
+        &["get_repo_path", "/", "gentoo"],
+        &["get_repo_path", "/", "no-such-repo-xyz"],
+        &["get_repo_path", "/", "bad/name"],
+        &["get_repo_path", "/"],
+    ]);
+}
+
+#[test]
+#[ignore]
 fn portageq_env_from_process_environment_matches_real() {
     if !have_portageq() {
         eprintln!("skipping: /usr/bin/portageq not present");

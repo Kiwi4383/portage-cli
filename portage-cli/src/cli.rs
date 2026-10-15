@@ -2374,6 +2374,21 @@ pub enum PortageqCommand {
         #[arg(positional, value_name = "NAME")]
         names: Vec<String>,
     },
+    #[arg(
+        name = "get_repos",
+        help = "List repo names in reverse resolution order"
+    )]
+    GetRepos {
+        #[arg(positional, value_name = "EROOT")]
+        eroot: String,
+    },
+    #[arg(name = "get_repo_path", help = "Print each repo's location")]
+    GetRepoPath {
+        #[arg(positional, value_name = "EROOT")]
+        eroot: String,
+        #[arg(positional, value_name = "REPO")]
+        repos: Vec<String>,
+    },
     #[arg(name = "vdb_path", help = "Print the installed-package database path")]
     VdbPath,
     #[arg(name = "pkgdir", help = "Print the binary-package directory")]

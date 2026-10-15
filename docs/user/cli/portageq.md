@@ -19,6 +19,8 @@ em portageq [OPTIONS] <COMMAND>
 * [`match`](portageq/match.md) — List every installed CPV matching ATOM under EROOT, one per line
 * [`mass_best_version`](portageq/mass_best_version.md) — Print `atom:cpv` for each of several atoms' best installed version
 * [`envvar`](portageq/envvar.md) — Print profile variable values by name
+* [`get_repos`](portageq/get_repos.md) — List repo names in reverse resolution order
+* [`get_repo_path`](portageq/get_repo_path.md) — Print each repo's location
 * [`vdb_path`](portageq/vdb_path.md) — Print the installed-package database path
 * [`pkgdir`](portageq/pkgdir.md) — Print the binary-package directory
 * [`distdir`](portageq/distdir.md) — Print the distfiles directory

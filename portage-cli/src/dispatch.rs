@@ -166,6 +166,16 @@ impl RunAsync<&cli::Cli> for PortageqArgs {
                 let mut out = std::io::stdout();
                 crate::portageq::run_envvar(cli, names, *verbose, &mut out).await
             }
+            PortageqCommand::GetRepos { eroot } => {
+                let mut out = std::io::stdout();
+                let mut err = std::io::stderr();
+                crate::portageq::get_repos(eroot, &mut out, &mut err)
+            }
+            PortageqCommand::GetRepoPath { eroot, repos } => {
+                let mut out = std::io::stdout();
+                let mut err = std::io::stderr();
+                crate::portageq::get_repo_path(eroot, repos, &mut out, &mut err)
+            }
             PortageqCommand::VdbPath => crate::portageq::vdb_path(cli, &mut std::io::stdout()),
             PortageqCommand::Pkgdir => {
                 let mut out = std::io::stdout();

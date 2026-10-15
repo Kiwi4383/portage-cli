@@ -1,7 +1,7 @@
 //! `em portageq` — Portage's own query interface (subset)
 //!
-//! The VDB group, `envvar` and the settings one-liners work; repos and
-//! everything else do not exist yet.
+//! VDB, settings and repos groups work; metadata/contents/owners,
+//! best_visible and protect/eclass/license groups do not exist yet.
 //!
 //! Eroot-taking commands read host global defaults plus the eroot's own
 //! user config; config-only commands use `em`'s own roots.
@@ -322,6 +322,90 @@ fn repos_conf_from(
     Ok(conf.with_portdir_overlay(overlays))
 }
 
+/// Portage repo-name rule: alphanumerics, `-` and `_` only.
+pub(crate) fn is_valid_repo_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+/// Config [`Roots`] for an eroot-taking command: `<EROOT>` must exist as a
+/// directory, then serves as its own config/base/target with host BROOT.
+fn conf_roots(
+    eroot: &str,
+    err: &mut dyn std::io::Write,
+) -> std::result::Result<portage_resolve::Roots, u8> {
+    if std::path::Path::new(eroot).is_dir() {
+        let root = Utf8PathBuf::from(eroot);
+        Ok(portage_resolve::Roots::default()
+            .with_config(Some(root.clone()))
+            .with_base(Some(root.clone()))
+            .with_target(Some(root))
+            .with_broot(Some(Utf8PathBuf::from("/"))))
+    } else {
+        writeln!(err, "Not a directory: '{eroot}'").map_err(|_| 64)?;
+        writeln!(err, "Run portageq with --help for info").map_err(|_| 64)?;
+        Err(64)
+    }
+}
+
+/// Space-separated repo names in reverse resolution order (overlays first).
+pub(crate) fn get_repos(
+    eroot: &str,
+    out: &mut dyn std::io::Write,
+    err: &mut dyn std::io::Write,
+) -> Result<u8> {
+    let roots = match conf_roots(eroot, err) {
+        Ok(r) => r,
+        Err(code) => return Ok(code),
+    };
+    let conf = eroot_repos_conf(&roots)?;
+    let names: Vec<String> = conf
+        .repos()
+        .iter()
+        .rev()
+        .map(|r| r.name.to_string())
+        .collect();
+    writeln!(out, "{}", names.join(" "))?;
+    Ok(0)
+}
+
+/// One location per repo; unknown prints an empty line and stops (exit 1),
+/// an invalid name errors at once (exit 2).
+pub(crate) fn get_repo_path(
+    eroot: &str,
+    repos: &[String],
+    out: &mut dyn std::io::Write,
+    err: &mut dyn std::io::Write,
+) -> Result<u8> {
+    let roots = match conf_roots(eroot, err) {
+        Ok(r) => r,
+        Err(code) => return Ok(code),
+    };
+    if repos.is_empty() {
+        writeln!(err, "ERROR: insufficient parameters!")?;
+        return Ok(3);
+    }
+    let conf = eroot_repos_conf(&roots)?;
+    let mut code = 0;
+    for name in repos {
+        if !is_valid_repo_name(name) {
+            writeln!(err, "ERROR: invalid repository: {name}")?;
+            return Ok(2);
+        }
+        match conf.find(name).and_then(|e| e.location.as_path()) {
+            Some(path) => writeln!(out, "{}", path.display())?,
+            None => {
+                writeln!(out)?;
+                code = 1;
+                break;
+            }
+        }
+    }
+    Ok(code)
+}
+
 pub(crate) fn mass_best_version(eroot: &str, atoms: &[String]) -> Result<u8> {
     if let Err(code) = validate_eroot(eroot) {
         return Ok(code);
@@ -555,5 +639,93 @@ mod tests {
             crate::portageq::fallback_overlays(&conf),
             [format!("{root}/mmm"), format!("{root}/zzz")]
         );
+    }
+
+    #[test]
+    fn repo_name_validation_matches_portage() {
+        for valid in ["gentoo", "guru", "bad-name", "bad_name", "BadName"] {
+            assert!(crate::portageq::is_valid_repo_name(valid), "{valid}");
+        }
+        for invalid in ["bad/name", "bad.name", "a b", ""] {
+            assert!(!crate::portageq::is_valid_repo_name(invalid), "{invalid}");
+        }
+    }
+
+    /// Temp eroot with its own `repos.conf`: two repos, no main-repo.
+    struct TestRepos {
+        _tmp: tempfile::TempDir,
+        eroot: String,
+    }
+
+    impl TestRepos {
+        fn new() -> Self {
+            let tmp = tempfile::tempdir().unwrap();
+            let eroot = tmp.path().to_string_lossy().into_owned();
+            let conf = format!("[mmm]\nlocation = {eroot}/mmm\n\n[zzz]\nlocation = {eroot}/zzz\n");
+            let dir = std::path::Path::new(&eroot).join("etc/portage/repos.conf");
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("test.conf"), conf).unwrap();
+            Self { _tmp: tmp, eroot }
+        }
+    }
+
+    #[test]
+    fn get_repos_missing_eroot_is_64() {
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        assert_eq!(
+            crate::portageq::get_repos("/no/such/eroot", &mut out, &mut err).unwrap(),
+            64
+        );
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn get_repo_path_without_repos_is_3() {
+        let r = TestRepos::new();
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        assert_eq!(
+            crate::portageq::get_repo_path(&r.eroot, &[], &mut out, &mut err).unwrap(),
+            3
+        );
+        assert!(out.is_empty());
+        assert_eq!(err, b"ERROR: insufficient parameters!\n");
+    }
+
+    #[test]
+    fn get_repo_path_hit_miss_and_invalid() {
+        let r = TestRepos::new();
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        assert_eq!(
+            crate::portageq::get_repo_path(&r.eroot, &["mmm".to_string()], &mut out, &mut err)
+                .unwrap(),
+            0
+        );
+        assert_eq!(out, format!("{}/mmm\n", r.eroot).as_bytes());
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        assert_eq!(
+            crate::portageq::get_repo_path(&r.eroot, &["nope".to_string()], &mut out, &mut err)
+                .unwrap(),
+            1
+        );
+        assert_eq!(out, b"\n");
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        assert_eq!(
+            crate::portageq::get_repo_path(
+                &r.eroot,
+                &["mmm".to_string(), "bad/name".to_string()],
+                &mut out,
+                &mut err
+            )
+            .unwrap(),
+            2
+        );
+        assert_eq!(out, format!("{}/mmm\n", r.eroot).as_bytes());
     }
 }

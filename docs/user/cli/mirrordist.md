@@ -22,7 +22,7 @@ em mirrordist [OPTIONS] [REPO]
 * `--repos-dir <DIR>` — Directory containing master repositories
 * `--distfiles <DIR>` — Distfiles directory to populate
 * `-j, --jobs <JOBS>` — Concurrent downloads
-* `--delete` — Delete distfiles no longer referenced by any ebuild Effect: destructive (may delete or irreversibly overwrite).
+* `--delete` — Delete distfiles no longer referenced by any ebuild. Effect: destructive (may delete or irreversibly overwrite).
 * `--deletion-delay <DURATION>` — Grace period before an orphaned file is deleted (e.g. `7d`, `72h`) \[default: 7d\]
 * `--deletion-db <FILE>` — Deletion-grace state file (default: `$XDG_STATE_HOME/em/mirrordist/<repo>-*.json`)
 * `--success-log <FILE>` — Tab-delimited log of fetched files (appended)

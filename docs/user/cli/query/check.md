@@ -51,5 +51,5 @@ em query check [OPTIONS] <ATOM>...
 
 ## Output formats
 
-* `pretty` — Human-readable text The default.
-* `json` — Machine-parsable JSON Framing: `json`.
+* `pretty` — Human-readable text. The default.
+* `json` — Machine-parsable JSON. Framing: `json`.

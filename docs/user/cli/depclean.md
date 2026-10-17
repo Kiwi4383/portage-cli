@@ -85,7 +85,7 @@ How the solver and build scheduler behave.
   Once at least one job is running, further starts wait until load drops below LOAD
   (matches real Portage's own load-average throttling). The first concurrent job is
   always allowed. Displayed on the `Jobs:` status line regardless.
-* `--keep-going` — Continue merging as much as possible even if some packages fail Warning: Exists for portage parity; do not use it. A failed package must stop the run.
+* `--keep-going` — Continue merging as much as possible even if some packages fail. Warning: Exists for portage parity; do not use it. A failed package must stop the run.
 * `--autounmask` — Accepted so existing command lines keep parsing. Config writes follow
   `--autounmask-write` and whether this run is pretend or `--ask`; this
   flag is not consulted.

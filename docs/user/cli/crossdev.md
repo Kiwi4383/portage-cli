@@ -86,7 +86,7 @@ How the solver and build scheduler behave.
   Once at least one job is running, further starts wait until load drops below LOAD
   (matches real Portage's own load-average throttling). The first concurrent job is
   always allowed. Displayed on the `Jobs:` status line regardless.
-* `--keep-going` — Continue merging as much as possible even if some packages fail Warning: Exists for portage parity; do not use it. A failed package must stop the run.
+* `--keep-going` — Continue merging as much as possible even if some packages fail. Warning: Exists for portage parity; do not use it. A failed package must stop the run.
 * `--autounmask` — Accepted so existing command lines keep parsing. Config writes follow
   `--autounmask-write` and whether this run is pretend or `--ask`; this
   flag is not consulted.
@@ -130,7 +130,7 @@ How far to re-examine installed dependencies.
 
   Applies to packages that appear in the depgraph; pairs with `--deep` for a full-tree USE
   recheck.
-* `-U, --changed-use` — Like `--newuse`, but only rebuild when an \*enabled\* USE flag changed
+* `-U, --changed-use` — Like `--newuse`, but only rebuild when an *enabled* USE flag changed
   among flags present in both installed and current IUSE (ignore pure
   IUSE add/drop). Emerge's `--changed-use` / `-U`.
 

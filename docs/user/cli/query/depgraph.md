@@ -38,7 +38,7 @@ How far to re-examine installed dependencies.
 
   Applies to packages that appear in the depgraph; pairs with `--deep` for a full-tree USE
   recheck.
-* `-U, --changed-use` — Like `--newuse`, but only rebuild when an \*enabled\* USE flag changed
+* `-U, --changed-use` — Like `--newuse`, but only rebuild when an *enabled* USE flag changed
   among flags present in both installed and current IUSE (ignore pure
   IUSE add/drop). Emerge's `--changed-use` / `-U`.
 
@@ -75,8 +75,8 @@ How far to re-examine installed dependencies.
 
 ## Output formats
 
-* `pretty` — emerge -p style pretend output The default.
-* `json` — Machine-parsable JSON Framing: `json`.
+* `pretty` — emerge -p style pretend output. The default.
+* `json` — Machine-parsable JSON. Framing: `json`.
 * `tree` — cargo tree style dependency tree
 
 ## Examples

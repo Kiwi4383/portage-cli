@@ -1,7 +1,6 @@
 use std::io::Write;
 
 use brush_core::builtins;
-use clap::Parser;
 
 use super::die::DieFlag;
 
@@ -10,11 +9,19 @@ use super::die::DieFlag;
 /// `emake [args...]`  (PMS 12.3.2)
 ///
 /// Runs `${MAKE:-make} ${MAKEOPTS} ${EXTRA_EMAKE} [args...]`.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct EmakeCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     args: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(EmakeCommand);
 
 impl builtins::Command for EmakeCommand {
     type State = ();

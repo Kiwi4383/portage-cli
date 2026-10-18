@@ -1,7 +1,6 @@
 use std::io::Write;
 
 use brush_core::builtins;
-use clap::Parser;
 
 // ── has / hasv / hasq ─────────────────────────────────────────────────────────
 
@@ -9,12 +8,21 @@ use clap::Parser;
 ///
 /// Returns 0 (success) if needle equals any haystack word, 1 otherwise.
 /// `hasq` is a deprecated alias registered under a separate name.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct HasCommand {
+    #[arg(positional)]
     needle: String,
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     haystack: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(HasCommand);
 
 impl builtins::Command for HasCommand {
     type State = ();
@@ -33,12 +41,21 @@ impl builtins::Command for HasCommand {
 /// `hasv <needle> [haystack...]`  (PMS 12.3.4)
 ///
 /// Like `has`, but also prints the needle to stdout if found.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct HasvCommand {
+    #[arg(positional)]
     needle: String,
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     haystack: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(HasvCommand);
 
 impl builtins::Command for HasvCommand {
     type State = ();
@@ -65,11 +82,19 @@ impl builtins::Command for HasvCommand {
 ///
 /// Returns 0 if flag is in `IUSE_EFFECTIVE`, falling back to `$IUSE`
 /// (stripping `+`/`-`) when that variable is unset.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct InIuseCommand {
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional)]
     flag: String,
 }
+
+brush_builtin_winnow::winnow_builtin!(InIuseCommand);
 
 impl builtins::Command for InIuseCommand {
     type State = ();

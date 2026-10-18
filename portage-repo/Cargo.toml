@@ -28,10 +28,11 @@ gentoo-core = { workspace = true }
 # bump when intentionally updating brush. Local dev overrides to a worktree
 # via .cargo/config.toml.
 brush-core = { workspace = true, features = ["experimental-parser"] }
+brush-builtin-winnow = { workspace = true }
 brush-builtins = { workspace = true }
 brush-parser = { workspace = true }
 anstyle = { workspace = true }
-clap = { workspace = true }
+winnow-args = { version = "0.3.3", default-features = false, features = ["derive", "help-text"] }
 tokio = { workspace = true, features = ["rt"] }
 regex = { workspace = true }
 thiserror = { workspace = true }
@@ -53,4 +54,5 @@ rustix = { workspace = true }
 tempfile = { workspace = true }
 
 [dev-dependencies]
+clap = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }

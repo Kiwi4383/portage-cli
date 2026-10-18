@@ -24,7 +24,6 @@
 //! call), and `init_build_env` (every real phase).
 
 use brush_core::builtins;
-use clap::Parser;
 
 use super::output::{EbeginCommand, EchoMessageCommand, EendCommand};
 use super::version_query::{BestVersionCommand, HasVersionCommand};
@@ -68,11 +67,19 @@ pub(crate) fn set_tool_mode<SE: brush_core::ShellExtensions>(
 /// Metadata-mode no-op: succeeds immediately, ignoring all arguments.
 /// Reused for every dual-mode name with no other fallback behavior of its
 /// own.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct NoopCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     _args: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(NoopCommand);
 
 impl builtins::Command for NoopCommand {
     type State = ();
@@ -89,12 +96,21 @@ impl builtins::Command for NoopCommand {
 
 /// Metadata-mode `eend`: passes through its exit-code argument without
 /// touching any `ebegin` display state.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct EendStubCommand {
+    #[arg(positional)]
     exit_code: Option<u8>,
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     _message: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(EendStubCommand);
 
 impl builtins::Command for EendStubCommand {
     type State = ();
@@ -113,11 +129,19 @@ impl builtins::Command for EendStubCommand {
 
 /// Metadata-mode `has_version`: always "not installed" — querying a real
 /// VDB during a side-effect-free scan isn't meaningful.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct HasVersionStubCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     _args: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(HasVersionStubCommand);
 
 impl builtins::Command for HasVersionStubCommand {
     type State = ();
@@ -133,11 +157,19 @@ impl builtins::Command for HasVersionStubCommand {
 }
 
 /// Metadata-mode `best_version`: no output, fails.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct BestVersionStubCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     _args: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(BestVersionStubCommand);
 
 impl builtins::Command for BestVersionStubCommand {
     type State = ();

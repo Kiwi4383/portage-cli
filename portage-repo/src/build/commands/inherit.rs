@@ -22,7 +22,6 @@ use brush_core::builtins;
 
 use super::die::DieFlag;
 use brush_parser::ast::Program;
-use clap::Parser;
 
 /// Accumulating metadata variables (PMS 10.2) for EAPI < 8
 const ACCUM_VARS_BASE: &[&str] = &[
@@ -114,12 +113,15 @@ static CACHE_HITS: AtomicU64 = AtomicU64::new(0);
 static CACHE_MISSES: AtomicU64 = AtomicU64::new(0);
 
 /// Source eclasses and manage metadata variable accumulation per PMS 10
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct InheritCommand {
     /// Eclass names to inherit
-    #[arg(required = true)]
+    #[arg(positional, stop_flags, required)]
     eclasses: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(InheritCommand);
 
 impl builtins::Command for InheritCommand {
     type State = InheritState;

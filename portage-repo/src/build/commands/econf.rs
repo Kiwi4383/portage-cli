@@ -1,7 +1,6 @@
 use std::io::Write;
 
 use brush_core::builtins;
-use clap::Parser;
 
 use super::die::DieFlag;
 
@@ -9,11 +8,19 @@ use super::die::DieFlag;
 ///
 /// Runs `./configure` (or `$ECONF_SOURCE/configure`) with standard flags
 /// derived from the current EAPI and portage environment variables.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct EconfCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     args: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(EconfCommand);
 
 impl builtins::Command for EconfCommand {
     type State = ();

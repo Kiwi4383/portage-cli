@@ -10,7 +10,6 @@ use std::io::Write;
 
 use anstyle::Style;
 use brush_core::builtins;
-use clap::Parser;
 
 use crate::build::terminal::{PortageColors, TerminalState};
 
@@ -123,11 +122,19 @@ fn elog_base<SE: brush_core::ShellExtensions>(
 /// differ only in which colour paints the `*` — plus `einfon`, which omits the
 /// trailing newline (that is what the `n` is for) and, like portage's, does not
 /// split its message across lines.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct EchoMessageCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     message: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(EchoMessageCommand);
 
 impl builtins::Command for EchoMessageCommand {
     type State = ();
@@ -172,11 +179,19 @@ impl builtins::Command for EchoMessageCommand {
 ///
 /// Prints ` * <message> ...` to stderr (beginning of a timed action); `eend`
 /// closes it.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct EbeginCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     message: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(EbeginCommand);
 
 impl builtins::Command for EbeginCommand {
     type State = ();
@@ -219,12 +234,21 @@ fn endcol(columns: usize) -> String {
 /// Portage hardcodes `RC_ENDCOL="yes"`, so the indicator is always placed by
 /// cursor motion rather than by padding — and with colour off `ENDCOL` is empty,
 /// which degrades to the indicator on its own line. Both branches are here.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct EendCommand {
+    #[arg(positional)]
     exit_code: Option<u8>,
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     message: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(EendCommand);
 
 impl builtins::Command for EendCommand {
     type State = ();

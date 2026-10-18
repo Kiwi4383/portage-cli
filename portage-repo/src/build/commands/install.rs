@@ -1,7 +1,7 @@
 //! `do*`/`new*` install helpers as Rust builtins (PMS 12.3.x)
 //!
-//! These replace the hand-parsed bash versions in `INSTALL_HELPERS`: real clap
-//! arg parsing (`-r`, `-x`), `${ED}`/dest-tree awareness, and the shared
+//! These replace the hand-parsed bash versions in `INSTALL_HELPERS`: real
+//! argument parsing (`-r`, `-x`), `${ED}`/dest-tree awareness, and the shared
 //! [`DieFlag`](super::die::DieFlag) on failure. They shell out to coreutils
 //! `install`/`cp`/`ln` for byte-identical mode/ownership semantics — the win is
 //! removing fragile bash, not reimplementing install(1).
@@ -16,7 +16,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use brush_core::builtins;
-use clap::Parser;
 
 use super::die::DieFlag;
 use super::inst_owner::InstOwnerDefaults;
@@ -440,11 +439,19 @@ macro_rules! require_files {
 // ---- destination-directory helpers ----
 
 /// `dodir <dir>...` (PMS 12.3.1): create directories under `${ED}`
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct DodirCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     dirs: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(DodirCommand);
 
 impl builtins::Command for DodirCommand {
     type State = ();
@@ -470,11 +477,19 @@ impl builtins::Command for DodirCommand {
 
 /// `keepdir <dir>...` (PMS 12.3.1): `dodir` plus a `.keep_*` marker so the empty
 /// directory survives image merging.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct KeepdirCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     dirs: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(KeepdirCommand);
 
 impl builtins::Command for KeepdirCommand {
     type State = ();
@@ -537,13 +552,21 @@ fn install_files_closure(
 
 /// `doins [-r] <file>...` (PMS 12.3.4): install into `${ED}${INSDESTTREE}` with
 /// `INSOPTIONS` (default `-m0644`); `-r` recurses into directories.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct DoinsCommand {
     #[arg(short = 'r')]
     recursive: bool,
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     files: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(DoinsCommand);
 
 impl builtins::Command for DoinsCommand {
     type State = ();
@@ -581,11 +604,19 @@ impl builtins::Command for DoinsCommand {
 
 /// `doexe <file>...` (PMS 12.3.4): install into `${ED}${EXEDESTTREE}` with
 /// `EXEOPTIONS` (default `-m0755`).
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct DoexeCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     files: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(DoexeCommand);
 
 impl builtins::Command for DoexeCommand {
     type State = ();
@@ -615,11 +646,19 @@ impl builtins::Command for DoexeCommand {
 
 /// `dobin <file>...` (PMS 12.3.4): install executables into `${DESTTREE}/bin`
 /// (mode 0755).
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct DobinCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     files: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(DobinCommand);
 
 impl builtins::Command for DobinCommand {
     type State = ();
@@ -647,11 +686,19 @@ impl builtins::Command for DobinCommand {
 
 /// `dosbin <file>...` (PMS 12.3.4): install executables into `${DESTTREE}/sbin`
 /// (mode 0755).
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct DosbinCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     files: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(DosbinCommand);
 
 impl builtins::Command for DosbinCommand {
     type State = ();
@@ -679,13 +726,21 @@ impl builtins::Command for DosbinCommand {
 
 /// `dodoc [-r] <file>...` (PMS 12.3.4): install docs into
 /// `${ED}/usr/share/doc/${PF}[/${DOCDESTTREE}]` (mode 0644).
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct DodocCommand {
     #[arg(short = 'r')]
     recursive: bool,
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     files: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(DodocCommand);
 
 impl builtins::Command for DodocCommand {
     type State = ();
@@ -725,13 +780,21 @@ impl builtins::Command for DodocCommand {
 
 /// `doheader [-r] <file>...` (PMS 12.3.4): install headers into
 /// `${ED}/usr/include` (mode 0644).
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct DoheaderCommand {
     #[arg(short = 'r')]
     recursive: bool,
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     files: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(DoheaderCommand);
 
 impl builtins::Command for DoheaderCommand {
     type State = ();
@@ -764,11 +827,19 @@ impl builtins::Command for DoheaderCommand {
 
 /// `doinfo <file>...` (PMS 12.3.4): install GNU info files into
 /// `${ED}/usr/share/info` (mode 0644).
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct DoinfoCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     files: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(DoinfoCommand);
 
 impl builtins::Command for DoinfoCommand {
     type State = ();
@@ -801,11 +872,19 @@ impl builtins::Command for DoinfoCommand {
 
 /// `doman [-i18n=<locale>] <file>...` (PMS 12.3.4): install man pages into
 /// `${ED}/usr/share/man/man<section>`, section taken from each file's extension.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct DomanCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     files: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(DomanCommand);
 
 impl builtins::Command for DomanCommand {
     type State = ();
@@ -873,11 +952,19 @@ impl builtins::Command for DomanCommand {
 
 /// `domo <file>...` (PMS 12.3.4): install `.mo` files into
 /// `${ED}/usr/share/locale/<locale>/LC_MESSAGES/${MOPREFIX:-${PN}}.mo`.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct DomoCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     files: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(DomoCommand);
 
 impl builtins::Command for DomoCommand {
     type State = ();
@@ -922,11 +1009,19 @@ impl builtins::Command for DomoCommand {
 
 /// `dolib.a <file>...` (PMS 12.3.4): install static libs into
 /// `${DESTTREE}/$(get_libdir)` (mode 0644).
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct DolibaCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     files: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(DolibaCommand);
 
 impl builtins::Command for DolibaCommand {
     type State = ();
@@ -958,11 +1053,19 @@ impl builtins::Command for DolibaCommand {
 
 /// `dolib.so <file>...` (PMS 12.3.4): install shared libs into
 /// `${DESTTREE}/$(get_libdir)` (mode 0755).
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct DolibsoCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     files: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(DolibsoCommand);
 
 impl builtins::Command for DolibsoCommand {
     type State = ();
@@ -994,11 +1097,19 @@ impl builtins::Command for DolibsoCommand {
 
 /// `dolib <file>...` (PMS 12.3.4): dispatch each file to `dolib.so`/`dolib.a` by
 /// suffix (`.so`/`.so.*` are shared libraries, mode 0755; rest are 0644).
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct DolibCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     files: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(DolibCommand);
 
 impl builtins::Command for DolibCommand {
     type State = ();
@@ -1040,13 +1151,21 @@ impl builtins::Command for DolibCommand {
 
 /// `dosym [-r] <target> <link>` (PMS 12.3.4): create a symlink at `${ED}${link}`;
 /// `-r` makes `target` relative to the link's directory.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct DosymCommand {
     #[arg(short = 'r')]
     relative: bool,
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     args: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(DosymCommand);
 
 impl builtins::Command for DosymCommand {
     type State = ();
@@ -1096,11 +1215,19 @@ impl builtins::Command for DosymCommand {
 }
 
 /// `fperms <mode> <file>...` (PMS 12.3.5): `chmod` paths relative to `${ED}`
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct FpermsCommand {
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     args: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(FpermsCommand);
 
 impl builtins::Command for FpermsCommand {
     type State = ();
@@ -1148,11 +1275,19 @@ impl builtins::Command for FpermsCommand {
 
 /// `fowners <owner>[:<group>] <file>...` (PMS 12.3.5): `chown` paths relative to
 /// `${ED}`.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct FownersCommand {
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     args: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(FownersCommand);
 
 impl builtins::Command for FownersCommand {
     type State = ();
@@ -1362,11 +1497,19 @@ fn opts_var<SE: brush_core::ShellExtensions>(
 /// `context.command_name`. A literal `-` source reads the content from stdin
 /// (PMS 12.3.x), staged under `${T}` before install so the file lands under the
 /// requested name — e.g. `acct-group.eclass`'s `newins - foo.conf < <(…)`.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct NewCommand {
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     args: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(NewCommand);
 
 impl builtins::Command for NewCommand {
     type State = ();

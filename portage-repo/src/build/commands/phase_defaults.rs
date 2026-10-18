@@ -11,7 +11,6 @@ use std::path::Path;
 
 use brush_core::ShellValue;
 use brush_core::builtins;
-use clap::Parser;
 
 use super::die::DieFlag;
 
@@ -121,8 +120,11 @@ async fn run_econf_if_configure_at<SE: brush_core::ShellExtensions>(
 }
 
 /// PMS 9.1.16 / Table 9.10: pkg_nofetch's default for EAPI &ge; 2
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiPkgNofetchCommand;
+
+brush_builtin_winnow::winnow_builtin!(EapiPkgNofetchCommand);
 
 impl builtins::Command for EapiPkgNofetchCommand {
     type State = ();
@@ -166,8 +168,11 @@ impl builtins::Command for EapiPkgNofetchCommand {
 }
 
 /// PMS Listing 9.1: src_unpack's default for every EAPI
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcUnpackCommand;
+
+brush_builtin_winnow::winnow_builtin!(EapiSrcUnpackCommand);
 
 impl builtins::Command for EapiSrcUnpackCommand {
     type State = ();
@@ -212,8 +217,11 @@ async fn default_src_compile<SE: brush_core::ShellExtensions>(
 }
 
 /// PMS Listing 9.5: src_compile, format 0 (EAPI 0)
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcCompile0Command;
+
+brush_builtin_winnow::winnow_builtin!(EapiSrcCompile0Command);
 
 impl builtins::Command for EapiSrcCompile0Command {
     type State = ();
@@ -232,8 +240,11 @@ impl builtins::Command for EapiSrcCompile0Command {
 
 /// PMS Listing 9.6: src_compile, format 1 (EAPI 1) — same as format 0, but
 /// the configure check honours `ECONF_SOURCE`
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcCompile1Command;
+
+brush_builtin_winnow::winnow_builtin!(EapiSrcCompile1Command);
 
 impl builtins::Command for EapiSrcCompile1Command {
     type State = ();
@@ -261,8 +272,11 @@ impl builtins::Command for EapiSrcCompile1Command {
 
 /// PMS Listing 9.7: src_compile, format 2 (EAPI 2+) — configure is its own
 /// phase by now, so the default here is just the emake step
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcCompile2Command;
+
+brush_builtin_winnow::winnow_builtin!(EapiSrcCompile2Command);
 
 impl builtins::Command for EapiSrcCompile2Command {
     type State = ();
@@ -280,8 +294,11 @@ impl builtins::Command for EapiSrcCompile2Command {
 }
 
 /// PMS 9.1.6 Listing 9.4: src_configure's default for EAPI 2+
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcConfigureCommand;
+
+brush_builtin_winnow::winnow_builtin!(EapiSrcConfigureCommand);
 
 impl builtins::Command for EapiSrcConfigureCommand {
     type State = ();
@@ -308,8 +325,11 @@ impl builtins::Command for EapiSrcConfigureCommand {
 }
 
 /// PMS 9.1.5 Table 9.4: src_prepare's default is a no-op for EAPI 2-5
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcPrepareNoopCommand;
+
+brush_builtin_winnow::winnow_builtin!(EapiSrcPrepareNoopCommand);
 
 impl builtins::Command for EapiSrcPrepareNoopCommand {
     type State = ();
@@ -325,8 +345,11 @@ impl builtins::Command for EapiSrcPrepareNoopCommand {
 }
 
 /// PMS 9.1.9 Listing 9.8: src_install, format 4 (EAPI 4-5)
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcInstall4Command;
+
+brush_builtin_winnow::winnow_builtin!(EapiSrcInstall4Command);
 
 /// PMS's fixed fallback filename list (Listing 9.8, Algorithm 12.3) used
 /// when DOCS is neither a non-empty array nor a non-empty scalar.
@@ -443,8 +466,11 @@ fn glob_match(pattern: &str, name: &str) -> bool {
 }
 
 /// PMS Algorithm 12.4: `get_libdir`
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct GetLibdirCommand;
+
+brush_builtin_winnow::winnow_builtin!(GetLibdirCommand);
 
 impl builtins::Command for GetLibdirCommand {
     type State = ();
@@ -479,8 +505,11 @@ impl builtins::Command for GetLibdirCommand {
 }
 
 /// PMS 9.1.9 Listing 9.9: src_install, format 6 (EAPI 6+)
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcInstall6Command;
+
+brush_builtin_winnow::winnow_builtin!(EapiSrcInstall6Command);
 
 impl builtins::Command for EapiSrcInstall6Command {
     type State = ();
@@ -513,8 +542,11 @@ impl builtins::Command for EapiSrcInstall6Command {
 }
 
 /// PMS 12.3 Algorithm 12.3: `einstalldocs`
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EinstalldocsCommand;
+
+brush_builtin_winnow::winnow_builtin!(EinstalldocsCommand);
 
 impl builtins::Command for EinstalldocsCommand {
     type State = ();
@@ -574,8 +606,11 @@ impl builtins::Command for EinstalldocsCommand {
 }
 
 /// PMS 9.1.8 / Table 9.7: src_test's default, every EAPI
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcTestCommand;
+
+brush_builtin_winnow::winnow_builtin!(EapiSrcTestCommand);
 
 impl builtins::Command for EapiSrcTestCommand {
     type State = ();
@@ -624,8 +659,11 @@ impl builtins::Command for EapiSrcTestCommand {
 }
 
 /// PMS Listing 9.2: src_prepare, format 6 (EAPI 6-7)
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcPrepare6Command;
+
+brush_builtin_winnow::winnow_builtin!(EapiSrcPrepare6Command);
 
 /// See [`run_emake`]'s doc comment on `params` — `eapply`'s own "Applying
 /// patches from …" status line is subject to the same rule (and is the
@@ -671,8 +709,11 @@ impl builtins::Command for EapiSrcPrepare6Command {
 }
 
 /// PMS Listing 9.3: src_prepare, format 8 (EAPI 8+) — `eapply --`
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcPrepare8Command;
+
+brush_builtin_winnow::winnow_builtin!(EapiSrcPrepare8Command);
 
 impl builtins::Command for EapiSrcPrepare8Command {
     type State = ();
@@ -690,8 +731,11 @@ impl builtins::Command for EapiSrcPrepare8Command {
 
 /// `eapply_user` — no user patch directory support (yet); a no-op is a
 /// conforming implementation (PMS only requires it be safe to call).
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapplyUserCommand;
+
+brush_builtin_winnow::winnow_builtin!(EapplyUserCommand);
 
 impl builtins::Command for EapplyUserCommand {
     type State = ();
@@ -711,11 +755,19 @@ impl builtins::Command for EapplyUserCommand {
 /// Runs `command` with `PORTAGE_NONFATAL=1` scoped to that one invocation
 /// (a bash prefix assignment), so nonfatal-aware builtins (`emake`, `die -n`,
 /// ...) can return a failure instead of aborting the build.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct NonfatalCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     args: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(NonfatalCommand);
 
 impl builtins::Command for NonfatalCommand {
     type State = ();
@@ -749,11 +801,19 @@ impl builtins::Command for NonfatalCommand {
 ///
 /// Dies if any element of `$PIPESTATUS` from the previous pipeline was
 /// non-zero.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct AssertCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     message: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(AssertCommand);
 
 impl builtins::Command for AssertCommand {
     type State = ();

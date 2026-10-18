@@ -1,7 +1,6 @@
 use std::io::Write;
 
 use brush_core::builtins;
-use clap::Parser;
 
 use super::die::DieFlag;
 
@@ -11,11 +10,19 @@ use super::die::DieFlag;
 /// `${ED}`, for legacy build systems that ignore `DESTDIR`. Mirrors portage's
 /// `phase-helpers.sh` `einstall`. EAPI 7+ ebuilds use `emake DESTDIR=… install`
 /// instead; this exists only for completeness with old ebuilds.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct EinstallCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     args: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(EinstallCommand);
 
 /// Raise the shared `die` flag and echo the portage-style message, returning
 /// exit 1 (the "die: " prefix is matched by tests and `inherit` error paths).

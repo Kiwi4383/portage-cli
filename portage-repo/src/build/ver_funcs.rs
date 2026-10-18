@@ -10,7 +10,6 @@ use std::io::Write;
 use std::sync::OnceLock;
 
 use brush_core::builtins;
-use clap::Parser;
 use regex::Regex;
 
 // ── Version splitting ──────────────────────────────────────────────────────
@@ -104,22 +103,24 @@ fn parse_range(range: &str, max: usize) -> Result<(usize, usize), String> {
 /// `ver_rs <range> <repl> [<range> <repl>]... [<version>]` — replace version separators
 ///
 /// See [PMS 12.3.14](https://projects.gentoo.org/pms/9/pms.html#ver-funcs).
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct VerRsCommand {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags, double_dash = "preserve")]
     args: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(VerRsCommand);
 
 impl builtins::Command for VerRsCommand {
     type State = ();
     type SharedState = ();
     type Error = brush_core::Error;
-
-    fn new<I: IntoIterator<Item = String>>(args: I) -> Result<Self, clap::Error> {
-        Ok(VerRsCommand {
-            args: args.into_iter().skip(1).collect(),
-        })
-    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
@@ -185,26 +186,27 @@ impl builtins::Command for VerRsCommand {
 /// the pairs in the given 1-indexed range (inclusive).
 ///
 /// See [PMS 12.3.14](https://projects.gentoo.org/pms/9/pms.html#ver-funcs).
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct VerCutCommand {
-    /// Component range: M, M-N, or M-
-    range: String,
-    /// Version string (defaults to `$PV`)
-    version: Option<String>,
+    /// The component range (M, M-N or M-), then the version string (defaults to `$PV`).
+    /// Taken as written, a `--` and words that start with `-` included; any further words
+    /// are ignored.
+    #[arg(positional, stop_flags, double_dash = "preserve")]
+    args: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(VerCutCommand);
 
 impl builtins::Command for VerCutCommand {
     type State = ();
     type SharedState = ();
     type Error = brush_core::Error;
-
-    fn new<I: IntoIterator<Item = String>>(args: I) -> Result<Self, clap::Error> {
-        // Bypass clap to avoid issues with empty-string args or hyphen values.
-        let mut it = args.into_iter().skip(1); // first element is the program name
-        let range = it.next().unwrap_or_default();
-        let version = it.next();
-        Ok(VerCutCommand { range, version })
-    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
@@ -213,7 +215,7 @@ impl builtins::Command for VerCutCommand {
         let shell = context.shell;
 
         let pv_owned;
-        let v: &str = if let Some(ref ver) = self.version {
+        let v: &str = if let Some(ver) = self.args.get(1) {
             ver.as_str()
         } else {
             pv_owned = shell
@@ -226,7 +228,8 @@ impl builtins::Command for VerCutCommand {
         let pairs = ver_split(v);
         let max = pairs.len() / 2;
 
-        let (start, end) = match parse_range(&self.range, max) {
+        let range = self.args.first().map_or("", String::as_str);
+        let (start, end) = match parse_range(range, max) {
             Ok(r) => r,
             Err(e) => {
                 let _ = writeln!(context.params.stderr(shell), "die: ver_cut: {e}");
@@ -458,24 +461,25 @@ fn suffix_word(s: &str) -> &str {
 /// If only two arguments are given, `$PVR` is used as `v1`.
 ///
 /// See [PMS 12.3.14](https://projects.gentoo.org/pms/9/pms.html#ver-funcs).
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct VerTestCommand {
     /// Arguments: [v1] op v2
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags, double_dash = "preserve")]
     args: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(VerTestCommand);
 
 impl builtins::Command for VerTestCommand {
     type State = ();
     type SharedState = ();
     type Error = brush_core::Error;
-
-    fn new<I: IntoIterator<Item = String>>(args: I) -> Result<Self, clap::Error> {
-        // Bypass clap to correctly preserve hyphen-prefixed operator args.
-        Ok(VerTestCommand {
-            args: args.into_iter().skip(1).collect(), // skip program name
-        })
-    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
@@ -549,8 +553,11 @@ impl builtins::Command for VerTestCommand {
 /// extraction no package is being replaced, so the output is always empty.
 ///
 /// See [PMS 12.3.14](https://projects.gentoo.org/pms/9/pms.html#ver-funcs).
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct VerReplacingCommand {}
+
+brush_builtin_winnow::winnow_builtin!(VerReplacingCommand);
 
 impl builtins::Command for VerReplacingCommand {
     type State = ();

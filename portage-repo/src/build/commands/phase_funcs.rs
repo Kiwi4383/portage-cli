@@ -1,5 +1,4 @@
 use brush_core::builtins;
-use clap::Parser;
 
 // ── ___eapi_* predicates ──────────────────────────────────────────────────────
 
@@ -9,10 +8,14 @@ use clap::Parser;
 /// optional first argument to override `$EAPI`.
 ///
 /// Registered under every `___eapi_*` name; dispatches via `command_name`.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiPredicateCommand {
+    #[arg(positional)]
     eapi_override: Option<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(EapiPredicateCommand);
 
 impl builtins::Command for EapiPredicateCommand {
     type State = ();
@@ -202,11 +205,16 @@ pub(crate) const EAPI_PREDICATE_NAMES: &[&str] = &[
 /// Sets up `default()` and `default_<phase_func>()` pointing at the correct
 /// EAPI-versioned implementation, and installs a fallback `<phase_func>()`
 /// that calls `default` if the ebuild did not define the phase itself.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EbuildPhaseFuncsCommand {
+    #[arg(positional)]
     eapi_str: String,
+    #[arg(positional)]
     phase_func: String,
 }
+
+brush_builtin_winnow::winnow_builtin!(EbuildPhaseFuncsCommand);
 
 impl builtins::Command for EbuildPhaseFuncsCommand {
     type State = ();

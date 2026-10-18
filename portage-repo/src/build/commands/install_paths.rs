@@ -9,7 +9,6 @@
 use std::sync::{Arc, Mutex};
 
 use brush_core::builtins;
-use clap::Parser;
 
 #[derive(Default)]
 struct Lists {
@@ -56,14 +55,17 @@ impl InstallPaths {
 /// `docompress [-x] <path>...`  (PMS 12.3.9)
 ///
 /// Without `-x`, marks paths for compression; with `-x`, exempts them.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct DocompressCommand {
     /// Add to the exclusion list instead of the inclusion list
     #[arg(short = 'x')]
     exclude: bool,
-    #[arg(trailing_var_arg = true)]
+    #[arg(positional, stop_flags)]
     paths: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(DocompressCommand);
 
 impl builtins::Command for DocompressCommand {
     type State = ();
@@ -91,14 +93,17 @@ impl builtins::Command for DocompressCommand {
 /// `dostrip [-x] <path>...`  (PMS 12.3.10, EAPI 7+)
 ///
 /// Without `-x`, marks paths for stripping; with `-x`, exempts them.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct DostripCommand {
     /// Add to the exclusion list instead of the inclusion list
     #[arg(short = 'x')]
     exclude: bool,
-    #[arg(trailing_var_arg = true)]
+    #[arg(positional, stop_flags)]
     paths: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(DostripCommand);
 
 impl builtins::Command for DostripCommand {
     type State = ();

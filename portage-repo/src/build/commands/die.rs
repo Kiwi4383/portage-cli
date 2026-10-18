@@ -2,7 +2,6 @@ use std::io::Write;
 use std::sync::{Arc, Mutex};
 
 use brush_core::builtins;
-use clap::Parser;
 
 // ── die ───────────────────────────────────────────────────────────────────────
 
@@ -38,7 +37,13 @@ impl DieFlag {
 /// returns 1.
 /// The "die: " prefix is load-bearing — it is matched by tests and by
 /// `inherit` error paths to distinguish portage die output from other stderr.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct DieCommand {
     /// Honour `nonfatal` (PMS 12.3.1)
     ///
@@ -46,9 +51,11 @@ pub(crate) struct DieCommand {
     /// build. Used e.g. by ninja-utils' `eninja`.
     #[arg(short = 'n')]
     nonfatal: bool,
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     message: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(DieCommand);
 
 impl builtins::Command for DieCommand {
     type State = ();

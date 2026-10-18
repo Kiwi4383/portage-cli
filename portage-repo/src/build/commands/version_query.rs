@@ -10,7 +10,6 @@ use std::collections::HashSet;
 use std::io::Write;
 
 use brush_core::builtins;
-use clap::Parser;
 use portage_atom::interner::{DefaultInterner, Interned};
 
 fn vdb_roots_for<SE: brush_core::ShellExtensions>(
@@ -191,7 +190,8 @@ fn parent_use<SE: brush_core::ShellExtensions>(
 
 /// `has_version [-b|-d|-r] <atom>` — exit 0 when an installed package
 /// matches.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct HasVersionCommand {
     /// Query BROOT (build tools)
     #[arg(short = 'b')]
@@ -202,8 +202,11 @@ pub(crate) struct HasVersionCommand {
     /// Query ROOT (the default)
     #[arg(short = 'r')]
     root: bool,
+    #[arg(positional)]
     atom: String,
 }
+
+brush_builtin_winnow::winnow_builtin!(HasVersionCommand);
 
 impl builtins::Command for HasVersionCommand {
     type State = ();
@@ -221,7 +224,8 @@ impl builtins::Command for HasVersionCommand {
 }
 
 /// `best_version [-b|-d|-r] <atom>` — print the best matching installed cpv
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct BestVersionCommand {
     /// Query BROOT (build tools)
     #[arg(short = 'b')]
@@ -232,8 +236,11 @@ pub(crate) struct BestVersionCommand {
     /// Query ROOT (the default)
     #[arg(short = 'r')]
     root: bool,
+    #[arg(positional)]
     atom: String,
 }
+
+brush_builtin_winnow::winnow_builtin!(BestVersionCommand);
 
 impl builtins::Command for BestVersionCommand {
     type State = ();

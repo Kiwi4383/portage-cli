@@ -1,5 +1,4 @@
 use brush_core::builtins;
-use clap::Parser;
 
 // ── P4 unpack ─────────────────────────────────────────────────────────────────
 
@@ -11,11 +10,19 @@ use clap::Parser;
 /// Extension matching is case-insensitive for EAPI ≤ 5, case-sensitive for EAPI ≥ 6.
 ///
 /// See [PMS 12.3.11](https://projects.gentoo.org/pms/9/pms.html#unpack).
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct UnpackCommand {
-    #[arg(required = true, trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags, required)]
     archives: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(UnpackCommand);
 
 impl builtins::Command for UnpackCommand {
     type State = ();

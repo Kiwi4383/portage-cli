@@ -1,7 +1,6 @@
 use std::io::Write;
 
 use brush_core::builtins;
-use clap::Parser;
 use portage_metadata::Eapi;
 
 use super::die::DieFlag;
@@ -11,11 +10,19 @@ use super::die::DieFlag;
 /// `use <flag>`  (PMS 12.3.1)
 ///
 /// Returns 0 if flag is present as a whole word in `$USE`, 1 otherwise.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct UseCommand {
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional)]
     flag: String,
 }
+
+brush_builtin_winnow::winnow_builtin!(UseCommand);
 
 impl builtins::Command for UseCommand {
     type State = ();
@@ -40,13 +47,21 @@ impl builtins::Command for UseCommand {
 ///
 /// If flag is set: prints flag (or true-val if given) and returns 0.
 /// If flag is unset: prints nothing and returns 1.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct UsevCommand {
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional)]
     flag: String,
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional)]
     true_val: Option<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(UsevCommand);
 
 impl builtins::Command for UsevCommand {
     type State = ();
@@ -82,19 +97,27 @@ impl builtins::Command for UsevCommand {
 /// Prints `${true-str}${true-suffix}` (defaults: "yes", "") if flag is set,
 /// or `${false-str}${false-suffix}` (defaults: "no", "") if not.
 /// Returns 0 if flag is set, 1 otherwise.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct UsexCommand {
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional)]
     flag: String,
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional)]
     true_str: Option<String>,
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional)]
     false_str: Option<String>,
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional)]
     true_suffix: Option<String>,
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional)]
     false_suffix: Option<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(UsexCommand);
 
 impl builtins::Command for UsexCommand {
     type State = ();
@@ -128,15 +151,23 @@ impl builtins::Command for UsexCommand {
 /// `use_enable <flag> [feature [value]]`  (PMS 12.3.8)
 ///
 /// Outputs `--enable-feature[=value]` or `--disable-feature`.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct UseEnableCommand {
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional)]
     flag: String,
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional)]
     feature: Option<String>,
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional)]
     val: Option<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(UseEnableCommand);
 
 impl builtins::Command for UseEnableCommand {
     type State = ();
@@ -176,15 +207,23 @@ impl builtins::Command for UseEnableCommand {
 /// `use_with <flag> [feature [value]]`  (PMS 12.3.9)
 ///
 /// Outputs `--with-feature[=value]` or `--without-feature`.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct UseWithCommand {
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional)]
     flag: String,
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional)]
     feature: Option<String>,
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional)]
     val: Option<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(UseWithCommand);
 
 impl builtins::Command for UseWithCommand {
     type State = ();

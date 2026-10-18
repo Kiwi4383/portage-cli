@@ -1,7 +1,6 @@
 use std::io::Write;
 
 use brush_core::builtins;
-use clap::Parser;
 
 // ── EXPORT_FUNCTIONS ──────────────────────────────────────────────────────────
 
@@ -12,11 +11,14 @@ use clap::Parser;
 ///
 /// Ported from bash `eval` to a batched `run_string` call, eliminating the
 /// bash for-loop + per-phase eval overhead.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ExportFunctionsCommand {
-    #[arg(required = true)]
+    #[arg(positional, stop_flags, required)]
     phases: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(ExportFunctionsCommand);
 
 impl builtins::Command for ExportFunctionsCommand {
     type State = ();

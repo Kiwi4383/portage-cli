@@ -30,7 +30,7 @@ fn die<SE: brush_core::ShellExtensions>(
     context: &brush_core::ExecutionContext<'_, SE>,
     msg: &str,
 ) -> brush_core::ExecutionResult {
-    if let Ok(flag) = context.shared::<DieFlag>() {
+    if let Some(flag) = context.shell.builtin_state::<DieFlag>() {
         flag.raise(msg);
     }
     let _ = writeln!(context.params.stderr(context.shell), "die: {msg}");
@@ -38,8 +38,6 @@ fn die<SE: brush_core::ShellExtensions>(
 }
 
 impl builtins::Command for EinstallCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

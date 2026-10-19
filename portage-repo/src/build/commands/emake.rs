@@ -24,8 +24,6 @@ pub(crate) struct EmakeCommand {
 brush_builtin_winnow::winnow_builtin!(EmakeCommand);
 
 impl builtins::Command for EmakeCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -45,7 +43,7 @@ impl builtins::Command for EmakeCommand {
         // bare `emake` (no `|| die`) still abort — and the phase driver does not
         // have to treat a phase's trailing exit status as fatal (which would
         // mis-fire on benign tail commands like `find … -exec rmdir`).
-        let die_flag = context.shared::<DieFlag>().ok().cloned();
+        let die_flag = context.shell.builtin_state::<DieFlag>().cloned();
         let shell = context.shell;
         // `nonfatal emake` (PORTAGE_NONFATAL) suppresses the self-die.
         let nonfatal = shell.env_str("PORTAGE_NONFATAL").as_deref() == Some("1");

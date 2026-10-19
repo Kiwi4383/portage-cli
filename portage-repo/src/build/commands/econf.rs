@@ -23,8 +23,6 @@ pub(crate) struct EconfCommand {
 brush_builtin_winnow::winnow_builtin!(EconfCommand);
 
 impl builtins::Command for EconfCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -35,7 +33,7 @@ impl builtins::Command for EconfCommand {
         // Capture the shared die flag before the shell is moved out of context;
         // econf self-dies on configure failure (PMS 12.3.2), so the eclasses
         // that call bare `econf` (no `|| die`) still abort the build.
-        let die_flag = context.shared::<DieFlag>().ok().cloned();
+        let die_flag = context.shell.builtin_state::<DieFlag>().cloned();
         // configure (and the pkg-config it spawns) must see the full build
         // environment, including any bashrc-exported overlay search paths.
         let env_vars = super::context_env(&context);

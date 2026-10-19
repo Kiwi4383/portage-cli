@@ -68,15 +68,13 @@ pub(crate) struct DocompressCommand {
 brush_builtin_winnow::winnow_builtin!(DocompressCommand);
 
 impl builtins::Command for DocompressCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        if let Ok(paths) = context.shared::<InstallPaths>() {
+        if let Some(paths) = context.shell.builtin_state::<InstallPaths>() {
             paths.with(|l| {
                 let list = if self.exclude {
                     &mut l.compress_exclude
@@ -106,15 +104,13 @@ pub(crate) struct DostripCommand {
 brush_builtin_winnow::winnow_builtin!(DostripCommand);
 
 impl builtins::Command for DostripCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        if let Ok(paths) = context.shared::<InstallPaths>() {
+        if let Some(paths) = context.shell.builtin_state::<InstallPaths>() {
             paths.with(|l| {
                 let list = if self.exclude {
                     &mut l.strip_exclude

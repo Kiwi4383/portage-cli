@@ -31,15 +31,13 @@ pub(crate) struct EapplyCommand {
 brush_builtin_winnow::winnow_builtin!(EapplyCommand);
 
 impl builtins::Command for EapplyCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let die_flag = context.shared::<DieFlag>().ok().cloned();
+        let die_flag = context.shell.builtin_state::<DieFlag>().cloned();
         let env_vars = super::context_env(&context);
         let shell = context.shell;
         let cwd = shell.working_dir().to_path_buf();

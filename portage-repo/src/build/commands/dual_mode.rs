@@ -82,8 +82,6 @@ pub(crate) struct NoopCommand {
 brush_builtin_winnow::winnow_builtin!(NoopCommand);
 
 impl builtins::Command for NoopCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -113,8 +111,6 @@ pub(crate) struct EendStubCommand {
 brush_builtin_winnow::winnow_builtin!(EendStubCommand);
 
 impl builtins::Command for EendStubCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -144,8 +140,6 @@ pub(crate) struct HasVersionStubCommand {
 brush_builtin_winnow::winnow_builtin!(HasVersionStubCommand);
 
 impl builtins::Command for HasVersionStubCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -172,8 +166,6 @@ pub(crate) struct BestVersionStubCommand {
 brush_builtin_winnow::winnow_builtin!(BestVersionStubCommand);
 
 impl builtins::Command for BestVersionStubCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

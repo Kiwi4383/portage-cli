@@ -18,7 +18,8 @@ fn colors<SE: brush_core::ShellExtensions>(
     context: &brush_core::ExecutionContext<'_, SE>,
 ) -> PortageColors {
     context
-        .shared::<TerminalState>()
+        .shell
+        .builtin_state::<TerminalState>()
         .map(|t| t.get().colors)
         .unwrap_or_default()
 }
@@ -137,8 +138,6 @@ pub(crate) struct EchoMessageCommand {
 brush_builtin_winnow::winnow_builtin!(EchoMessageCommand);
 
 impl builtins::Command for EchoMessageCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -194,8 +193,6 @@ pub(crate) struct EbeginCommand {
 brush_builtin_winnow::winnow_builtin!(EbeginCommand);
 
 impl builtins::Command for EbeginCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -251,8 +248,6 @@ pub(crate) struct EendCommand {
 brush_builtin_winnow::winnow_builtin!(EendCommand);
 
 impl builtins::Command for EendCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -260,7 +255,8 @@ impl builtins::Command for EendCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let terminal = context
-            .shared::<TerminalState>()
+            .shell
+            .builtin_state::<TerminalState>()
             .map(TerminalState::get)
             .unwrap_or_default();
         let palette = terminal.colors;

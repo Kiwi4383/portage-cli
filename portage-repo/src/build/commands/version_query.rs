@@ -209,8 +209,6 @@ pub(crate) struct HasVersionCommand {
 brush_builtin_winnow::winnow_builtin!(HasVersionCommand);
 
 impl builtins::Command for HasVersionCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -243,8 +241,6 @@ pub(crate) struct BestVersionCommand {
 brush_builtin_winnow::winnow_builtin!(BestVersionCommand);
 
 impl builtins::Command for BestVersionCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

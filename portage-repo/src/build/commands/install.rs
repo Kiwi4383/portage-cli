@@ -167,7 +167,7 @@ fn get_libdir<SE: brush_core::ShellExtensions>(shell: &brush_core::Shell<SE>) ->
 fn inst_owner_install_opts<SE: brush_core::ShellExtensions>(
     context: &brush_core::ExecutionContext<'_, SE>,
 ) -> Vec<String> {
-    if let Ok(owner) = context.shared::<InstOwnerDefaults>() {
+    if let Some(owner) = context.shell.builtin_state::<InstOwnerDefaults>() {
         owner.install_opts(context.shell)
     } else {
         vec![
@@ -193,7 +193,7 @@ fn raise_die<SE: brush_core::ShellExtensions>(
     context: &brush_core::ExecutionContext<'_, SE>,
     msg: &str,
 ) -> brush_core::ExecutionResult {
-    if let Ok(flag) = context.shared::<DieFlag>() {
+    if let Some(flag) = context.shell.builtin_state::<DieFlag>() {
         flag.raise(msg);
     }
     let _ = writeln!(context.params.stderr(context.shell), "die: {msg}");
@@ -454,8 +454,6 @@ pub(crate) struct DodirCommand {
 brush_builtin_winnow::winnow_builtin!(DodirCommand);
 
 impl builtins::Command for DodirCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -492,8 +490,6 @@ pub(crate) struct KeepdirCommand {
 brush_builtin_winnow::winnow_builtin!(KeepdirCommand);
 
 impl builtins::Command for KeepdirCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -569,8 +565,6 @@ pub(crate) struct DoinsCommand {
 brush_builtin_winnow::winnow_builtin!(DoinsCommand);
 
 impl builtins::Command for DoinsCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -619,8 +613,6 @@ pub(crate) struct DoexeCommand {
 brush_builtin_winnow::winnow_builtin!(DoexeCommand);
 
 impl builtins::Command for DoexeCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -661,8 +653,6 @@ pub(crate) struct DobinCommand {
 brush_builtin_winnow::winnow_builtin!(DobinCommand);
 
 impl builtins::Command for DobinCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -701,8 +691,6 @@ pub(crate) struct DosbinCommand {
 brush_builtin_winnow::winnow_builtin!(DosbinCommand);
 
 impl builtins::Command for DosbinCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -743,8 +731,6 @@ pub(crate) struct DodocCommand {
 brush_builtin_winnow::winnow_builtin!(DodocCommand);
 
 impl builtins::Command for DodocCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -797,8 +783,6 @@ pub(crate) struct DoheaderCommand {
 brush_builtin_winnow::winnow_builtin!(DoheaderCommand);
 
 impl builtins::Command for DoheaderCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -842,8 +826,6 @@ pub(crate) struct DoinfoCommand {
 brush_builtin_winnow::winnow_builtin!(DoinfoCommand);
 
 impl builtins::Command for DoinfoCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -887,8 +869,6 @@ pub(crate) struct DomanCommand {
 brush_builtin_winnow::winnow_builtin!(DomanCommand);
 
 impl builtins::Command for DomanCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -967,8 +947,6 @@ pub(crate) struct DomoCommand {
 brush_builtin_winnow::winnow_builtin!(DomoCommand);
 
 impl builtins::Command for DomoCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -1024,8 +1002,6 @@ pub(crate) struct DolibaCommand {
 brush_builtin_winnow::winnow_builtin!(DolibaCommand);
 
 impl builtins::Command for DolibaCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -1068,8 +1044,6 @@ pub(crate) struct DolibsoCommand {
 brush_builtin_winnow::winnow_builtin!(DolibsoCommand);
 
 impl builtins::Command for DolibsoCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -1112,8 +1086,6 @@ pub(crate) struct DolibCommand {
 brush_builtin_winnow::winnow_builtin!(DolibCommand);
 
 impl builtins::Command for DolibCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -1168,8 +1140,6 @@ pub(crate) struct DosymCommand {
 brush_builtin_winnow::winnow_builtin!(DosymCommand);
 
 impl builtins::Command for DosymCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -1230,8 +1200,6 @@ pub(crate) struct FpermsCommand {
 brush_builtin_winnow::winnow_builtin!(FpermsCommand);
 
 impl builtins::Command for FpermsCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -1290,8 +1258,6 @@ pub(crate) struct FownersCommand {
 brush_builtin_winnow::winnow_builtin!(FownersCommand);
 
 impl builtins::Command for FownersCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -1512,8 +1478,6 @@ pub(crate) struct NewCommand {
 brush_builtin_winnow::winnow_builtin!(NewCommand);
 
 impl builtins::Command for NewCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

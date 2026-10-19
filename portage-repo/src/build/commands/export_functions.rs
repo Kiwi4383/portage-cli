@@ -21,8 +21,6 @@ pub(crate) struct ExportFunctionsCommand {
 brush_builtin_winnow::winnow_builtin!(ExportFunctionsCommand);
 
 impl builtins::Command for ExportFunctionsCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

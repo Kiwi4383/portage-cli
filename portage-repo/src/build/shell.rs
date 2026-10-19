@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use camino::{Utf8Path, Utf8PathBuf};
 
-use brush_builtins::ShellExt;
+use brush_builtins::ShellBuilderExt as _;
 use brush_core::parser::ParserImpl;
 use brush_core::{
     ProfileLoadBehavior, RcLoadBehavior, Shell, ShellValue, ShellVariable, SourceInfo,
@@ -433,6 +433,7 @@ pub async fn run_helper(name: &str, args: &[String]) -> i32 {
         .profile(ProfileLoadBehavior::Skip)
         .rc(RcLoadBehavior::Skip)
         .parser(ParserImpl::Winnow)
+        .default_builtins(brush_builtins::BuiltinSet::BashMode)
         .build()
         .await
     {
@@ -442,14 +443,13 @@ pub async fn run_helper(name: &str, args: &[String]) -> i32 {
             return 1;
         }
     };
-    shell.register_default_builtins(brush_builtins::BuiltinSet::BashMode);
     // do*/new* helpers are install-phase-only, never dual-mode — see
     // register_install_builtins.
     commands::register_install_builtins(&mut shell);
 
     let inst_owner = commands::inst_owner::InstOwnerDefaults::default();
     inst_owner.seed_from_process_env();
-    shell.set_shared(inst_owner.clone());
+    shell.set_builtin_state(inst_owner.clone());
     let (inst_uid, inst_gid) = inst_owner.resolved_pair();
     for (name, value) in [
         ("PORTAGE_INST_UID", inst_uid),
@@ -506,11 +506,10 @@ impl EbuildShell {
             // Keep each shell anchored to the repository rather than the
             // process's ambient cwd, which may belong to another phase.
             .working_dir(repo.path().as_std_path().to_path_buf())
+            .default_builtins(brush_builtins::BuiltinSet::BashMode)
             .build()
             .await
             .map_err(|e| Error::Shell(e.to_string()))?;
-
-        shell.register_default_builtins(brush_builtins::BuiltinSet::BashMode);
 
         let eclass_dir: Utf8PathBuf = repo.path().join("eclass");
         let eclass_dirs: Vec<Utf8PathBuf> = if eclass_dir.is_dir() {
@@ -523,13 +522,14 @@ impl EbuildShell {
         stubs::register(&mut shell).await?;
 
         // Register `inherit` with a shared eclass AST cache.
-        let inherit_reg = brush_core::builtins::builtin::<inherit::InheritCommand, _>().with_state(
-            inherit::InheritState {
-                inherited: Vec::new(),
-                cache: eclass_cache,
-            },
+        shell.register_builtin(
+            "inherit",
+            brush_core::builtins::builtin::<inherit::InheritCommand, _>(),
         );
-        shell.register_builtin("inherit", inherit_reg);
+        shell.set_builtin_state(inherit::InheritState {
+            inherited: Vec::new(),
+            cache: eclass_cache,
+        });
 
         // Register PMS utility and phase-body-only builtins — always real,
         // unconditionally. The phase-body-only ones (econf/emake/eapply/
@@ -733,16 +733,16 @@ impl EbuildShell {
         commands::set_tool_mode(&mut shell, commands::ToolMode::Metadata);
 
         let die_flag = commands::die::DieFlag::default();
-        shell.set_shared(die_flag.clone());
+        shell.set_builtin_state(die_flag.clone());
 
         let install_paths = commands::install_paths::InstallPaths::default();
-        shell.set_shared(install_paths.clone());
+        shell.set_builtin_state(install_paths.clone());
 
         let inst_owner = commands::inst_owner::InstOwnerDefaults::default();
-        shell.set_shared(inst_owner.clone());
+        shell.set_builtin_state(inst_owner.clone());
 
         let terminal = terminal::TerminalState::default();
-        shell.set_shared(terminal.clone());
+        shell.set_builtin_state(terminal.clone());
 
         let mut ebuild_shell = EbuildShell {
             shell,
@@ -1543,7 +1543,7 @@ impl EbuildShell {
         // eclass without re-resolving the name (which would miss masters).
         let inherited = self
             .shell
-            .builtin_state_of::<inherit::InheritCommand>("inherit")
+            .builtin_state::<inherit::InheritState>()
             .map(|s| s.inherited.clone())
             .unwrap_or_default();
         metadata.inherited = inherited

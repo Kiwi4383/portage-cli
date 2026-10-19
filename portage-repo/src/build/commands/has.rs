@@ -25,8 +25,6 @@ pub(crate) struct HasCommand {
 brush_builtin_winnow::winnow_builtin!(HasCommand);
 
 impl builtins::Command for HasCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -58,8 +56,6 @@ pub(crate) struct HasvCommand {
 brush_builtin_winnow::winnow_builtin!(HasvCommand);
 
 impl builtins::Command for HasvCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -97,8 +93,6 @@ pub(crate) struct InIuseCommand {
 brush_builtin_winnow::winnow_builtin!(InIuseCommand);
 
 impl builtins::Command for InIuseCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

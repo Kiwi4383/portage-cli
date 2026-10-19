@@ -118,8 +118,6 @@ pub(crate) struct VerRsCommand {
 brush_builtin_winnow::winnow_builtin!(VerRsCommand);
 
 impl builtins::Command for VerRsCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -204,8 +202,6 @@ pub(crate) struct VerCutCommand {
 brush_builtin_winnow::winnow_builtin!(VerCutCommand);
 
 impl builtins::Command for VerCutCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -477,8 +473,6 @@ pub(crate) struct VerTestCommand {
 brush_builtin_winnow::winnow_builtin!(VerTestCommand);
 
 impl builtins::Command for VerTestCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -560,8 +554,6 @@ pub(crate) struct VerReplacingCommand {}
 brush_builtin_winnow::winnow_builtin!(VerReplacingCommand);
 
 impl builtins::Command for VerReplacingCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

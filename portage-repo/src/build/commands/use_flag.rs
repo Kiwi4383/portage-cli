@@ -25,8 +25,6 @@ pub(crate) struct UseCommand {
 brush_builtin_winnow::winnow_builtin!(UseCommand);
 
 impl builtins::Command for UseCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -64,8 +62,6 @@ pub(crate) struct UsevCommand {
 brush_builtin_winnow::winnow_builtin!(UsevCommand);
 
 impl builtins::Command for UsevCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -120,8 +116,6 @@ pub(crate) struct UsexCommand {
 brush_builtin_winnow::winnow_builtin!(UsexCommand);
 
 impl builtins::Command for UsexCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -170,8 +164,6 @@ pub(crate) struct UseEnableCommand {
 brush_builtin_winnow::winnow_builtin!(UseEnableCommand);
 
 impl builtins::Command for UseEnableCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -226,8 +218,6 @@ pub(crate) struct UseWithCommand {
 brush_builtin_winnow::winnow_builtin!(UseWithCommand);
 
 impl builtins::Command for UseWithCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -298,7 +288,7 @@ fn die_use_query<SE: brush_core::ShellExtensions>(
     context: brush_core::ExecutionContext<'_, SE>,
     msg: &str,
 ) -> brush_core::ExecutionResult {
-    if let Ok(die) = context.shared::<DieFlag>() {
+    if let Some(die) = context.shell.builtin_state::<DieFlag>() {
         die.raise(msg);
     }
     let shell = context.shell;

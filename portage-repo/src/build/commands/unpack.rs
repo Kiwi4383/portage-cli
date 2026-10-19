@@ -25,8 +25,6 @@ pub(crate) struct UnpackCommand {
 brush_builtin_winnow::winnow_builtin!(UnpackCommand);
 
 impl builtins::Command for UnpackCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -37,7 +35,10 @@ impl builtins::Command for UnpackCommand {
         // build without the phase driver having to treat the phase's exit status
         // as fatal. The per-archive "die:" diagnostics are printed in the
         // blocking task below; this only raises the shared flag.
-        let die_flag = context.shared::<super::die::DieFlag>().ok().cloned();
+        let die_flag = context
+            .shell
+            .builtin_state::<super::die::DieFlag>()
+            .cloned();
         let shell = context.shell;
 
         let get = |var: &str| {

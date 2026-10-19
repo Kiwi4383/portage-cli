@@ -127,8 +127,6 @@ pub(crate) struct EapiPkgNofetchCommand;
 brush_builtin_winnow::winnow_builtin!(EapiPkgNofetchCommand);
 
 impl builtins::Command for EapiPkgNofetchCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -175,8 +173,6 @@ pub(crate) struct EapiSrcUnpackCommand;
 brush_builtin_winnow::winnow_builtin!(EapiSrcUnpackCommand);
 
 impl builtins::Command for EapiSrcUnpackCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -224,15 +220,13 @@ pub(crate) struct EapiSrcCompile0Command;
 brush_builtin_winnow::winnow_builtin!(EapiSrcCompile0Command);
 
 impl builtins::Command for EapiSrcCompile0Command {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let die_flag = context.shared::<DieFlag>().ok().cloned();
+        let die_flag = context.shell.builtin_state::<DieFlag>().cloned();
         let shell = context.shell;
         default_src_compile(&context.params, die_flag.as_ref(), shell, Some(".")).await
     }
@@ -247,15 +241,13 @@ pub(crate) struct EapiSrcCompile1Command;
 brush_builtin_winnow::winnow_builtin!(EapiSrcCompile1Command);
 
 impl builtins::Command for EapiSrcCompile1Command {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let die_flag = context.shared::<DieFlag>().ok().cloned();
+        let die_flag = context.shell.builtin_state::<DieFlag>().cloned();
         let shell = context.shell;
         let econf_source = shell
             .env_str("ECONF_SOURCE")
@@ -279,15 +271,13 @@ pub(crate) struct EapiSrcCompile2Command;
 brush_builtin_winnow::winnow_builtin!(EapiSrcCompile2Command);
 
 impl builtins::Command for EapiSrcCompile2Command {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let die_flag = context.shared::<DieFlag>().ok().cloned();
+        let die_flag = context.shell.builtin_state::<DieFlag>().cloned();
         let shell = context.shell;
         default_src_compile(&context.params, die_flag.as_ref(), shell, None).await
     }
@@ -301,8 +291,6 @@ pub(crate) struct EapiSrcConfigureCommand;
 brush_builtin_winnow::winnow_builtin!(EapiSrcConfigureCommand);
 
 impl builtins::Command for EapiSrcConfigureCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -332,8 +320,6 @@ pub(crate) struct EapiSrcPrepareNoopCommand;
 brush_builtin_winnow::winnow_builtin!(EapiSrcPrepareNoopCommand);
 
 impl builtins::Command for EapiSrcPrepareNoopCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -395,15 +381,13 @@ async fn install_docs_var<SE: brush_core::ShellExtensions>(
 }
 
 impl builtins::Command for EapiSrcInstall4Command {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let die_flag = context.shared::<DieFlag>().ok().cloned();
+        let die_flag = context.shell.builtin_state::<DieFlag>().cloned();
         let shell = context.shell;
         if has_makefile(shell).await
             && !run_emake(&context.params, shell, &["DESTDIR=${D}", "install"]).await?
@@ -473,8 +457,6 @@ pub(crate) struct GetLibdirCommand;
 brush_builtin_winnow::winnow_builtin!(GetLibdirCommand);
 
 impl builtins::Command for GetLibdirCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -512,15 +494,13 @@ pub(crate) struct EapiSrcInstall6Command;
 brush_builtin_winnow::winnow_builtin!(EapiSrcInstall6Command);
 
 impl builtins::Command for EapiSrcInstall6Command {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let die_flag = context.shared::<DieFlag>().ok().cloned();
+        let die_flag = context.shell.builtin_state::<DieFlag>().cloned();
         let shell = context.shell;
         if has_makefile(shell).await
             && !run_emake(&context.params, shell, &["DESTDIR=${D}", "install"]).await?
@@ -549,8 +529,6 @@ pub(crate) struct EinstalldocsCommand;
 brush_builtin_winnow::winnow_builtin!(EinstalldocsCommand);
 
 impl builtins::Command for EinstalldocsCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -613,15 +591,13 @@ pub(crate) struct EapiSrcTestCommand;
 brush_builtin_winnow::winnow_builtin!(EapiSrcTestCommand);
 
 impl builtins::Command for EapiSrcTestCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let die_flag = context.shared::<DieFlag>().ok().cloned();
+        let die_flag = context.shell.builtin_state::<DieFlag>().cloned();
         let shell = context.shell;
         let eapi: u32 = shell
             .env_str("EAPI")
@@ -695,8 +671,6 @@ async fn apply_patches_var<SE: brush_core::ShellExtensions>(
 }
 
 impl builtins::Command for EapiSrcPrepare6Command {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -716,8 +690,6 @@ pub(crate) struct EapiSrcPrepare8Command;
 brush_builtin_winnow::winnow_builtin!(EapiSrcPrepare8Command);
 
 impl builtins::Command for EapiSrcPrepare8Command {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -738,8 +710,6 @@ pub(crate) struct EapplyUserCommand;
 brush_builtin_winnow::winnow_builtin!(EapplyUserCommand);
 
 impl builtins::Command for EapplyUserCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -770,15 +740,13 @@ pub(crate) struct NonfatalCommand {
 brush_builtin_winnow::winnow_builtin!(NonfatalCommand);
 
 impl builtins::Command for NonfatalCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let die_flag = context.shared::<DieFlag>().ok().cloned();
+        let die_flag = context.shell.builtin_state::<DieFlag>().cloned();
         let shell = context.shell;
         if self.args.is_empty() {
             die_now(
@@ -816,15 +784,13 @@ pub(crate) struct AssertCommand {
 brush_builtin_winnow::winnow_builtin!(AssertCommand);
 
 impl builtins::Command for AssertCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let die_flag = context.shared::<DieFlag>().ok().cloned();
+        let die_flag = context.shell.builtin_state::<DieFlag>().cloned();
         let shell = context.shell;
         // PIPESTATUS is a `Dynamic` value (computed on read), not a real
         // stored array — `var_shape`'s direct-storage borrow never resolves

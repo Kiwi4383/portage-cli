@@ -29,6 +29,7 @@
 //! Everything between statement spans (blank lines, leading whitespace) is
 //! `Entry::Opaque` and reproduced verbatim.
 
+use brush_builtins::ShellBuilderExt as _;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
@@ -221,10 +222,10 @@ impl MakeConf {
             // directory", and `/` is guaranteed to exist regardless of what
             // the caller's process cwd happens to be at the moment.
             .working_dir(std::path::PathBuf::from("/"))
+            .default_builtins(brush_builtins::BuiltinSet::BashMode)
             .build()
             .await
             .map_err(|e| Error::Shell(e.to_string()))?;
-        brush_builtins::register_default_builtins(&mut shell, brush_builtins::BuiltinSet::BashMode);
 
         for (name, value) in env.iter() {
             shell

@@ -59,19 +59,23 @@ pub(crate) fn context_stdio<SE: brush_core::ShellExtensions>(
     use brush_core::openfiles::{OpenFile, OpenFiles};
     let stdout = match context.try_fd(OpenFiles::STDOUT_FD) {
         Some(OpenFile::Stdout(_)) | None => std::process::Stdio::inherit(),
-        // brush dup's the descriptor (handles are Arc-shared, so not movable);
-        // a dup failure falls back to inheriting the host fd.
-        Some(f) => f
-            .try_into()
-            .unwrap_or_else(|_| std::process::Stdio::inherit()),
+        Some(f) => stdio_of(&f),
     };
     let stderr = match context.try_fd(OpenFiles::STDERR_FD) {
         Some(OpenFile::Stderr(_)) | None => std::process::Stdio::inherit(),
-        Some(f) => f
-            .try_into()
-            .unwrap_or_else(|_| std::process::Stdio::inherit()),
+        Some(f) => stdio_of(&f),
     };
     (stdout, stderr)
+}
+
+/// A child's stdio for one of the shell's open files: a duplicate of its
+/// descriptor (brush's handles are `Arc`-shared, so not movable), or the host's
+/// own stream if it can't be duplicated.
+fn stdio_of(file: &brush_core::openfiles::OpenFile) -> std::process::Stdio {
+    file.try_borrow_as_fd()
+        .ok()
+        .and_then(|fd| fd.try_clone_to_owned().ok())
+        .map_or_else(std::process::Stdio::inherit, std::process::Stdio::from)
 }
 
 /// Stdio handle for a builtin's spawned child stdin, honouring the shell
@@ -87,9 +91,7 @@ pub(crate) fn context_stdin<SE: brush_core::ShellExtensions>(
     use brush_core::openfiles::{OpenFile, OpenFiles};
     match context.try_fd(OpenFiles::STDIN_FD) {
         Some(OpenFile::Stdin(_)) | None => std::process::Stdio::inherit(),
-        Some(f) => f
-            .try_into()
-            .unwrap_or_else(|_| std::process::Stdio::inherit()),
+        Some(f) => stdio_of(&f),
     }
 }
 

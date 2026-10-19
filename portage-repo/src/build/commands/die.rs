@@ -58,8 +58,6 @@ pub(crate) struct DieCommand {
 brush_builtin_winnow::winnow_builtin!(DieCommand);
 
 impl builtins::Command for DieCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -80,7 +78,7 @@ impl builtins::Command for DieCommand {
             let _ = writeln!(context.params.stderr(shell), "die (nonfatal): {msg}");
             return Ok(brush_core::ExecutionResult::new(1));
         }
-        if let Ok(flag) = context.shared::<DieFlag>() {
+        if let Some(flag) = context.shell.builtin_state::<DieFlag>() {
             flag.raise(&msg);
         }
         let shell = context.shell;

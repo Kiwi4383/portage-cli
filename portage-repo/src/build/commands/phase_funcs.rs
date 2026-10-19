@@ -18,8 +18,6 @@ pub(crate) struct EapiPredicateCommand {
 brush_builtin_winnow::winnow_builtin!(EapiPredicateCommand);
 
 impl builtins::Command for EapiPredicateCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -217,8 +215,6 @@ pub(crate) struct EbuildPhaseFuncsCommand {
 brush_builtin_winnow::winnow_builtin!(EbuildPhaseFuncsCommand);
 
 impl builtins::Command for EbuildPhaseFuncsCommand {
-    type State = ();
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

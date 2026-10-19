@@ -124,8 +124,6 @@ pub(crate) struct InheritCommand {
 brush_builtin_winnow::winnow_builtin!(InheritCommand);
 
 impl builtins::Command for InheritCommand {
-    type State = InheritState;
-    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -148,11 +146,11 @@ impl builtins::Command for InheritCommand {
         let mut inherit = get_var(context.shell, "INHERIT");
 
         let cache: Arc<papaya::HashMap<String, std::result::Result<Program, String>>> =
-            self.state(&context)?.cache.clone();
+            context.state_mut::<InheritState>().cache.clone();
 
         for eclass in &self.eclasses {
             let already_inherited = {
-                let state = self.state(&context)?;
+                let state = context.state_mut::<InheritState>();
                 state.inherited.iter().any(|e| &e.name == eclass)
             };
             if already_inherited {
@@ -169,7 +167,7 @@ impl builtins::Command for InheritCommand {
             let eclass_file = find_eclass(context.shell, eclass);
             let Some(eclass_file) = eclass_file else {
                 let message = format!("inherit: eclass not found: {eclass}");
-                if let Ok(flag) = context.shared::<DieFlag>() {
+                if let Some(flag) = context.shell.builtin_state::<DieFlag>() {
                     flag.raise(&message);
                 }
                 let _ = writeln!(context.params.stderr(context.shell), "die: {message}");
@@ -212,7 +210,7 @@ impl builtins::Command for InheritCommand {
                 Ok(program) => program,
                 Err(error) => {
                     let message = format!("inherit: failed to parse {eclass}: {error}");
-                    if let Ok(flag) = context.shared::<DieFlag>() {
+                    if let Some(flag) = context.shell.builtin_state::<DieFlag>() {
                         flag.raise(&message);
                     }
                     let _ = writeln!(context.params.stderr(context.shell), "die: {message}");
@@ -249,7 +247,7 @@ impl builtins::Command for InheritCommand {
 
             // Update state: push this eclass and sync $INHERITED.
             {
-                let state = self.state_mut(&mut context)?;
+                let state = context.state_mut::<InheritState>();
                 state.inherited.push(InheritedEclass {
                     name: eclass.clone(),
                     path: eclass_file.clone(),

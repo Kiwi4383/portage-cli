@@ -246,9 +246,9 @@ config --global user.name`, tracked separately from this test-only fix.
 
 As common as a formal bench run: the ebuild shell is **brush** from
 `github.com/lu-zero/brush`, branch **`for-portage-repo`**, pinned by **git
-`rev`** on the three workspace deps `brush-core` / `brush-builtins` /
-`brush-parser` in the root `Cargo.toml`. Local day-to-day work uses a
-**gitignored** path patch to a sibling checkout.
+`rev`** on the four workspace deps `brush-core` / `brush-builtins` /
+`brush-parser` / `brush-winnow-args-adapter` in the root `Cargo.toml`.
+Local day-to-day work uses a **gitignored** path patch to a sibling checkout.
 
 Expected layout:
 
@@ -267,6 +267,7 @@ Sources/
 brush-core = { path = "../brush/brush-core" }
 brush-builtins = { path = "../brush/brush-builtins" }
 brush-parser = { path = "../brush/brush-parser" }
+brush-winnow-args-adapter = { path = "../brush/brush-winnow-args-adapter" }
 ```
 
 (Keep any pkgcraft path patch alongside if you use one.)
@@ -288,7 +289,7 @@ brush-parser = { path = "../brush/brush-parser" }
    git push --force-with-lease mine for-portage-repo
    git rev-parse --short=8 HEAD    # pin this
    ```
-4. **Bump the pin in portage-cli** root `Cargo.toml` (all three `brush-*`
+4. **Bump the pin in portage-cli** root `Cargo.toml` (all four `brush-*`
    lines, same `rev`). Temporarily remove the brush path patch (leave
    pkgcraft if needed) and:
    ```bash

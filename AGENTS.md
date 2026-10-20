@@ -103,8 +103,9 @@ Workspace members (14 library/binary crates + `portage-bench`):
 - `portage-bench` — benchmark harness (excluded from most CI jobs; compile smoke only)
 
 CLI/runtime deps: `winnow-args`, `tokio`, `anyhow`, `thiserror`.
-Workspace `clap` stays for `portage-repo` (ebuild helpers + examples) and
-`portage-bench`.
+Workspace `clap` stays for `portage-repo`'s examples and `portage-bench`; the
+ebuild builtins parse their arguments with `winnow-args` through brush's
+`brush-winnow-args-adapter`.
 
 Crates.io deps take a semver requirement (`version = "6"`), never an exact
 pin (`=6.8.0`). `Cargo.lock` is gitignored; floating within the requirement
@@ -132,6 +133,7 @@ those (or crates.io) for unpublished work. Do not commit it. Example shape:
 brush-core = { path = "../brush/brush-core" }
 brush-builtins = { path = "../brush/brush-builtins" }
 brush-parser = { path = "../brush/brush-parser" }
+brush-winnow-args-adapter = { path = "../brush/brush-winnow-args-adapter" }
 
 [patch."https://github.com/pkgcraft/pkgcraft.git"]
 pkgcraft = { path = "../pkgcraft/crates/pkgcraft" }
@@ -163,7 +165,7 @@ running official benchmarks:
    git push --force-with-lease mine for-portage-repo
    git rev-parse --short=8 HEAD   # e.g. 940bec39
    ```
-4. **Pin in portage-cli** — set all three `brush-*` workspace deps in root
+4. **Pin in portage-cli** — set all four `brush-*` workspace deps in root
    `Cargo.toml` to that `rev`, drop the path patch temporarily (or use a
    pkgcraft-only config) and `cargo check -p portage-repo` so the git source
    resolves. `Cargo.lock` is gitignored; only `Cargo.toml` is committed.

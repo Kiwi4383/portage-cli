@@ -22,7 +22,7 @@ pub(crate) struct EinstallCommand {
     args: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(EinstallCommand);
+brush_winnow_args_adapter::impl_parse_args!(EinstallCommand);
 
 /// Raise the shared `die` flag and echo the portage-style message, returning
 /// exit 1 (the "die: " prefix is matched by tests and `inherit` error paths).
@@ -37,11 +37,11 @@ fn die<SE: brush_core::ShellExtensions>(
     brush_core::ExecutionResult::new(1)
 }
 
-impl builtins::Command for EinstallCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EinstallCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let shell = &*context.shell;

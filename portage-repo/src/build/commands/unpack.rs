@@ -22,13 +22,13 @@ pub(crate) struct UnpackCommand {
     archives: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(UnpackCommand);
+brush_winnow_args_adapter::impl_parse_args!(UnpackCommand);
 
-impl builtins::Command for UnpackCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UnpackCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         // unpack self-dies on failure so a bare `unpack` aborts the

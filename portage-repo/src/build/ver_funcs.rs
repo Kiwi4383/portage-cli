@@ -115,13 +115,13 @@ pub(crate) struct VerRsCommand {
     args: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(VerRsCommand);
+brush_winnow_args_adapter::impl_parse_args!(VerRsCommand);
 
-impl builtins::Command for VerRsCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for VerRsCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let shell = context.shell;
@@ -199,13 +199,13 @@ pub(crate) struct VerCutCommand {
     args: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(VerCutCommand);
+brush_winnow_args_adapter::impl_parse_args!(VerCutCommand);
 
-impl builtins::Command for VerCutCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for VerCutCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let shell = context.shell;
@@ -470,13 +470,13 @@ pub(crate) struct VerTestCommand {
     args: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(VerTestCommand);
+brush_winnow_args_adapter::impl_parse_args!(VerTestCommand);
 
-impl builtins::Command for VerTestCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for VerTestCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let shell = context.shell;
@@ -551,13 +551,13 @@ impl builtins::Command for VerTestCommand {
 #[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct VerReplacingCommand {}
 
-brush_builtin_winnow::winnow_builtin!(VerReplacingCommand);
+brush_winnow_args_adapter::impl_parse_args!(VerReplacingCommand);
 
-impl builtins::Command for VerReplacingCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for VerReplacingCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         _context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         // No package is being replaced during metadata extraction.

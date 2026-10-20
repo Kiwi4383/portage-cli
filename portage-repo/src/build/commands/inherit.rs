@@ -121,13 +121,13 @@ pub(crate) struct InheritCommand {
     eclasses: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(InheritCommand);
+brush_winnow_args_adapter::impl_parse_args!(InheritCommand);
 
-impl builtins::Command for InheritCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for InheritCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let eapi: u32 = context

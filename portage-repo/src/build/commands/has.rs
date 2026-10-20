@@ -22,13 +22,13 @@ pub(crate) struct HasCommand {
     haystack: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(HasCommand);
+brush_winnow_args_adapter::impl_parse_args!(HasCommand);
 
-impl builtins::Command for HasCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for HasCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         _context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let found = self.haystack.iter().any(|item| item == &self.needle);
@@ -53,13 +53,13 @@ pub(crate) struct HasvCommand {
     haystack: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(HasvCommand);
+brush_winnow_args_adapter::impl_parse_args!(HasvCommand);
 
-impl builtins::Command for HasvCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for HasvCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let shell = context.shell;
@@ -90,13 +90,13 @@ pub(crate) struct InIuseCommand {
     flag: String,
 }
 
-brush_builtin_winnow::winnow_builtin!(InIuseCommand);
+brush_winnow_args_adapter::impl_parse_args!(InIuseCommand);
 
-impl builtins::Command for InIuseCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for InIuseCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let shell = context.shell;

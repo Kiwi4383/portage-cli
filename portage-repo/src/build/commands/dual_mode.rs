@@ -13,7 +13,7 @@
 //! current.
 //!
 //! Each gets registered as either its real implementation or a stub —
-//! plain `Shell::register_builtin` calls, nothing else. No bash function is
+//! plain `Registry::register` calls, nothing else. No bash function is
 //! ever defined for any of these names, so there is no
 //! function-shadows-builtin question (a bash function always outranks a
 //! same-named builtin in this shell — that's what let `eapply`'s old
@@ -44,9 +44,9 @@ pub(crate) fn set_tool_mode<SE: brush_core::ShellExtensions>(
 ) {
     macro_rules! reg {
         ($($name:literal => ($real:ty, $stub:ty)),+ $(,)?) => {$(
-            shell.register_builtin($name, match mode {
-                ToolMode::Build => builtins::builtin::<$real, _>(),
-                ToolMode::Metadata => builtins::builtin::<$stub, _>(),
+            shell.builtins_mut().register($name, match mode {
+                ToolMode::Build => builtins::Registration::of::<$real>(),
+                ToolMode::Metadata => builtins::Registration::of::<$stub>(),
             });
         )+};
     }
@@ -79,13 +79,13 @@ pub(crate) struct NoopCommand {
     _args: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(NoopCommand);
+brush_winnow_args_adapter::impl_parse_args!(NoopCommand);
 
-impl builtins::Command for NoopCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for NoopCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         _context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         Ok(brush_core::ExecutionResult::new(0))
@@ -108,13 +108,13 @@ pub(crate) struct EendStubCommand {
     _message: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(EendStubCommand);
+brush_winnow_args_adapter::impl_parse_args!(EendStubCommand);
 
-impl builtins::Command for EendStubCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EendStubCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         _context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         Ok(brush_core::ExecutionResult::new(
@@ -137,13 +137,13 @@ pub(crate) struct HasVersionStubCommand {
     _args: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(HasVersionStubCommand);
+brush_winnow_args_adapter::impl_parse_args!(HasVersionStubCommand);
 
-impl builtins::Command for HasVersionStubCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for HasVersionStubCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         _context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         Ok(brush_core::ExecutionResult::new(1))
@@ -163,13 +163,13 @@ pub(crate) struct BestVersionStubCommand {
     _args: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(BestVersionStubCommand);
+brush_winnow_args_adapter::impl_parse_args!(BestVersionStubCommand);
 
-impl builtins::Command for BestVersionStubCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for BestVersionStubCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         _context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         Ok(brush_core::ExecutionResult::new(1))

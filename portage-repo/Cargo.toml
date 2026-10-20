@@ -28,7 +28,7 @@ gentoo-core = { workspace = true }
 # bump when intentionally updating brush. Local dev overrides to a worktree
 # via .cargo/config.toml.
 brush-core = { workspace = true, features = ["experimental-parser"] }
-brush-builtin-winnow = { workspace = true }
+brush-winnow-args-adapter = { workspace = true }
 brush-builtins = { workspace = true }
 brush-parser = { workspace = true }
 anstyle = { workspace = true }

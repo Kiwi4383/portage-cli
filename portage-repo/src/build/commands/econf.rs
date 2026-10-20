@@ -20,13 +20,13 @@ pub(crate) struct EconfCommand {
     args: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(EconfCommand);
+brush_winnow_args_adapter::impl_parse_args!(EconfCommand);
 
-impl builtins::Command for EconfCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EconfCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let (stdout, stderr) = super::context_stdio(&context);

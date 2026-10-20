@@ -15,13 +15,13 @@ pub(crate) struct EapiPredicateCommand {
     eapi_override: Option<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(EapiPredicateCommand);
+brush_winnow_args_adapter::impl_parse_args!(EapiPredicateCommand);
 
-impl builtins::Command for EapiPredicateCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EapiPredicateCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let eapi: u32 = if let Some(s) = &self.eapi_override {
@@ -212,13 +212,13 @@ pub(crate) struct EbuildPhaseFuncsCommand {
     phase_func: String,
 }
 
-brush_builtin_winnow::winnow_builtin!(EbuildPhaseFuncsCommand);
+brush_winnow_args_adapter::impl_parse_args!(EbuildPhaseFuncsCommand);
 
-impl builtins::Command for EbuildPhaseFuncsCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EbuildPhaseFuncsCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let shell = context.shell;

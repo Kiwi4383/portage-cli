@@ -451,13 +451,13 @@ pub(crate) struct DodirCommand {
     dirs: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(DodirCommand);
+brush_winnow_args_adapter::impl_parse_args!(DodirCommand);
 
-impl builtins::Command for DodirCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DodirCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         require_files!(context, self.dirs, "dodir");
@@ -487,13 +487,13 @@ pub(crate) struct KeepdirCommand {
     dirs: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(KeepdirCommand);
+brush_winnow_args_adapter::impl_parse_args!(KeepdirCommand);
 
-impl builtins::Command for KeepdirCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for KeepdirCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         require_files!(context, self.dirs, "keepdir");
@@ -562,13 +562,13 @@ pub(crate) struct DoinsCommand {
     files: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(DoinsCommand);
+brush_winnow_args_adapter::impl_parse_args!(DoinsCommand);
 
-impl builtins::Command for DoinsCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DoinsCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         require_files!(context, self.files, "doins");
@@ -610,13 +610,13 @@ pub(crate) struct DoexeCommand {
     files: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(DoexeCommand);
+brush_winnow_args_adapter::impl_parse_args!(DoexeCommand);
 
-impl builtins::Command for DoexeCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DoexeCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         require_files!(context, self.files, "doexe");
@@ -650,13 +650,13 @@ pub(crate) struct DobinCommand {
     files: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(DobinCommand);
+brush_winnow_args_adapter::impl_parse_args!(DobinCommand);
 
-impl builtins::Command for DobinCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DobinCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         require_files!(context, self.files, "dobin");
@@ -688,13 +688,13 @@ pub(crate) struct DosbinCommand {
     files: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(DosbinCommand);
+brush_winnow_args_adapter::impl_parse_args!(DosbinCommand);
 
-impl builtins::Command for DosbinCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DosbinCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         require_files!(context, self.files, "dosbin");
@@ -728,13 +728,13 @@ pub(crate) struct DodocCommand {
     files: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(DodocCommand);
+brush_winnow_args_adapter::impl_parse_args!(DodocCommand);
 
-impl builtins::Command for DodocCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DodocCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         require_files!(context, self.files, "dodoc");
@@ -780,13 +780,13 @@ pub(crate) struct DoheaderCommand {
     files: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(DoheaderCommand);
+brush_winnow_args_adapter::impl_parse_args!(DoheaderCommand);
 
-impl builtins::Command for DoheaderCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DoheaderCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         require_files!(context, self.files, "doheader");
@@ -823,13 +823,13 @@ pub(crate) struct DoinfoCommand {
     files: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(DoinfoCommand);
+brush_winnow_args_adapter::impl_parse_args!(DoinfoCommand);
 
-impl builtins::Command for DoinfoCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DoinfoCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         require_files!(context, self.files, "doinfo");
@@ -866,13 +866,13 @@ pub(crate) struct DomanCommand {
     files: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(DomanCommand);
+brush_winnow_args_adapter::impl_parse_args!(DomanCommand);
 
-impl builtins::Command for DomanCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DomanCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         require_files!(context, self.files, "doman");
@@ -944,13 +944,13 @@ pub(crate) struct DomoCommand {
     files: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(DomoCommand);
+brush_winnow_args_adapter::impl_parse_args!(DomoCommand);
 
-impl builtins::Command for DomoCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DomoCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         require_files!(context, self.files, "domo");
@@ -999,13 +999,13 @@ pub(crate) struct DolibaCommand {
     files: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(DolibaCommand);
+brush_winnow_args_adapter::impl_parse_args!(DolibaCommand);
 
-impl builtins::Command for DolibaCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DolibaCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         require_files!(context, self.files, "dolib.a");
@@ -1041,13 +1041,13 @@ pub(crate) struct DolibsoCommand {
     files: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(DolibsoCommand);
+brush_winnow_args_adapter::impl_parse_args!(DolibsoCommand);
 
-impl builtins::Command for DolibsoCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DolibsoCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         require_files!(context, self.files, "dolib.so");
@@ -1083,13 +1083,13 @@ pub(crate) struct DolibCommand {
     files: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(DolibCommand);
+brush_winnow_args_adapter::impl_parse_args!(DolibCommand);
 
-impl builtins::Command for DolibCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DolibCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         require_files!(context, self.files, "dolib");
@@ -1137,13 +1137,13 @@ pub(crate) struct DosymCommand {
     args: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(DosymCommand);
+brush_winnow_args_adapter::impl_parse_args!(DosymCommand);
 
-impl builtins::Command for DosymCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DosymCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.args.len() != 2 {
@@ -1197,13 +1197,13 @@ pub(crate) struct FpermsCommand {
     args: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(FpermsCommand);
+brush_winnow_args_adapter::impl_parse_args!(FpermsCommand);
 
-impl builtins::Command for FpermsCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FpermsCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.args.is_empty() {
@@ -1255,13 +1255,13 @@ pub(crate) struct FownersCommand {
     args: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(FownersCommand);
+brush_winnow_args_adapter::impl_parse_args!(FownersCommand);
 
-impl builtins::Command for FownersCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FownersCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.args.is_empty() {
@@ -1475,13 +1475,13 @@ pub(crate) struct NewCommand {
     args: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(NewCommand);
+brush_winnow_args_adapter::impl_parse_args!(NewCommand);
 
-impl builtins::Command for NewCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for NewCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let helper = context.command_name.clone();
@@ -1608,7 +1608,7 @@ pub(crate) fn register_install_builtins<SE: brush_core::ShellExtensions>(
 ) {
     macro_rules! reg {
         ($($name:literal => $ty:ident),+ $(,)?) => {$(
-            shell.register_builtin($name, builtins::builtin::<$ty, _>());
+            shell.builtins_mut().register($name, builtins::Registration::of::<$ty>());
         )+};
     }
     reg! {

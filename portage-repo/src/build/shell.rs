@@ -522,9 +522,9 @@ impl EbuildShell {
         stubs::register(&mut shell).await?;
 
         // Register `inherit` with a shared eclass AST cache.
-        shell.register_builtin(
+        shell.builtins_mut().register(
             "inherit",
-            brush_core::builtins::builtin::<inherit::InheritCommand, _>(),
+            brush_core::builtins::Registration::of::<inherit::InheritCommand>(),
         );
         shell.set_builtin_state(inherit::InheritState {
             inherited: Vec::new(),
@@ -541,160 +541,160 @@ impl EbuildShell {
         for (name, builtin) in [
             (
                 "die",
-                brush_core::builtins::builtin::<commands::DieCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::DieCommand>(),
             ),
             (
                 "EXPORT_FUNCTIONS",
-                brush_core::builtins::builtin::<commands::ExportFunctionsCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::ExportFunctionsCommand>(),
             ),
             (
                 "has",
-                brush_core::builtins::builtin::<commands::HasCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::HasCommand>(),
             ),
             (
                 "hasv",
-                brush_core::builtins::builtin::<commands::HasvCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::HasvCommand>(),
             ),
             (
                 "hasq",
-                brush_core::builtins::builtin::<commands::HasCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::HasCommand>(),
             ),
             (
                 "use",
-                brush_core::builtins::builtin::<commands::UseCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::UseCommand>(),
             ),
             (
                 "usev",
-                brush_core::builtins::builtin::<commands::UsevCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::UsevCommand>(),
             ),
             (
                 "usex",
-                brush_core::builtins::builtin::<commands::UsexCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::UsexCommand>(),
             ),
             (
                 "use_enable",
-                brush_core::builtins::builtin::<commands::UseEnableCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::UseEnableCommand>(),
             ),
             (
                 "use_with",
-                brush_core::builtins::builtin::<commands::UseWithCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::UseWithCommand>(),
             ),
             (
                 "in_iuse",
-                brush_core::builtins::builtin::<commands::InIuseCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::InIuseCommand>(),
             ),
             (
                 "econf",
-                brush_core::builtins::builtin::<commands::EconfCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::EconfCommand>(),
             ),
             (
                 "emake",
-                brush_core::builtins::builtin::<commands::EmakeCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::EmakeCommand>(),
             ),
             (
                 "eapply",
-                brush_core::builtins::builtin::<commands::EapplyCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::EapplyCommand>(),
             ),
             (
                 "einstall",
-                brush_core::builtins::builtin::<commands::EinstallCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::EinstallCommand>(),
             ),
             (
                 "unpack",
-                brush_core::builtins::builtin::<commands::UnpackCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::UnpackCommand>(),
             ),
             (
                 "docompress",
-                brush_core::builtins::builtin::<commands::DocompressCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::DocompressCommand>(),
             ),
             (
                 "dostrip",
-                brush_core::builtins::builtin::<commands::DostripCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::DostripCommand>(),
             ),
             (
                 "__eapi0_pkg_nofetch",
-                brush_core::builtins::builtin::<commands::EapiPkgNofetchCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::EapiPkgNofetchCommand>(),
             ),
             (
                 "__eapi0_src_unpack",
-                brush_core::builtins::builtin::<commands::EapiSrcUnpackCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::EapiSrcUnpackCommand>(),
             ),
             (
                 "__eapi0_src_compile",
-                brush_core::builtins::builtin::<commands::EapiSrcCompile0Command, _>(),
+                brush_core::builtins::Registration::of::<commands::EapiSrcCompile0Command>(),
             ),
             (
                 "__eapi0_src_test",
-                brush_core::builtins::builtin::<commands::EapiSrcTestCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::EapiSrcTestCommand>(),
             ),
             (
                 "__eapi1_src_compile",
-                brush_core::builtins::builtin::<commands::EapiSrcCompile1Command, _>(),
+                brush_core::builtins::Registration::of::<commands::EapiSrcCompile1Command>(),
             ),
             (
                 "__eapi2_src_prepare",
-                brush_core::builtins::builtin::<commands::EapiSrcPrepareNoopCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::EapiSrcPrepareNoopCommand>(),
             ),
             (
                 "__eapi2_src_configure",
-                brush_core::builtins::builtin::<commands::EapiSrcConfigureCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::EapiSrcConfigureCommand>(),
             ),
             (
                 "__eapi2_src_compile",
-                brush_core::builtins::builtin::<commands::EapiSrcCompile2Command, _>(),
+                brush_core::builtins::Registration::of::<commands::EapiSrcCompile2Command>(),
             ),
             (
                 "__eapi4_src_install",
-                brush_core::builtins::builtin::<commands::EapiSrcInstall4Command, _>(),
+                brush_core::builtins::Registration::of::<commands::EapiSrcInstall4Command>(),
             ),
             (
                 "__eapi6_src_prepare",
-                brush_core::builtins::builtin::<commands::EapiSrcPrepare6Command, _>(),
+                brush_core::builtins::Registration::of::<commands::EapiSrcPrepare6Command>(),
             ),
             (
                 "__eapi6_src_install",
-                brush_core::builtins::builtin::<commands::EapiSrcInstall6Command, _>(),
+                brush_core::builtins::Registration::of::<commands::EapiSrcInstall6Command>(),
             ),
             (
                 "__eapi8_src_prepare",
-                brush_core::builtins::builtin::<commands::EapiSrcPrepare8Command, _>(),
+                brush_core::builtins::Registration::of::<commands::EapiSrcPrepare8Command>(),
             ),
             (
                 "nonfatal",
-                brush_core::builtins::builtin::<commands::NonfatalCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::NonfatalCommand>(),
             ),
             (
                 "assert",
-                brush_core::builtins::builtin::<commands::AssertCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::AssertCommand>(),
             ),
             (
                 "eapply_user",
-                brush_core::builtins::builtin::<commands::EapplyUserCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::EapplyUserCommand>(),
             ),
             (
                 "get_libdir",
-                brush_core::builtins::builtin::<commands::GetLibdirCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::GetLibdirCommand>(),
             ),
             (
                 "einstalldocs",
-                brush_core::builtins::builtin::<commands::EinstalldocsCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::EinstalldocsCommand>(),
             ),
         ] {
-            shell.register_builtin(name, builtin);
+            shell.builtins_mut().register(name, builtin);
         }
 
         // Register 74 ___eapi_* EAPI predicate builtins (portage eapi.sh).
         for &name in commands::EAPI_PREDICATE_NAMES {
-            shell.register_builtin(
+            shell.builtins_mut().register(
                 name,
-                brush_core::builtins::builtin::<commands::EapiPredicateCommand, _>(),
+                brush_core::builtins::Registration::of::<commands::EapiPredicateCommand>(),
             );
         }
 
         // Register phase-setup builtin (__ebuild_phase_funcs).
-        shell.register_builtin(
+        shell.builtins_mut().register(
             "__ebuild_phase_funcs",
-            brush_core::builtins::builtin::<commands::EbuildPhaseFuncsCommand, _>(),
+            brush_core::builtins::Registration::of::<commands::EbuildPhaseFuncsCommand>(),
         );
 
         // Install helpers with no metadata-mode stub (no DUAL_MODE entry —
@@ -707,23 +707,23 @@ impl EbuildShell {
         // because brush dropped empty-string args to Rust builtins; that's no
         // longer true — verified `has "" "" foo` reaches the builtin with the
         // empties intact, so the do*/new* helpers can move to Rust too.)
-        shell.register_builtin(
+        shell.builtins_mut().register(
             "ver_cut",
-            brush_core::builtins::builtin::<ver_funcs::VerCutCommand, _>(),
+            brush_core::builtins::Registration::of::<ver_funcs::VerCutCommand>(),
         );
-        shell.register_builtin(
+        shell.builtins_mut().register(
             "ver_rs",
-            brush_core::builtins::builtin::<ver_funcs::VerRsCommand, _>(),
+            brush_core::builtins::Registration::of::<ver_funcs::VerRsCommand>(),
         );
-        shell.register_builtin(
+        shell.builtins_mut().register(
             "ver_test",
-            brush_core::builtins::builtin::<ver_funcs::VerTestCommand, _>(),
+            brush_core::builtins::Registration::of::<ver_funcs::VerTestCommand>(),
         );
         // ver_replacing (EAPI 9): outputs versions being replaced; always
         // empty during metadata extraction.
-        shell.register_builtin(
+        shell.builtins_mut().register(
             "ver_replacing",
-            brush_core::builtins::builtin::<ver_funcs::VerReplacingCommand, _>(),
+            brush_core::builtins::Registration::of::<ver_funcs::VerReplacingCommand>(),
         );
 
         // Initial state for the global-scope-reachable builtins (einfo and

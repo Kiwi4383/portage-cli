@@ -135,13 +135,13 @@ pub(crate) struct EchoMessageCommand {
     message: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(EchoMessageCommand);
+brush_winnow_args_adapter::impl_parse_args!(EchoMessageCommand);
 
-impl builtins::Command for EchoMessageCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EchoMessageCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let palette = colors(&context);
@@ -190,13 +190,13 @@ pub(crate) struct EbeginCommand {
     message: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(EbeginCommand);
+brush_winnow_args_adapter::impl_parse_args!(EbeginCommand);
 
-impl builtins::Command for EbeginCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EbeginCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let prefix = marker(colors(&context).info);
@@ -245,13 +245,13 @@ pub(crate) struct EendCommand {
     message: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(EendCommand);
+brush_winnow_args_adapter::impl_parse_args!(EendCommand);
 
-impl builtins::Command for EendCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EendCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let terminal = context

@@ -22,13 +22,13 @@ pub(crate) struct UseCommand {
     flag: String,
 }
 
-brush_builtin_winnow::winnow_builtin!(UseCommand);
+brush_winnow_args_adapter::impl_parse_args!(UseCommand);
 
-impl builtins::Command for UseCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UseCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if let Some(msg) = unknown_use_flag_msg(context.shell, &self.flag) {
@@ -59,13 +59,13 @@ pub(crate) struct UsevCommand {
     true_val: Option<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(UsevCommand);
+brush_winnow_args_adapter::impl_parse_args!(UsevCommand);
 
-impl builtins::Command for UsevCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UsevCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if let Some(msg) = unknown_use_flag_msg(context.shell, &self.flag) {
@@ -113,13 +113,13 @@ pub(crate) struct UsexCommand {
     false_suffix: Option<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(UsexCommand);
+brush_winnow_args_adapter::impl_parse_args!(UsexCommand);
 
-impl builtins::Command for UsexCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UsexCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if let Some(msg) = unknown_use_flag_msg(context.shell, &self.flag) {
@@ -161,13 +161,13 @@ pub(crate) struct UseEnableCommand {
     val: Option<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(UseEnableCommand);
+brush_winnow_args_adapter::impl_parse_args!(UseEnableCommand);
 
-impl builtins::Command for UseEnableCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UseEnableCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if let Some(msg) = unknown_use_flag_msg(context.shell, &self.flag) {
@@ -215,13 +215,13 @@ pub(crate) struct UseWithCommand {
     val: Option<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(UseWithCommand);
+brush_winnow_args_adapter::impl_parse_args!(UseWithCommand);
 
-impl builtins::Command for UseWithCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UseWithCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if let Some(msg) = unknown_use_flag_msg(context.shell, &self.flag) {

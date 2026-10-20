@@ -124,13 +124,13 @@ async fn run_econf_if_configure_at<SE: brush_core::ShellExtensions>(
 #[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiPkgNofetchCommand;
 
-brush_builtin_winnow::winnow_builtin!(EapiPkgNofetchCommand);
+brush_winnow_args_adapter::impl_parse_args!(EapiPkgNofetchCommand);
 
-impl builtins::Command for EapiPkgNofetchCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EapiPkgNofetchCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let shell = context.shell;
@@ -170,13 +170,13 @@ impl builtins::Command for EapiPkgNofetchCommand {
 #[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcUnpackCommand;
 
-brush_builtin_winnow::winnow_builtin!(EapiSrcUnpackCommand);
+brush_winnow_args_adapter::impl_parse_args!(EapiSrcUnpackCommand);
 
-impl builtins::Command for EapiSrcUnpackCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EapiSrcUnpackCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let shell = context.shell;
@@ -217,13 +217,13 @@ async fn default_src_compile<SE: brush_core::ShellExtensions>(
 #[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcCompile0Command;
 
-brush_builtin_winnow::winnow_builtin!(EapiSrcCompile0Command);
+brush_winnow_args_adapter::impl_parse_args!(EapiSrcCompile0Command);
 
-impl builtins::Command for EapiSrcCompile0Command {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EapiSrcCompile0Command {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let die_flag = context.shell.builtin_state::<DieFlag>().cloned();
@@ -238,13 +238,13 @@ impl builtins::Command for EapiSrcCompile0Command {
 #[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcCompile1Command;
 
-brush_builtin_winnow::winnow_builtin!(EapiSrcCompile1Command);
+brush_winnow_args_adapter::impl_parse_args!(EapiSrcCompile1Command);
 
-impl builtins::Command for EapiSrcCompile1Command {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EapiSrcCompile1Command {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let die_flag = context.shell.builtin_state::<DieFlag>().cloned();
@@ -268,13 +268,13 @@ impl builtins::Command for EapiSrcCompile1Command {
 #[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcCompile2Command;
 
-brush_builtin_winnow::winnow_builtin!(EapiSrcCompile2Command);
+brush_winnow_args_adapter::impl_parse_args!(EapiSrcCompile2Command);
 
-impl builtins::Command for EapiSrcCompile2Command {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EapiSrcCompile2Command {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let die_flag = context.shell.builtin_state::<DieFlag>().cloned();
@@ -288,13 +288,13 @@ impl builtins::Command for EapiSrcCompile2Command {
 #[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcConfigureCommand;
 
-brush_builtin_winnow::winnow_builtin!(EapiSrcConfigureCommand);
+brush_winnow_args_adapter::impl_parse_args!(EapiSrcConfigureCommand);
 
-impl builtins::Command for EapiSrcConfigureCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EapiSrcConfigureCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let shell = context.shell;
@@ -317,13 +317,13 @@ impl builtins::Command for EapiSrcConfigureCommand {
 #[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcPrepareNoopCommand;
 
-brush_builtin_winnow::winnow_builtin!(EapiSrcPrepareNoopCommand);
+brush_winnow_args_adapter::impl_parse_args!(EapiSrcPrepareNoopCommand);
 
-impl builtins::Command for EapiSrcPrepareNoopCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EapiSrcPrepareNoopCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         _context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         Ok(brush_core::ExecutionResult::success())
@@ -335,7 +335,7 @@ impl builtins::Command for EapiSrcPrepareNoopCommand {
 #[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcInstall4Command;
 
-brush_builtin_winnow::winnow_builtin!(EapiSrcInstall4Command);
+brush_winnow_args_adapter::impl_parse_args!(EapiSrcInstall4Command);
 
 /// PMS's fixed fallback filename list (Listing 9.8, Algorithm 12.3) used
 /// when DOCS is neither a non-empty array nor a non-empty scalar.
@@ -380,11 +380,11 @@ async fn install_docs_var<SE: brush_core::ShellExtensions>(
     Ok(())
 }
 
-impl builtins::Command for EapiSrcInstall4Command {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EapiSrcInstall4Command {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let die_flag = context.shell.builtin_state::<DieFlag>().cloned();
@@ -454,13 +454,13 @@ fn glob_match(pattern: &str, name: &str) -> bool {
 #[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct GetLibdirCommand;
 
-brush_builtin_winnow::winnow_builtin!(GetLibdirCommand);
+brush_winnow_args_adapter::impl_parse_args!(GetLibdirCommand);
 
-impl builtins::Command for GetLibdirCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for GetLibdirCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let shell = context.shell;
@@ -491,13 +491,13 @@ impl builtins::Command for GetLibdirCommand {
 #[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcInstall6Command;
 
-brush_builtin_winnow::winnow_builtin!(EapiSrcInstall6Command);
+brush_winnow_args_adapter::impl_parse_args!(EapiSrcInstall6Command);
 
-impl builtins::Command for EapiSrcInstall6Command {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EapiSrcInstall6Command {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let die_flag = context.shell.builtin_state::<DieFlag>().cloned();
@@ -526,13 +526,13 @@ impl builtins::Command for EapiSrcInstall6Command {
 #[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EinstalldocsCommand;
 
-brush_builtin_winnow::winnow_builtin!(EinstalldocsCommand);
+brush_winnow_args_adapter::impl_parse_args!(EinstalldocsCommand);
 
-impl builtins::Command for EinstalldocsCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EinstalldocsCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let shell = context.shell;
@@ -588,13 +588,13 @@ impl builtins::Command for EinstalldocsCommand {
 #[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcTestCommand;
 
-brush_builtin_winnow::winnow_builtin!(EapiSrcTestCommand);
+brush_winnow_args_adapter::impl_parse_args!(EapiSrcTestCommand);
 
-impl builtins::Command for EapiSrcTestCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EapiSrcTestCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let die_flag = context.shell.builtin_state::<DieFlag>().cloned();
@@ -639,7 +639,7 @@ impl builtins::Command for EapiSrcTestCommand {
 #[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcPrepare6Command;
 
-brush_builtin_winnow::winnow_builtin!(EapiSrcPrepare6Command);
+brush_winnow_args_adapter::impl_parse_args!(EapiSrcPrepare6Command);
 
 /// See [`run_emake`]'s doc comment on `params` — `eapply`'s own "Applying
 /// patches from …" status line is subject to the same rule (and is the
@@ -670,11 +670,11 @@ async fn apply_patches_var<SE: brush_core::ShellExtensions>(
     Ok(())
 }
 
-impl builtins::Command for EapiSrcPrepare6Command {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EapiSrcPrepare6Command {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         apply_patches_var(&context.params, context.shell, false).await?;
@@ -687,13 +687,13 @@ impl builtins::Command for EapiSrcPrepare6Command {
 #[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapiSrcPrepare8Command;
 
-brush_builtin_winnow::winnow_builtin!(EapiSrcPrepare8Command);
+brush_winnow_args_adapter::impl_parse_args!(EapiSrcPrepare8Command);
 
-impl builtins::Command for EapiSrcPrepare8Command {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EapiSrcPrepare8Command {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         apply_patches_var(&context.params, context.shell, true).await?;
@@ -707,13 +707,13 @@ impl builtins::Command for EapiSrcPrepare8Command {
 #[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EapplyUserCommand;
 
-brush_builtin_winnow::winnow_builtin!(EapplyUserCommand);
+brush_winnow_args_adapter::impl_parse_args!(EapplyUserCommand);
 
-impl builtins::Command for EapplyUserCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EapplyUserCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         _context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         Ok(brush_core::ExecutionResult::success())
@@ -737,13 +737,13 @@ pub(crate) struct NonfatalCommand {
     args: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(NonfatalCommand);
+brush_winnow_args_adapter::impl_parse_args!(NonfatalCommand);
 
-impl builtins::Command for NonfatalCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for NonfatalCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let die_flag = context.shell.builtin_state::<DieFlag>().cloned();
@@ -781,13 +781,13 @@ pub(crate) struct AssertCommand {
     message: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(AssertCommand);
+brush_winnow_args_adapter::impl_parse_args!(AssertCommand);
 
-impl builtins::Command for AssertCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for AssertCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let die_flag = context.shell.builtin_state::<DieFlag>().cloned();

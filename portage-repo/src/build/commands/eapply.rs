@@ -28,13 +28,13 @@ pub(crate) struct EapplyCommand {
     args: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(EapplyCommand);
+brush_winnow_args_adapter::impl_parse_args!(EapplyCommand);
 
-impl builtins::Command for EapplyCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EapplyCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let die_flag = context.shell.builtin_state::<DieFlag>().cloned();

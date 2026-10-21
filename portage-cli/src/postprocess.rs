@@ -28,6 +28,9 @@ pub struct PostProcess {
     pub strip: StripMode,
     pub strip_exclude: Vec<Utf8PathBuf>,
     pub strip_cmd: String,
+    /// The build's `PATH`, so both tools resolve as they did in the phases (e.g. LLVM's
+    /// slotted `llvm-strip`, which em's own startup `PATH` may predate)
+    pub path: Option<String>,
 }
 
 #[derive(Default)]
@@ -118,6 +121,15 @@ fn normalize(path: &Utf8Path) -> Utf8PathBuf {
 }
 
 /// Run both passes over the image; returns counts for the caller to report
+/// A command for `program`, run with the build's `PATH`
+fn tool(program: &str, cfg: &PostProcess) -> std::process::Command {
+    let mut cmd = std::process::Command::new(program);
+    if let Some(path) = &cfg.path {
+        cmd.env("PATH", path);
+    }
+    cmd
+}
+
 pub fn post_process_image(image_dir: &Utf8Path, cfg: &PostProcess) -> Result<PostStats> {
     let mut stats = PostStats::default();
     if !image_dir.exists() {
@@ -165,7 +177,7 @@ pub fn post_process_image(image_dir: &Utf8Path, cfg: &PostProcess) -> Result<Pos
         if !meta.is_file() || meta.len() < MIN_COMPRESS_SIZE {
             continue;
         }
-        let status = std::process::Command::new(&cfg.compress_cmd)
+        let status = tool(&cfg.compress_cmd, cfg)
             .args(&cfg.compress_flags)
             .arg("-f")
             .arg("--")
@@ -249,7 +261,7 @@ pub fn post_process_image(image_dir: &Utf8Path, cfg: &PostProcess) -> Result<Pos
             p.set_mode(perms.mode() | 0o200);
             let _ = std::fs::set_permissions(on_disk.as_std_path(), p);
         }
-        let status = std::process::Command::new(&cfg.strip_cmd)
+        let status = tool(&cfg.strip_cmd, cfg)
             .args([
                 "--strip-unneeded",
                 "-N",
@@ -322,6 +334,7 @@ mod tests {
             strip: StripMode::All,
             strip_exclude: vec![],
             strip_cmd: "strip".into(),
+            path: None,
         }
     }
 
@@ -392,6 +405,34 @@ mod tests {
         cfg.strip = StripMode::Only(vec![Utf8PathBuf::from("/usr/bin")]);
         let stats = post_process_image(&image, &cfg).unwrap();
         assert_eq!(stats.stripped, 0);
+    }
+
+    #[test]
+    fn strip_resolves_through_the_build_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8PathBuf::try_from(tmp.path().to_path_buf()).unwrap();
+        let bin = root.join("llvm/bin");
+        write(
+            &bin.join("only-in-build-path-strip"),
+            b"#!/bin/sh\nexit 0\n",
+        );
+        let script = bin.join("only-in-build-path-strip");
+        std::fs::set_permissions(
+            script.as_std_path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+        let mut elf = vec![0u8; 64];
+        elf[..4].copy_from_slice(b"\x7fELF");
+        elf[5] = 1;
+        elf[16] = 3;
+        let image = root.join("image");
+        write(&image.join("usr/lib64/libx.so"), &elf);
+
+        let mut cfg = default_cfg();
+        cfg.strip_cmd = "only-in-build-path-strip".into();
+        cfg.path = Some(format!("{bin}:/usr/bin:/bin"));
+        assert_eq!(post_process_image(&image, &cfg).unwrap().stripped, 1);
     }
 
     #[test]

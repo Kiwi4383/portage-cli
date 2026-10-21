@@ -1900,6 +1900,7 @@ fn post_process_after_install(
             .get_var("STRIP")
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "strip".to_string()),
+        path: shell.get_var("PATH"),
     };
 
     let stats = postprocess::post_process_image(&image_dir, &cfg)?;

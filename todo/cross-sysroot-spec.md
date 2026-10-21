@@ -2,7 +2,7 @@
 
 Status: 🟡 design agreed 2026-10-07 (Luca); step 1 done 2026-10-08 (the
 built-in spec and `--print-spec`), step 2 mostly done 2026-10-09 (see
-"Progress"), step 3's loading done 2026-10-21 (saving waits on spec versus profile), steps 4–5 open. Supersedes
+"Progress"), step 3 done 2026-10-21 (loading, and saving as a sysroot overlay profile), steps 4–5 open. Supersedes
 the flag-based approach in [[crossdev-gcc-version-flag]], whose first
 implementation (`--gcc`/`--libc`/… writing exact pins) was dropped as the
 wrong shape.
@@ -264,3 +264,16 @@ sysroot's `make.conf` through `--init-target`, and a `sys-devel/gcc:16` pin was 
 
 Not done: saving the spec in the sysroot and reading it back (waits on the spec-versus-profile decision), so a
 later bare-tuple invocation uses the built-in again; persistent `extra`.
+
+## Decided and done (2026-10-21): the spec derives a profile
+
+Luca: a spec creates an overlay whose profile is derived from it; the overlay lives in the sysroot; built-in tuples keep
+linking the existing `::gentoo` profile. Done in `ae512dea` (em reads `portage-2` `repo:path` parents through
+`ProfileStack::build_in`) and the following commit (`<sysroot>/var/db/repos/cross-sysroot`, profile `profiles/sysroot`
+with `parent = gentoo:<profile>` and the saved `cross-sysroot.toml`; a bare tuple reads it back). Portage reads the
+overlay too (`portageq envvar` in sandbox `em-r1-board`).
+
+Where step 4 goes: version atoms become the profile's `package.mask`/`package.accept_keywords` (Portage reads both from
+profiles), CFLAGS could move to its `make.defaults`. `exceptions` cannot: `package.env` is user config only in Portage,
+so it stays in the sysroot's `/etc/portage`. Open: under `-p` before `--init-target`, `use_env`'s `sysroot_override`
+still points at the `::gentoo` profile, which is right until the derived profile carries masks.

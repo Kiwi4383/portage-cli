@@ -102,7 +102,13 @@ pub async fn run(args: &CrossdevArgs, globals: &Cli) -> Result<()> {
         .target()
         .ok_or_else(|| anyhow::anyhow!("em crossdev needs a target tuple: pass --target/-T"))?;
     let extras = ex_pkg_atoms(args)?;
-    let (target, spec) = match globals.target_spec() {
+    let own = match globals.target_spec() {
+        Some(spec) => Some(spec),
+        None => saved_spec(globals)?,
+    };
+    // A spec from a file, or saved by an earlier one, gets the sysroot its own profile.
+    let own_profile = own.is_some();
+    let (target, spec) = match own {
         Some(mut spec) => {
             anyhow::ensure!(
                 !args.llvm,
@@ -151,13 +157,14 @@ pub async fn run(args: &CrossdevArgs, globals: &Cli) -> Result<()> {
             globals,
             args,
             &spec,
+            own_profile,
             config_plan::RefreshPolicy::Sync,
         )
         .await
         .map(|_| ());
     }
     if args.setup {
-        return setup(&target, globals, args, &spec).await;
+        return setup(&target, globals, args, &spec, own_profile).await;
     }
     bail!(
         "em crossdev does setup only for now — pass --init-target to lay down the \
@@ -202,6 +209,7 @@ async fn setup(
     globals: &Cli,
     args: &CrossdevArgs,
     spec: &spec::SysrootSpec,
+    own_profile: bool,
 ) -> Result<()> {
     // Same-tuple as host CHOST is not cross: ebuilds treat CTARGET==CHOST as
     // native and install into host paths (collisions with real packages).
@@ -220,6 +228,7 @@ async fn setup(
         globals,
         args,
         spec,
+        own_profile,
         config_plan::RefreshPolicy::FillGapsOnly,
     )
     .await?;
@@ -1130,6 +1139,7 @@ async fn init_target(
     globals: &Cli,
     _args: &CrossdevArgs,
     spec: &spec::SysrootSpec,
+    own_profile: bool,
     policy: config_plan::RefreshPolicy,
 ) -> Result<config_plan::Outcome> {
     let ask = globals.merge_flags().ask;
@@ -1175,6 +1185,7 @@ async fn init_target(
         &sysroot,
         globals.outer_roots().merge_root(),
         &gentoo_path,
+        own_profile,
     )?);
     entries.extend(sysroot_repos_conf_entries(
         &sysroot,
@@ -1182,6 +1193,7 @@ async fn init_target(
         target,
         &category,
         spec,
+        own_profile,
     ));
 
     let outcome = config_plan::apply(&entries, globals.pretend(), ask, policy)?;
@@ -1412,6 +1424,7 @@ fn sysroot_config_entries(
     sysroot: &Utf8Path,
     outer_root: &Utf8Path,
     gentoo: &Utf8Path,
+    own_profile: bool,
 ) -> Result<Vec<config_plan::ConfigEntry>> {
     let portage = sysroot.join("etc/portage");
     let mut entries = Vec::new();
@@ -1445,11 +1458,54 @@ fn sysroot_config_entries(
             spec.profile
         );
     }
+    let profile_target = if own_profile {
+        let repo = sysroot.join(SPEC_REPO_DIR);
+        let profile = repo.join(SPEC_PROFILE);
+        let file =
+            |path: Utf8PathBuf, desired: String| config_plan::ConfigEntry::File { path, desired };
+        entries.extend([
+            file(
+                repo.join("metadata/layout.conf"),
+                "masters = gentoo\nprofile-formats = portage-2\n".into(),
+            ),
+            file(repo.join("profiles/repo_name"), format!("{SPEC_REPO}\n")),
+            file(profile.join("parent"), format!("gentoo:{}\n", spec.profile)),
+            file(profile.join(SPEC_FILE), spec.to_toml()?),
+        ]);
+        profile
+    } else {
+        profile_dir
+    };
     entries.push(config_plan::ConfigEntry::Symlink {
         link: portage.join("make.profile"),
-        target: profile_dir,
+        target: profile_target,
     });
     Ok(entries)
+}
+
+/// Repository name of the sysroot overlay holding the profile a spec derives
+const SPEC_REPO: &str = "cross-sysroot";
+/// That overlay's directory under the sysroot
+const SPEC_REPO_DIR: &str = "var/db/repos/cross-sysroot";
+/// The derived profile, relative to the overlay
+const SPEC_PROFILE: &str = "profiles/sysroot";
+/// The spec, saved beside the profile it derives
+const SPEC_FILE: &str = "cross-sysroot.toml";
+
+/// The spec saved in the sysroot by an earlier `--init-target` with a spec file, if
+/// `make.profile` links to the profile holding one
+fn saved_spec(globals: &Cli) -> Result<Option<spec::SysrootSpec>> {
+    let Some(config) = globals.roots().config().map(Utf8Path::to_owned) else {
+        return Ok(None);
+    };
+    let Ok(profile) = config.join("etc/portage/make.profile").canonicalize_utf8() else {
+        return Ok(None);
+    };
+    let file = profile.join(SPEC_FILE);
+    if !file.is_file() {
+        return Ok(None);
+    }
+    spec::SysrootSpec::load(&file).map(Some)
 }
 
 /// `<sysroot>/etc/portage/repos.conf` entries referencing the host gentoo
@@ -1462,10 +1518,18 @@ fn sysroot_repos_conf_entries(
     target: &CrossTarget,
     category: &str,
     spec: &spec::SysrootSpec,
+    own_profile: bool,
 ) -> Vec<config_plan::ConfigEntry> {
     let dir = sysroot.join("etc/portage/repos.conf");
     let name = overlay_name(target);
-    vec![
+    let own = own_profile.then(|| config_plan::ConfigEntry::File {
+        path: dir.join(format!("{SPEC_REPO}.conf")),
+        desired: format!(
+            "[{SPEC_REPO}]\nlocation = {}\n",
+            sysroot.join(SPEC_REPO_DIR)
+        ),
+    });
+    let mut entries = vec![
         config_plan::ConfigEntry::CreateOnly {
             path: dir.join("gentoo.conf"),
             desired: format!("[DEFAULT]\nmain-repo = gentoo\n\n[gentoo]\nlocation = {gentoo}\n"),
@@ -1476,7 +1540,9 @@ fn sysroot_repos_conf_entries(
             category: category.to_owned(),
             packages_line: alias_packages_line(spec),
         },
-    ]
+    ];
+    entries.extend(own);
+    entries
 }
 
 /// The special cross `make.conf` body (crossdev `set_metadata`): `CHOST`/`CBUILD`
@@ -1922,6 +1988,51 @@ mod tests {
         let spec = spec::SysrootSpec::builtin(target, &[]);
         let entry = alias_repo_conf_entry(globals, gentoo, target, category, &spec)?;
         config_plan::apply_now(std::slice::from_ref(&entry))
+    }
+
+    #[test]
+    fn a_spec_gets_a_sysroot_profile_that_leads_back_to_it() {
+        let (_tmp, _g) = crate::test_support::isolate_active_state();
+        let prefix = tempfile::tempdir().unwrap();
+        let prefix = Utf8Path::from_path(prefix.path()).unwrap();
+        let gentoo = prefix.join("gentoo");
+        let target = CrossTarget::parse("riscv64-unknown-linux-gnu", false).unwrap();
+        let mut spec = spec::SysrootSpec::builtin(&target, &[]);
+        spec.cflags = "-O3 -march=rva23u64 -pipe".into();
+        let parent = gentoo.join("profiles").join(&spec.profile);
+        std::fs::create_dir_all(&parent).unwrap();
+        std::fs::write(gentoo.join("profiles/repo_name"), "gentoo\n").unwrap();
+        let sysroot = prefix.join("usr").join(&target.tuple);
+        let mut entries =
+            sysroot_config_entries(&target, &spec, &sysroot, prefix, &gentoo, true).unwrap();
+        entries.extend(sysroot_repos_conf_entries(
+            &sysroot,
+            &gentoo,
+            &target,
+            &target.category(),
+            &spec,
+            true,
+        ));
+        config_plan::apply_now(&entries).unwrap();
+
+        let cli = parse_crossdev(&[
+            "--prefix",
+            prefix.as_str(),
+            "--target",
+            &target.tuple,
+            "--print-spec",
+        ]);
+        assert_eq!(saved_spec(&cli).unwrap(), Some(spec));
+        let profile = sysroot
+            .join("etc/portage/make.profile")
+            .canonicalize_utf8()
+            .unwrap();
+        let stack =
+            portage_repo::ProfileStack::build_in(profile.into_std_path_buf(), &sysroot).unwrap();
+        assert_eq!(
+            stack.profiles()[0].path(),
+            parent.canonicalize_utf8().unwrap().as_std_path()
+        );
     }
 
     #[test]

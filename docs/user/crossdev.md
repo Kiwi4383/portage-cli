@@ -53,7 +53,7 @@ em crossdev [OPTIONS]
 
 | flag | what it does |
 |---|---|
-| `--target T` / `-T T` (global) | the tuple to set up or use, e.g. `riscv64-unknown-linux-gnu` |
+| `--target T` / `-T T` (global) | the tuple to set up or use, e.g. `riscv64-unknown-linux-gnu`, or a [spec file](#spec-files) |
 | `--show-target-cfg` | print the derived config (category, sysroot, package set) and exit — no writes |
 | `--print-spec` | print the target's built-in sysroot spec as TOML (toolchains, libc, profile, who builds what) and exit — no writes |
 | `--init-target` | lay down the overlay alias + sysroot `make.conf`/`make.profile`, no building |
@@ -78,6 +78,28 @@ The tuple's suffix picks the libc/OS model (crossdev's own `parse_target`):
 
 `-L`/`--llvm` rejects glibc targets outright (matching real crossdev — LLVM
 can't currently build glibc); use a musl or bare-metal tuple with `-L`.
+
+## Spec files
+
+`--print-spec` prints what a tuple builds as TOML. Edit a copy and pass its path as `--target` (any value
+containing `/` or ending in `.toml` is read as a file):
+
+```
+$ em crossdev --target riscv64-unknown-linux-gnu --print-spec > k3.toml
+$ $EDITOR k3.toml          # e.g. cflags = "-O3 -march=rva23u64 -pipe"
+$ em crossdev --target ./k3.toml --init-target
+```
+
+With a spec file, `--init-target` gives the sysroot its own profile: an overlay at
+`<sysroot>/var/db/repos/cross-sysroot`, listed in the sysroot's `repos.conf`, whose
+`profiles/sysroot` inherits the spec's `profile` from `::gentoo` (`gentoo:<profile>`, the
+`portage-2` profile format) and holds the spec as `cross-sysroot.toml`. `make.profile` links
+there, so later commands given just the tuple read that saved spec. A built-in tuple links
+`make.profile` to the `::gentoo` profile directly, as before.
+
+A spec may not yet ask for what the bootstrap does not honour: version or slot constraints on
+toolchain packages (the clang slot excepted), other toolchain packages than the tuple's, or a
+libc or packages built by another toolchain than the system's. Such a file is refused when read.
 
 ## Examples
 

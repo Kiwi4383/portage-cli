@@ -435,9 +435,33 @@ pub fn toolchain_plan(
                 into_sysroot: false,
             });
         }
+        // The target's own LLVM runtimes BDEPEND on these but read them from ESYSROOT
+        // (`--config=${ESYSROOT}/etc/clang/<slot>/…`), so the sysroot needs them too.
+        let slot = spec
+            .llvm_slot()
+            .map(|s| format!(":{s}"))
+            .unwrap_or_default();
+        steps.push(StageStep {
+            label: "clang config (sysroot)".into(),
+            atoms: CLANG_CONFIGS
+                .iter()
+                .map(|cfg| format!("{cfg}{slot}"))
+                .collect(),
+            use_override: vec![],
+            nodeps: false,
+            into_sysroot: true,
+        });
     }
     StagePlan { steps }
 }
+
+/// The per-slot clang configuration packages (`/etc/clang/<slot>/gentoo-*.cfg`)
+const CLANG_CONFIGS: &[&str] = &[
+    "llvm-runtimes/clang-rtlib-config",
+    "llvm-runtimes/clang-unwindlib-config",
+    "llvm-runtimes/clang-stdlib-config",
+    "llvm-core/clang-linker-config",
+];
 
 /// Just the gcc refresh for an **already-bootstrapped** cross toolchain:
 /// gcc-stage1 → gcc-stage2, reusing the existing binutils/libc untouched.
@@ -564,7 +588,13 @@ mod tests {
                 "libunwind",
                 "libcxxabi",
                 "libcxx",
+                "clang config (sysroot)",
             ]
+        );
+        assert!(plan.steps[11].into_sysroot);
+        assert_eq!(
+            plan.steps[11].atoms[0],
+            "llvm-runtimes/clang-rtlib-config:23"
         );
         let cat = "cross-riscv64-unknown-linux-gnu";
         assert_eq!(plan.steps[4].atoms, [format!("{cat}/glibc")]);

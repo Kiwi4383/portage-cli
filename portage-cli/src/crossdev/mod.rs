@@ -1547,7 +1547,7 @@ fn spec_profile_entries(
         file(profile.join(SPEC_FILE), spec.to_toml()?),
         file(
             profile.join("package.mask"),
-            pin_lines(spec, |pin| Dep::new(pin.cpn)),
+            pin_lines(spec, |pin| Dep::new(pin.cpn)) + &llvm_slot_masks(spec)?,
         ),
         file(profile.join("package.unmask"), pin_lines(spec, Dep::clone)),
         file(profile.join("package.use"), package_use),
@@ -1578,6 +1578,32 @@ fn toolchain_name(id: spec::ToolchainId) -> &'static str {
         spec::ToolchainId::Gcc => "gcc",
         spec::ToolchainId::Clang => "clang",
     }
+}
+
+/// Masks above the clang toolchain's LLVM slot for the target's own LLVM packages: their
+/// runtimes build with `<tuple>-clang-<slot>`, which only the cross toolchain's slot provides
+fn llvm_slot_masks(spec: &spec::SysrootSpec) -> Result<String> {
+    let (Some(clang), Some(slot)) = (&spec.toolchain.clang, spec.llvm_slot()) else {
+        return Ok(String::new());
+    };
+    let next = slot
+        .parse::<u64>()
+        .with_context(|| format!("LLVM slot {slot}"))?
+        + 1;
+    let llvm = Cpn::new("llvm-core", "llvm");
+    let cpns = [
+        &clang.compiler,
+        &clang.linker,
+        &clang.rtlib,
+        &clang.unwind,
+        &clang.cxxabi,
+        &clang.cxx,
+    ]
+    .map(|dep| dep.cpn);
+    Ok(std::iter::once(llvm)
+        .chain(cpns)
+        .map(|cpn| format!(">={cpn}-{next}\n"))
+        .collect())
 }
 
 /// One line per spec pin, as `line` renders it: masking the package and unmasking the pin
@@ -2266,6 +2292,11 @@ mod tests {
         assert_eq!(
             read(profile.join("package.use")),
             "llvm-runtimes/libunwind static-libs\n"
+        );
+        let mask = read(profile.join("package.mask"));
+        assert!(
+            mask.contains(">=llvm-core/llvm-24\n") && mask.contains(">=llvm-runtimes/libcxx-24\n"),
+            "{mask}"
         );
         let portage = sysroot.join("etc/portage");
         assert!(

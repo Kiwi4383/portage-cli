@@ -107,6 +107,9 @@ A spec may not yet ask for other toolchain packages than the tuple's, or for a l
 built by another toolchain than the system's. Such a file is refused when read, as is a pin with a
 blocker, USE dependency, repository or slot operator.
 
+How each part of a spec maps to Portage files, and what is still planned:
+[cross-sysroot-spec.md](../design/cross-sysroot-spec.md).
+
 ## Examples
 
 ### Preview a target before touching anything

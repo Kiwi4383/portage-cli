@@ -9,7 +9,8 @@ validation, and known divergences from emerge.
 
 Related: [`docs/design/testing.md`](./testing.md) (how correctness is established),
 [`docs/design/benchmarks.md`](./benchmarks.md) (how performance is measured),
-[`usage-rs.md`](./usage-rs.md) (the grammar decisions behind `em`'s CLI, which now parses with winnow-args).
+[`usage-rs.md`](./usage-rs.md) (the grammar decisions behind `em`'s CLI, which now parses with winnow-args),
+[`cross-sysroot-spec.md`](./cross-sysroot-spec.md) (how a cross target's spec becomes Portage config).
 
 ## Crate layering
 

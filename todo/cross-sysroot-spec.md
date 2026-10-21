@@ -292,3 +292,11 @@ Live (sandbox `em-r1-board`): cross gcc 15.3.1_p20261016, target gcc 15.3.1_p202
 differ because the host side accepts the unkeyworded newest snapshot (`**`) and the sysroot only `~riscv`; the spec
 assumes target gcc = cross gcc, which this does not yet enforce. em also accepted the slot atom in an EAPI 0 profile
 where Portage refuses it; left as is.
+
+## Design doc (2026-10-21)
+
+The conversion rules now live in `docs/design/cross-sysroot-spec.md`: spec → derived profile (done) and spec →
+per-package toolchains in the sysroot's user config (`make.defaults` for the default, `env/` + `package.env` for
+`exceptions`, planned with the mixed bootstrap), plus the fields the spec has to grow (parent list, per-toolchain
+variables, clang driver cfg, toolchain `package.use`). Luca agreed the second conversion sits on top of the first and
+will likely expand the spec.

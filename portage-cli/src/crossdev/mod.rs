@@ -771,6 +771,15 @@ async fn run_stage1(args: &crate::cli::StagesArgs, globals: &Cli) -> Result<()> 
     // packages like app-alternatives/* violate REQUIRED_USE until Level-C
     // cedes those flags. Always enable --autosolve-use; cede prefers the
     // ebuild's + IUSE default when the config left the flag off.
+    // Stage1's `USE="-* build"` resets the spec's `package-use`, which states what its
+    // toolchain needs; carry it above the reset.
+    let spec_use = match globals.target_spec() {
+        Some(spec) => spec_package_use(&spec)?,
+        None => saved_spec(globals)?
+            .map(|spec| spec_package_use(&spec))
+            .transpose()?
+            .unwrap_or_default(),
+    };
     let mut stage1_merge = with_buildpkg(globals.merge_flags());
     stage1_merge.autosolve_use = true;
     run_staged(
@@ -788,7 +797,7 @@ async fn run_stage1(args: &crate::cli::StagesArgs, globals: &Cli) -> Result<()> 
             target_only_installed_view: true,
             extra_aliases: &[],
             sysroot_override: None,
-            extra_package_use: &[],
+            extra_package_use: &spec_use,
         },
         |_| Ok(()),
     )
@@ -1580,6 +1589,17 @@ fn pin_lines(spec: &spec::SysrootSpec, line: impl Fn(&Dep) -> Dep) -> String {
         .collect()
 }
 
+/// The spec's `package-use` as staged-run USE overrides
+fn spec_package_use(spec: &spec::SysrootSpec) -> Result<Vec<(Dep, Vec<UseOverride>)>> {
+    spec.package_use
+        .iter()
+        .map(|(atom, flags)| {
+            let dep = Dep::parse(atom).with_context(|| format!("package-use: {atom}"))?;
+            Ok((dep, flags.iter().map(|f| UseOverride::parse(f)).collect()))
+        })
+        .collect()
+}
+
 /// Repository name of the sysroot overlay holding the profile a spec derives
 const SPEC_REPO: &str = "cross-sysroot";
 /// That overlay's directory under the sysroot
@@ -2254,6 +2274,22 @@ mod tests {
         assert_eq!(
             read(portage.join("package.env").join(SPEC_REPO)),
             "sys-libs/glibc gcc-toolchain.conf\n"
+        );
+    }
+
+    #[test]
+    fn a_spec_package_use_becomes_a_stage1_override() {
+        let uses = spec_package_use(&spec::clang_main_spec()).unwrap();
+        let [(dep, flags)] = uses.as_slice() else {
+            panic!("{uses:?}")
+        };
+        assert_eq!(dep.to_string(), "llvm-runtimes/libunwind");
+        assert_eq!(
+            flags
+                .iter()
+                .map(|u| (u.flag.as_str(), u.enable))
+                .collect::<Vec<_>>(),
+            [("static-libs", true)]
         );
     }
 

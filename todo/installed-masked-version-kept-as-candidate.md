@@ -100,7 +100,7 @@ gets silently-kept root targets from target classification. `em -puD
 - **Display.** emerge marks a downgrade `UD`; `em`'s `action_tag` returns
   `D`, so the plan shows ` D`. The renderer already handles `UD`. Predates
   this change.
-- **No test for the warning** itself; it was checked by running `em`.
+- The warning has tests in `query/depgraph/tests.rs`, including the slot-upgrade skip (`6f6beefc`).
 - **Measured after review:** a masked `@world` member (`app-misc/tmux`)
   is downgraded by emerge under `-n`, `-u`, `-uD` and plain `@world`;
   `em` matches for the three it was run with (`-n`, `-u`, `-uD`).

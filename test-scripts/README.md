@@ -190,8 +190,7 @@ active set`/`env`/`list` flow. Sandbox-run-only, same as
 `test-blockers-iuse-effective-sandbox.sh` above — no `sudo`, no `chroot`.
 Takes a `--worktree DIR` so it can test a *different* checkout's `em`
 without touching your own — built for checking a branch that changes CLI
-parsing (e.g. the `usage-rs` clap migration, `todo/usage-rs-cli-migration.md`)
-didn't silently break `--prefix`. See also the `em-prefix-sandbox-test`
+parsing (e.g. the winnow-args port) didn't silently break `--prefix`. See also the `em-prefix-sandbox-test`
 Claude Code skill (`.claude/skills/`), which wraps this with guidance on
 reading a failure.
 

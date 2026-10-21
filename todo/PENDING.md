@@ -2,7 +2,7 @@
 
 Open items from the toolchain → stage → binhost work, grouped. Each links to the
 file with the detail. Status: 🔴 not started · 🟡 partial/decided · ✅ done (kept
-here briefly for context). Updated **2026-09-02**.
+here briefly for context). Updated **2026-10-21**.
 
 **How to use this file:** start from the open queue below; jump to the linked
 note for design. Long historical narrative for the 2026-07-05 riscv shakeout
@@ -11,7 +11,35 @@ is the audit trail). Fully closed design notes live under `todo/done/`;
 `[[name]]` links still resolve by filename there. Milestone-level build
 progress (M0 → M4, each with its gate command) lives in [[build-roadmap]].
 
-## RESUME HERE (2026-07-30) — open queue
+## RESUME HERE (2026-10-21) — em as the crossdev-stages backend
+
+Next arc: crossdev-stages calls `em` as a library instead of driving real
+crossdev/emerge. Requirements R0–R9 and the 12-phase plan are in
+[[crossdev-stages-backend-api]]; the toolchain description is
+[[cross-sysroot-spec]] (type, `--print-spec` and consumers landed; loading a
+file, version atoms and `package.env` per toolchain open).
+
+| Item | Status | Detail |
+|------|--------|--------|
+| Spec steps 3–4: `--target` takes a file, versions become config | 🔴 | [[cross-sysroot-spec]] |
+| R4: baselayout before any `acct-*` in a sysroot populate | 🔴 | [[crossdev-stages-backend-api]] |
+| R1/R8: verify `--target T --root R` merges, `em portageq envvar` | 🔴 | [[crossdev-stages-backend-api]], [[portageq-workalike-plan]] |
+| Execution shape (closure vs re-exec) and the shared container crate | 🔴 needs Luca | [[crossdev-stages-backend-api]] R0/R0b |
+| Merge path residuals: more of `run_phase`, the missing-profile policy | 🟡 | [[merge-path-tidy-up]] |
+| Masked installed version kept: unmeasured modes | 🟡 | [[installed-masked-version-kept-as-candidate]] |
+| Parity: `texlive-core` pulls a perl stack via `virtual/perl-File-Temp`; firefox misses `python-3.15` | 🔴 | found 2026-10-14 by `bench-em-vs-emerge.sh`, not yet filed |
+
+Closed since 2026-09-25 and archived under `todo/done/`: the phase order audit
+([[phase-order-and-binpkg]]), the binpkg stage-test defects
+([[binpkg-stage-test-defects]], [[binpkg-build-env-key-from-final-flags]]),
+saved environments ([[saved-environment-functions]],
+[[brush-heredoc-line-continuation]]), stage-root links
+([[stage-root-links-carry-the-build-path]], [[root-variables-trailing-slash]]),
+[[gcc-wrappers-outlive-a-reduced-rebuild]], [[ld-cache-refresh-symlink-race]],
+the clang-main experiment ([[clang-main-glibc-experiment]]), and the CLI parser,
+which moved to winnow-args rather than usage-rs ([[usage-rs-cli-migration]]).
+
+## Earlier queue (2026-07-30)
 
 ### Suggested order (value for stages + host parity)
 

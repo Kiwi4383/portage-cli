@@ -102,7 +102,7 @@ is a thin adapter over internals `em` already has, which changes the cost
 side of that tradeoff.
 
 **Update 2026-09-17 — `em grep` implemented, `em portageq` started.** See
-[`grep-qgrep-workalike-plan.md`](./grep-qgrep-workalike-plan.md) for grep's
+[`grep-qgrep-workalike-plan.md`](./done/grep-qgrep-workalike-plan.md) for grep's
 full design and live parity-test results; `grep` is no longer a stub.
 `portageq` now implements its VDB group (`has_version`/`best_version`/
 `match`/`mass_best_version`, live-verified byte-exact against real

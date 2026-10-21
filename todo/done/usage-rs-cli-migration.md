@@ -1,8 +1,7 @@
 # usage-rs CLI migration — postponed
 
-**Status (2026-09-04): postponed, not abandoned.** Revisit in a few months
-once usage-rs 6's rough edges (below) have had time to settle, or once
-someone wants to invest in working around them in `em`'s own code.
+**Status: ⚪ superseded 2026-10-14.** `em` moved from clap to winnow-args instead (`88121fbd`), and the
+ebuild builtins followed (`be8bf789`). Kept for the usage-rs findings below; it was postponed on 2026-09-04.
 
 ## What this is
 

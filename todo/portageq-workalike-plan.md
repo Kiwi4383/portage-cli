@@ -77,7 +77,7 @@ should be dropped, not stubbed:
   `repositories_configuration`+`repos_config`.
 - **Not implemented (justified refusals):** `pquery` and the bare
   fall-through (that is `em grep`'s reserved shape — see
-  [`grep-qgrep-workalike-plan.md`](./grep-qgrep-workalike-plan.md) — and
+  [`grep-qgrep-workalike-plan.md`](./done/grep-qgrep-workalike-plan.md) — and
   silently dumping 19k lines on a typo is a footgun; `em portageq` should
   hard-error on an unknown subcommand instead), `all_best_visible` (a full-
   tree visible resolve per `cp`; minutes of work for no consumer),

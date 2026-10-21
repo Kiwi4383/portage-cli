@@ -18,10 +18,9 @@ toolchain bootstrap), and checks the `em active set/env/list` flow.
 - After changing anything in `cli.rs`'s topology/root resolution, the
   `Cli`/`Applet` parser layer, or `privilege.rs`.
 - Before recommending a merge/swap decision on a branch that touches CLI
-  parsing (e.g. the `usage-rs` clap-migration branch) — `-p`/pretend and
-  unit tests don't catch everything; this is the "did a real build still
-  land in the right place" check. See `todo/usage-rs-cli-migration.md` for
-  the current such branch and why this check matters for it specifically.
+  parsing (as the winnow-args port did) — `-p`/pretend and unit tests
+  don't catch everything; this is the "did a real build still land in the
+  right place" check.
 - Whenever the user asks to verify `--prefix` (or the broader root-topology
   matrix — see "Related" below) still works after a change.
 

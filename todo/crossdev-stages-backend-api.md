@@ -1,12 +1,13 @@
 # API requirements for an `em` backend in crossdev-stages
 
-Status: 🔴 not started. Written 2026-10-06 from a review of
+Status: 🟡 em phase 1 landed as the spec type (2026-10-08/09, [[cross-sysroot-spec]] steps 1–2);
+phase 2 partly modelled, 3–12 open, the execution shape still undecided. Written 2026-10-06 from a review of
 `~/Sources/crossdev-stages` (`src/portage.rs`, `sandbox.rs`, `target.rs`,
 `image.rs`) against `em 0.1.0`'s `--help` surface and the notes linked
 below. Nothing here has been run end to end; items marked **unverified**
 were read from help text or notes only.
 
-Related: [[crossdev-gcc-version-flag]], [[em-stages-and-binhosts]],
+Related: [[cross-sysroot-spec]], [[crossdev-gcc-version-flag]] (superseded), [[em-stages-and-binhosts]],
 [[em-stages-scenario-matrix]], [[activity-status]], [[root-topology-refactor]],
 [[portageq-workalike-plan]]. Caller-side notes live in crossdev-stages'
 own `todo/em-replaces-crossdev-gcc-pin.md`.
@@ -403,8 +404,8 @@ phases are in this repo; `cs` phases are in crossdev-stages.
 
 | # | Repo | Phase | Unblocks | State |
 |---|------|-------|----------|-------|
-| 1 | em | **Toolchain version preferences** — `--binutils/--gcc/--kernel/--libc`, resolved and written as config for both the cross and the sysroot packages ([[crossdev-gcc-version-flag]]) | R2 pin; the live-gcc leak | flags written 2026-10-07 and dropped the same day as the wrong shape; superseded by a spec file ([[cross-sysroot-spec]], branch `cross-sysroot-spec`, not merged) |
-| 2 | em | **Preference axes beyond GCC+glibc** — LLVM-model slot/runtimes, `--profile` and a flavour → profile mapping, GCC model + LLVM flavour | clang as main compiler, other libcs | planned in [[crossdev-gcc-version-flag]] |
+| 1 | em | **Toolchain version preferences** — `--binutils/--gcc/--kernel/--libc`, resolved and written as config for both the cross and the sysroot packages ([[crossdev-gcc-version-flag]]) | R2 pin; the live-gcc leak | flags dropped 2026-10-07 as the wrong shape; replaced by the spec ([[cross-sysroot-spec]]), whose type, `--print-spec` and consumers are on master; loading a spec file and the version atoms (steps 3–4) are open |
+| 2 | em | **Preference axes beyond GCC+glibc** — LLVM-model slot/runtimes, `--profile` and a flavour → profile mapping, GCC model + LLVM flavour | clang as main compiler, other libcs | modelled in the spec's toolchain roles; clang-main reached by hand ([[clang-main-glibc-experiment]]), taking effect is spec step 4 |
 | 3 | em | **Sysroot ordering** — baselayout before any `acct-*` in sysroot-populating resolves, with a regression test (R4) | from-scratch stage1 | open |
 | 4 | em | **Verify the three-root path** — plain atom merge and `em stages` under `--target T --root R` (R1), `em portageq envvar` (R8) | everything after toolchain setup | open |
 | 5 | cs | **Safety net** — exec trait under the runner, recording fake, snapshot the real backend's commands | every later cs refactor | open |

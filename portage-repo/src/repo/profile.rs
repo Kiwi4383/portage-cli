@@ -181,6 +181,15 @@ impl Profile {
         &self.profile_formats
     }
 
+    /// Whether Portage's `portage-1` profile extensions apply, such as `package.unmask`
+    fn allows_directories(&self) -> bool {
+        self.repo.is_none()
+            || self
+                .profile_formats
+                .iter()
+                .any(|f| matches!(f.as_str(), "portage-1" | "portage-1-compat" | "portage-2"))
+    }
+
     /// Parse the `parent` file to get parent profile paths
     ///
     /// Paths are relative to this profile directory. Under the `portage-2` profile format a line
@@ -493,6 +502,19 @@ impl ProfileStack {
             self.profiles
                 .iter()
                 .map(|p| read_profile_file(&p.path().join("package.mask"))),
+        )
+    }
+
+    /// Accumulated `package.unmask` from the profiles that may carry one
+    ///
+    /// Portage reads it only where profile directories are allowed: outside any repository,
+    /// and in one whose `profile-formats` is `portage-1`, `portage-1-compat` or `portage-2`.
+    pub fn package_unmask(&self) -> Result<Vec<Dep>> {
+        merge_atom_list(
+            self.profiles
+                .iter()
+                .filter(|p| p.allows_directories())
+                .map(|p| read_profile_file(&p.path().join("package.unmask"))),
         )
     }
 
@@ -1509,6 +1531,20 @@ mod tests {
         );
         let err = ProfileStack::build(leaf).unwrap_err().to_string();
         assert!(err.contains("parent 'gentoo:base' not found"), "{err}");
+    }
+
+    #[test]
+    fn package_unmask_needs_a_portage1_format_profile() {
+        for (formats, expected) in [
+            ("profile-formats = portage-2\n", 1),
+            ("masters = gentoo\n", 0),
+        ] {
+            let (tmp, _gentoo, leaf) = overlay_profile("../shared\n", formats);
+            std::fs::write(leaf.join("package.unmask"), "sys-devel/gcc:16\n").unwrap();
+            let config_root = Utf8Path::from_path(tmp.path()).unwrap().join("sysroot");
+            let stack = ProfileStack::build_in(leaf, &config_root).unwrap();
+            assert_eq!(stack.package_unmask().unwrap().len(), expected, "{formats}");
+        }
     }
 
     #[test]

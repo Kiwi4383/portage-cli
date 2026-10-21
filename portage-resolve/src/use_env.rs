@@ -39,8 +39,8 @@ pub struct UseEnv {
     /// Masked packages: repo-global `profiles/package.mask`, the profile
     /// stack, and `/etc/portage/package.mask`
     pub package_mask: Vec<Dep>,
-    /// Site unmasks from `/etc/portage/package.unmask` — a matching entry
-    /// cancels any mask for that package
+    /// Unmasks from the profiles and `/etc/portage/package.unmask` — a matching
+    /// entry cancels any mask for that package
     pub package_unmask: Vec<Dep>,
     /// Profile USE force/mask policy (global + per-package + stable variants),
     /// applied per package to effective USE and consulted by the Level-C cede gate
@@ -391,11 +391,12 @@ async fn compute_use_env(
     // Mask sources, in portage's order: the repo-global `profiles/package.mask`
     // (applies regardless of profile), the profile chain (with `-atom` removals
     // already resolved), and the site `/etc/portage/package.mask`. A mask is
-    // overridden per package by `/etc/portage/package.unmask`.
+    // overridden per package by the profiles' and the site's `package.unmask`.
     let mut package_mask = repo.repo_package_mask().unwrap_or_default();
     package_mask.extend(stack.package_mask().unwrap_or_default());
     package_mask.extend(load_dep_list(portage_dir.join("package.mask").as_str()));
-    let mut package_unmask = load_dep_list(portage_dir.join("package.unmask").as_str());
+    let mut package_unmask = stack.package_unmask().unwrap_or_default();
+    package_unmask.extend(load_dep_list(portage_dir.join("package.unmask").as_str()));
     if let Some(overlay) = config_overlay {
         package_mask.extend(load_dep_list(overlay.join("package.mask").as_str()));
         package_unmask.extend(load_dep_list(overlay.join("package.unmask").as_str()));

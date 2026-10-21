@@ -19,8 +19,11 @@ use super::target::CrossTarget;
 pub struct SysrootSpec {
     /// The `CTARGET` tuple, e.g. `riscv64-unknown-linux-gnu`
     pub tuple: String,
-    /// Repo-relative profile the sysroot's `make.profile` links to
-    pub profile: String,
+    /// Repo-relative `::gentoo` profiles the sysroot's profile inherits, in order
+    ///
+    /// One is written as a string, several as a list (e.g. the arch profile plus `features/llvm`).
+    #[serde(with = "one_or_many")]
+    pub profile: Vec<String>,
     /// Target `CFLAGS` for the sysroot's `make.conf`
     pub cflags: String,
     /// Extra host-arch packages built onto the target (crossdev's `--ex-pkg`)
@@ -35,6 +38,9 @@ pub struct SysrootSpec {
     pub kernel_headers: Option<KernelHeadersSpec>,
     /// What builds the packages of the target system itself
     pub system: SystemSpec,
+    /// USE flags per package atom, for what the toolchains need (e.g. `static-libs` on a runtime)
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub package_use: BTreeMap<String, Vec<String>>,
 }
 
 /// The toolchains a spec defines; only those some `built-by` names get built
@@ -57,6 +63,9 @@ pub struct GccToolchain {
     pub compiler: Dep,
     /// Assembler and linker
     pub binutils: Dep,
+    /// The variables that select this toolchain for a package (`CC`, `CXX`, `LD`, …)
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
 }
 
 /// The LLVM/Clang toolchain's components
@@ -77,6 +86,9 @@ pub struct ClangToolchain {
     pub cxxabi: Dep,
     /// C++ standard library
     pub cxx: Dep,
+    /// The variables that select this toolchain for a package (`CC`, `CXX`, `LD`, …)
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
 }
 
 /// Names one of the spec's [`Toolchains`]
@@ -124,34 +136,21 @@ impl SysrootSpec {
         let atom = |cat: &str, pkg: &str| Dep::new(Cpn::new(cat, pkg));
         let (libc_cat, libc_pkg) = target.libc.package();
         let (toolchain, built_by) = if target.llvm {
-            let clang = ClangToolchain {
-                compiler: atom("llvm-core", "clang"),
-                linker: atom("llvm-core", "lld"),
-                wrappers: atom("sys-devel", "clang-crossdev-wrappers"),
-                rtlib: atom("llvm-runtimes", "compiler-rt"),
-                unwind: atom("llvm-runtimes", "libunwind"),
-                cxxabi: atom("llvm-runtimes", "libcxxabi"),
-                cxx: atom("llvm-runtimes", "libcxx"),
-            };
             let toolchains = Toolchains {
-                clang: Some(clang),
+                clang: Some(ClangToolchain::builtin(&target.tuple)),
                 ..Toolchains::default()
             };
             (toolchains, ToolchainId::Clang)
         } else {
-            let gcc = GccToolchain {
-                compiler: atom("sys-devel", "gcc"),
-                binutils: atom("sys-devel", "binutils"),
-            };
             let toolchains = Toolchains {
-                gcc: Some(gcc),
+                gcc: Some(GccToolchain::builtin(&target.tuple)),
                 ..Toolchains::default()
             };
             (toolchains, ToolchainId::Gcc)
         };
         let mut spec = Self {
             tuple: target.tuple.clone(),
-            profile: target.profile_path(),
+            profile: vec![target.profile_path()],
             cflags: target.cflags().to_owned(),
             extra: extras.iter().copied().map(Dep::new).collect(),
             toolchain,
@@ -166,6 +165,7 @@ impl SysrootSpec {
                 built_by,
                 exceptions: BTreeMap::new(),
             },
+            package_use: BTreeMap::new(),
         };
         if let Some(slot) = target.llvm_slot {
             spec.bind_llvm_slot(slot);
@@ -193,13 +193,14 @@ impl SysrootSpec {
         let atom = |cat: &str, pkg: &str| Dep::new(Cpn::new(cat, pkg));
         Self {
             tuple: chost.to_owned(),
-            profile: String::new(),
+            profile: Vec::new(),
             cflags: String::new(),
             extra: Vec::new(),
             toolchain: Toolchains {
                 gcc: Some(GccToolchain {
                     compiler: atom("sys-devel", "gcc"),
                     binutils: atom("sys-devel", "binutils"),
+                    env: BTreeMap::new(),
                 }),
                 ..Toolchains::default()
             },
@@ -214,6 +215,7 @@ impl SysrootSpec {
                 built_by: ToolchainId::Gcc,
                 exceptions: BTreeMap::new(),
             },
+            package_use: BTreeMap::new(),
         }
     }
 
@@ -253,14 +255,29 @@ impl SysrootSpec {
     /// Read a spec file, refusing what `em crossdev` cannot build from it yet
     pub fn load(path: &Utf8Path) -> Result<Self> {
         let text = std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?;
-        let spec: Self = toml::from_str(&text).with_context(|| format!("parsing {path}"))?;
+        let mut spec: Self = toml::from_str(&text).with_context(|| format!("parsing {path}"))?;
+        // A toolchain written without `env` uses the built-in tools for the tuple.
+        if let Some(t) = spec.toolchain.gcc.as_mut().filter(|t| t.env.is_empty()) {
+            t.env = GccToolchain::builtin(&spec.tuple).env;
+        }
+        if let Some(t) = spec.toolchain.clang.as_mut().filter(|t| t.env.is_empty()) {
+            t.env = ClangToolchain::builtin(&spec.tuple).env;
+        }
         spec.check_buildable().with_context(|| format!("{path}"))?;
         Ok(spec)
     }
 
-    /// The tuple's [`CrossTarget`], LLVM-model when clang builds the system
+    /// The tuple's [`CrossTarget`], LLVM-model when clang is the only toolchain
     pub fn cross_target(&self) -> Result<CrossTarget> {
-        CrossTarget::parse(&self.tuple, self.system.built_by == ToolchainId::Clang)
+        CrossTarget::parse(&self.tuple, self.toolchain.gcc.is_none())
+    }
+
+    /// The toolchain `id` names, if the spec defines it
+    pub fn env_of(&self, id: ToolchainId) -> Option<&BTreeMap<String, String>> {
+        match id {
+            ToolchainId::Gcc => self.toolchain.gcc.as_ref().map(|t| &t.env),
+            ToolchainId::Clang => self.toolchain.clang.as_ref().map(|t| &t.env),
+        }
     }
 
     /// The toolchain packages the spec constrains to some versions; the clang compiler's slot
@@ -286,29 +303,60 @@ impl SysrootSpec {
         roles
     }
 
-    /// A spec asks for nothing the bootstrap does not honour: the toolchain
-    /// packages the tuple implies, pinned only by version or slot, one toolchain for everything
+    /// A spec asks for nothing the bootstrap does not honour: the toolchain packages the tuple
+    /// implies, pinned only by version or slot, toolchains it defines, and gcc for the libc
+    /// when it has both
     fn check_buildable(&self) -> Result<()> {
+        let Toolchains { gcc, clang } = &self.toolchain;
+        ensure!(gcc.is_some() || clang.is_some(), "a spec needs a toolchain");
+        let named = std::iter::once(self.libc.built_by)
+            .chain(std::iter::once(self.system.built_by))
+            .chain(self.system.exceptions.keys().copied());
+        for id in named {
+            ensure!(
+                self.env_of(id).is_some(),
+                "{id:?} builds something but the spec defines no such toolchain"
+            );
+        }
         ensure!(
-            self.libc.built_by == self.system.built_by && self.system.exceptions.is_empty(),
-            "building the libc or some packages with another toolchain than the system's is not supported yet"
+            gcc.is_none() || clang.is_none() || self.libc.built_by == ToolchainId::Gcc,
+            "with both toolchains, gcc builds the libc"
         );
         let target = self.cross_target()?;
-        let expected = Self::builtin(&target, &[]);
+        let (libc_cat, libc_pkg) = target.libc.package();
+        let headers = Cpn::new("sys-kernel", "linux-headers");
         ensure!(
-            self.toolchain.gcc.is_some() == expected.toolchain.gcc.is_some()
-                && self.toolchain.clang.is_some() == expected.toolchain.clang.is_some()
-                && self.packages() == expected.packages(),
-            "the toolchain packages must be the ones {} implies: {}",
-            self.tuple,
-            expected
-                .packages()
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(" ")
+            self.libc.atom.cpn == Cpn::new(libc_cat, libc_pkg),
+            "{}: {} uses {libc_cat}/{libc_pkg}",
+            self.libc.atom,
+            self.tuple
         );
-        if let Some(t) = &self.toolchain.clang {
+        ensure!(
+            self.kernel_headers.as_ref().map(|k| k.atom.cpn)
+                == target.has_kernel.then_some(headers),
+            "{}: kernel headers must be {}",
+            self.tuple,
+            if target.has_kernel {
+                "sys-kernel/linux-headers"
+            } else {
+                "absent"
+            }
+        );
+        if let Some(t) = gcc {
+            let expected = GccToolchain::builtin(&self.tuple);
+            ensure!(
+                t.cpns() == expected.cpns(),
+                "the gcc toolchain packages must be {}",
+                join(&expected.cpns())
+            );
+        }
+        if let Some(t) = clang {
+            let expected = ClangToolchain::builtin(&self.tuple);
+            ensure!(
+                t.cpns() == expected.cpns(),
+                "the clang toolchain packages must be {}",
+                join(&expected.cpns())
+            );
             ensure!(
                 Dep {
                     slot_dep: None,
@@ -321,7 +369,141 @@ impl SysrootSpec {
         if let Some(dep) = self.pins().into_iter().find(|dep| !is_pin(dep)) {
             bail!("{dep}: a toolchain package takes only a version or a slot");
         }
+        for atom in self.package_use.keys() {
+            Dep::parse(atom).with_context(|| format!("package-use: {atom}"))?;
+        }
         Ok(())
+    }
+}
+
+impl GccToolchain {
+    /// GCC and binutils for `tuple`, selected by the tuple-prefixed tools
+    pub fn builtin(tuple: &str) -> Self {
+        // Every tool `features/llvm` sets, so a gcc-built package never inherits an LLVM one.
+        let tools = [
+            "CC=gcc",
+            "CXX=g++",
+            "CPP=cpp",
+            "AS=as",
+            "LD=ld",
+            "AR=ar",
+            "NM=nm",
+            "RANLIB=ranlib",
+            "STRIP=strip",
+            "OBJCOPY=objcopy",
+            "OBJDUMP=objdump",
+            "READELF=readelf",
+            "STRINGS=strings",
+            "ADDR2LINE=addr2line",
+        ];
+        let env = tools
+            .into_iter()
+            .filter_map(|kv| kv.split_once('='))
+            .map(|(k, tool)| (k.to_owned(), format!("{tuple}-{tool}")))
+            .chain([("LLVM".to_owned(), String::new())])
+            .collect();
+        Self {
+            compiler: Dep::new(Cpn::new("sys-devel", "gcc")),
+            binutils: Dep::new(Cpn::new("sys-devel", "binutils")),
+            env,
+        }
+    }
+
+    fn cpns(&self) -> Vec<Cpn> {
+        vec![self.compiler.cpn, self.binutils.cpn]
+    }
+}
+
+impl ClangToolchain {
+    /// The host clang cross-targeting `tuple` through its wrappers, with LLVM's own tools
+    pub fn builtin(tuple: &str) -> Self {
+        let atom = |cat: &str, pkg: &str| Dep::new(Cpn::new(cat, pkg));
+        let env = [
+            ("CC", format!("{tuple}-clang")),
+            ("CXX", format!("{tuple}-clang++")),
+            ("CPP", format!("{tuple}-clang-cpp")),
+            ("AS", format!("{tuple}-clang -c")),
+            ("CROSS_COMPILE", format!("{tuple}-")),
+        ]
+        .into_iter()
+        .chain(
+            [
+                ("LD", "ld.lld"),
+                ("AR", "llvm-ar"),
+                ("NM", "llvm-nm"),
+                ("RANLIB", "llvm-ranlib"),
+                ("STRIP", "llvm-strip"),
+                ("OBJCOPY", "llvm-objcopy"),
+                ("OBJDUMP", "llvm-objdump"),
+                ("STRINGS", "llvm-strings"),
+                ("ADDR2LINE", "llvm-addr2line"),
+                ("READELF", "llvm-readelf"),
+                ("DLLTOOL", "llvm-dlltool"),
+                ("HOSTCC", "clang"),
+                ("HOSTCXX", "clang++"),
+                ("LLVM", "1"),
+            ]
+            .map(|(k, v)| (k, v.to_owned())),
+        )
+        .map(|(k, v)| (k.to_owned(), v))
+        .collect();
+        Self {
+            compiler: atom("llvm-core", "clang"),
+            linker: atom("llvm-core", "lld"),
+            wrappers: atom("sys-devel", "clang-crossdev-wrappers"),
+            rtlib: atom("llvm-runtimes", "compiler-rt"),
+            unwind: atom("llvm-runtimes", "libunwind"),
+            cxxabi: atom("llvm-runtimes", "libcxxabi"),
+            cxx: atom("llvm-runtimes", "libcxx"),
+            env,
+        }
+    }
+
+    fn cpns(&self) -> Vec<Cpn> {
+        [
+            &self.compiler,
+            &self.linker,
+            &self.wrappers,
+            &self.rtlib,
+            &self.unwind,
+            &self.cxxabi,
+            &self.cxx,
+        ]
+        .map(|dep| dep.cpn)
+        .to_vec()
+    }
+}
+
+fn join(cpns: &[Cpn]) -> String {
+    cpns.iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// A field that is one string or a list of them, written back as a string when it holds one
+mod one_or_many {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+    }
+
+    pub fn serialize<S: Serializer>(values: &[String], s: S) -> Result<S::Ok, S::Error> {
+        match values {
+            [one] => one.serialize(s),
+            many => many.serialize(s),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+        Ok(match OneOrMany::deserialize(d)? {
+            OneOrMany::One(one) => vec![one],
+            OneOrMany::Many(many) => many,
+        })
     }
 }
 
@@ -338,6 +520,25 @@ fn is_pin(dep: &Dep) -> bool {
                 op: None
             })
         )
+}
+
+#[cfg(test)]
+/// clang as the system compiler on glibc, gcc kept for the libc and what clang cannot build
+pub(crate) fn clang_main_spec() -> SysrootSpec {
+    let target = CrossTarget::parse("riscv64-unknown-linux-gnu", false).unwrap();
+    let mut spec = SysrootSpec::builtin(&target, &[]);
+    let mut clang = ClangToolchain::builtin(&spec.tuple);
+    clang.compiler = Dep::parse("llvm-core/clang:23").unwrap();
+    spec.toolchain.clang = Some(clang);
+    spec.profile.push("features/llvm".into());
+    spec.system.built_by = ToolchainId::Clang;
+    spec.system.exceptions.insert(
+        ToolchainId::Gcc,
+        vec![Dep::parse("sys-libs/glibc").unwrap()],
+    );
+    spec.package_use
+        .insert("llvm-runtimes/libunwind".into(), vec!["static-libs".into()]);
+    spec
 }
 
 #[cfg(test)]
@@ -366,6 +567,23 @@ cflags = "-O3 -march=rv64gc -pipe"
 [toolchain.gcc]
 compiler = "sys-devel/gcc"
 binutils = "sys-devel/binutils"
+
+[toolchain.gcc.env]
+ADDR2LINE = "riscv64-unknown-linux-gnu-addr2line"
+AR = "riscv64-unknown-linux-gnu-ar"
+AS = "riscv64-unknown-linux-gnu-as"
+CC = "riscv64-unknown-linux-gnu-gcc"
+CPP = "riscv64-unknown-linux-gnu-cpp"
+CXX = "riscv64-unknown-linux-gnu-g++"
+LD = "riscv64-unknown-linux-gnu-ld"
+LLVM = ""
+NM = "riscv64-unknown-linux-gnu-nm"
+OBJCOPY = "riscv64-unknown-linux-gnu-objcopy"
+OBJDUMP = "riscv64-unknown-linux-gnu-objdump"
+RANLIB = "riscv64-unknown-linux-gnu-ranlib"
+READELF = "riscv64-unknown-linux-gnu-readelf"
+STRINGS = "riscv64-unknown-linux-gnu-strings"
+STRIP = "riscv64-unknown-linux-gnu-strip"
 
 [libc]
 atom = "sys-libs/glibc"
@@ -514,17 +732,79 @@ exceptions.gcc = ["sys-libs/glibc", "sys-devel/gcc"]
             (
                 "\"sys-libs/glibc\"",
                 "\"sys-libs/musl\"",
-                "the toolchain packages must be",
+                "riscv64-unknown-linux-gnu uses sys-libs/glibc",
             ),
             (
                 "[system]\n",
-                "[system]\nexceptions.gcc = [\"dev-lang/perl\"]\n",
-                "not supported yet",
+                "[system]\nexceptions.clang = [\"dev-lang/perl\"]\n",
+                "defines no such toolchain",
+            ),
+            (
+                "binutils = \"sys-devel/binutils\"",
+                "binutils = \"sys-devel/elftoolchain\"",
+                "the gcc toolchain packages must be",
             ),
         ] {
             assert!(gnu.contains(from), "{from}");
             let err = load_text(&gnu.replacen(from, to, 1)).unwrap_err();
             assert!(format!("{err:#}").contains(why), "{to}: {err:#}");
+        }
+    }
+
+    #[test]
+    fn a_clang_main_spec_loads_and_stays_in_the_gcc_category() {
+        let spec = super::clang_main_spec();
+        let text = spec.to_toml().unwrap();
+        assert!(
+            text.contains("profile = [\"default/linux/riscv/23.0/rv64/lp64d\", \"features/llvm\"]"),
+            "{text}"
+        );
+        assert_eq!(load_text(&text).unwrap(), spec);
+        let target = spec.cross_target().unwrap();
+        assert!(!target.llvm);
+        assert_eq!(target.category(), "cross-riscv64-unknown-linux-gnu");
+        assert_eq!(spec.llvm_slot().as_deref(), Some("23"));
+
+        let mut clang_libc = spec.clone();
+        clang_libc.libc.built_by = ToolchainId::Clang;
+        let err = load_text(&clang_libc.to_toml().unwrap()).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("gcc builds the libc"),
+            "{err:#}"
+        );
+    }
+
+    #[test]
+    fn a_toolchain_written_without_env_gets_the_builtin_tools() {
+        let spec = builtin("riscv64-unknown-linux-gnu", false);
+        let text = spec.to_toml().unwrap();
+        let start = text.find("[toolchain.gcc.env]").unwrap();
+        let end = text.find("[libc]").unwrap();
+        let bare = format!("{}{}", &text[..start], &text[end..]);
+        assert_eq!(load_text(&bare).unwrap(), spec);
+    }
+
+    #[test]
+    fn each_builtin_toolchain_sets_every_tool_features_llvm_sets() {
+        let gcc = GccToolchain::builtin("riscv64-unknown-linux-gnu").env;
+        let clang = ClangToolchain::builtin("riscv64-unknown-linux-gnu").env;
+        for var in [
+            "CC",
+            "CXX",
+            "CPP",
+            "AS",
+            "LD",
+            "AR",
+            "NM",
+            "RANLIB",
+            "STRIP",
+            "OBJCOPY",
+            "OBJDUMP",
+            "READELF",
+            "STRINGS",
+            "ADDR2LINE",
+        ] {
+            assert!(gcc.contains_key(var) && clang.contains_key(var), "{var}");
         }
     }
 

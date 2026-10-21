@@ -289,7 +289,9 @@ async fn setup(
     let make_conf_holder;
     let sysroot_override = if globals.pretend() {
         let gentoo_path = main_repo(globals)?.path().to_owned();
-        profile_dir_holder = gentoo_path.join("profiles").join(&spec.profile);
+        // A spec's derived profile does not exist yet; its first parent stands in.
+        let first = spec.profile.first().context("a spec names no profile")?;
+        profile_dir_holder = gentoo_path.join("profiles").join(first);
         make_conf_holder = make_conf_body(target, &spec.cflags, globals.outer_roots().merge_root());
         Some(portage_resolve::use_env::SysrootOverride {
             profile_dir: &profile_dir_holder,
@@ -1457,43 +1459,106 @@ fn sysroot_config_entries(
 
     // Link make.profile DIRECTLY (absolute) to the target-arch profile — eselect
     // profile validates against the host arch and refuses a foreign one.
-    let profile_dir = gentoo.join("profiles").join(&spec.profile);
-    if !profile_dir.is_dir() {
-        bail!(
-            "target profile '{}' not found at {profile_dir}",
-            spec.profile
-        );
+    let profile_dirs: Vec<Utf8PathBuf> = spec
+        .profile
+        .iter()
+        .map(|p| gentoo.join("profiles").join(p))
+        .collect();
+    if let Some((name, dir)) = spec
+        .profile
+        .iter()
+        .zip(&profile_dirs)
+        .find(|(_, dir)| !dir.is_dir())
+    {
+        bail!("target profile '{name}' not found at {dir}");
     }
     let profile_target = if own_profile {
-        let repo = sysroot.join(SPEC_REPO_DIR);
-        let profile = repo.join(SPEC_PROFILE);
-        let file =
-            |path: Utf8PathBuf, desired: String| config_plan::ConfigEntry::File { path, desired };
-        entries.extend([
-            file(
-                repo.join("metadata/layout.conf"),
-                "masters = gentoo\nprofile-formats = portage-2\n".into(),
-            ),
-            file(repo.join("profiles/repo_name"), format!("{SPEC_REPO}\n")),
-            // Without an `eapi` file the profile is EAPI 0, which has no slot dependencies.
-            file(profile.join("eapi"), "8\n".into()),
-            file(profile.join("parent"), format!("gentoo:{}\n", spec.profile)),
-            file(profile.join(SPEC_FILE), spec.to_toml()?),
-            file(
-                profile.join("package.mask"),
-                pin_lines(spec, |pin| Dep::new(pin.cpn)),
-            ),
-            file(profile.join("package.unmask"), pin_lines(spec, Dep::clone)),
-        ]);
-        profile
+        entries.extend(spec_profile_entries(spec, sysroot)?);
+        sysroot.join(SPEC_REPO_DIR).join(SPEC_PROFILE)
     } else {
-        profile_dir
+        let [dir] = profile_dirs.as_slice() else {
+            bail!(
+                "a built-in target has one profile, not {}",
+                profile_dirs.len()
+            );
+        };
+        dir.clone()
     };
     entries.push(config_plan::ConfigEntry::Symlink {
         link: portage.join("make.profile"),
         target: profile_target,
     });
     Ok(entries)
+}
+
+/// The overlay holding the profile `spec` derives, and the sysroot user config for the
+/// packages another toolchain builds (`package.env` has no profile form)
+fn spec_profile_entries(
+    spec: &spec::SysrootSpec,
+    sysroot: &Utf8Path,
+) -> Result<Vec<config_plan::ConfigEntry>> {
+    let repo = sysroot.join(SPEC_REPO_DIR);
+    let profile = repo.join(SPEC_PROFILE);
+    let portage = sysroot.join("etc/portage");
+    let file =
+        |path: Utf8PathBuf, desired: String| config_plan::ConfigEntry::File { path, desired };
+    let parents: String = spec
+        .profile
+        .iter()
+        .map(|p| format!("gentoo:{p}\n"))
+        .collect();
+    let default_env = spec
+        .env_of(spec.system.built_by)
+        .context("the system's toolchain is not defined")?;
+    let package_use: String = spec
+        .package_use
+        .iter()
+        .map(|(atom, flags)| format!("{atom} {}\n", flags.join(" ")))
+        .collect();
+    let mut package_env = String::new();
+    let mut entries = vec![
+        file(
+            repo.join("metadata/layout.conf"),
+            "masters = gentoo\nprofile-formats = portage-2\n".into(),
+        ),
+        file(repo.join("profiles/repo_name"), format!("{SPEC_REPO}\n")),
+        // Without an `eapi` file the profile is EAPI 0, which has no slot dependencies.
+        file(profile.join("eapi"), "8\n".into()),
+        file(profile.join("parent"), parents),
+        file(profile.join(SPEC_FILE), spec.to_toml()?),
+        file(
+            profile.join("package.mask"),
+            pin_lines(spec, |pin| Dep::new(pin.cpn)),
+        ),
+        file(profile.join("package.unmask"), pin_lines(spec, Dep::clone)),
+        file(profile.join("package.use"), package_use),
+        file(profile.join("make.defaults"), env_lines(default_env)),
+    ];
+    for (id, atoms) in &spec.system.exceptions {
+        let env = spec
+            .env_of(*id)
+            .context("an exception names an undefined toolchain")?;
+        let name = format!("{}-toolchain.conf", toolchain_name(*id));
+        entries.push(file(portage.join("env").join(&name), env_lines(env)));
+        package_env.extend(atoms.iter().map(|atom| format!("{atom} {name}\n")));
+    }
+    entries.push(file(
+        portage.join("package.env").join(SPEC_REPO),
+        package_env,
+    ));
+    Ok(entries)
+}
+
+/// `KEY="value"` lines, as `make.defaults` and an env file take them
+fn env_lines(env: &std::collections::BTreeMap<String, String>) -> String {
+    env.iter().map(|(k, v)| format!("{k}=\"{v}\"\n")).collect()
+}
+
+fn toolchain_name(id: spec::ToolchainId) -> &'static str {
+    match id {
+        spec::ToolchainId::Gcc => "gcc",
+        spec::ToolchainId::Clang => "clang",
+    }
 }
 
 /// One line per spec pin, as `line` renders it: masking the package and unmasking the pin
@@ -2063,7 +2128,7 @@ mod tests {
         if let Some(gcc) = &mut spec.toolchain.gcc {
             gcc.compiler = Dep::parse("sys-devel/gcc:16").unwrap();
         }
-        let parent = gentoo.join("profiles").join(&spec.profile);
+        let parent = gentoo.join("profiles").join(&spec.profile[0]);
         std::fs::create_dir_all(&parent).unwrap();
         std::fs::write(gentoo.join("profiles/repo_name"), "gentoo\n").unwrap();
         let sysroot = prefix.join("usr").join(&target.tuple);
@@ -2103,6 +2168,35 @@ mod tests {
         assert_eq!(
             stack.profiles()[0].path(),
             parent.canonicalize_utf8().unwrap().as_std_path()
+        );
+    }
+
+    #[test]
+    fn a_clang_main_spec_writes_its_toolchains_into_profile_and_user_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let sysroot = Utf8Path::from_path(dir.path()).unwrap();
+        let spec = spec::clang_main_spec();
+        let t = &spec.tuple;
+        config_plan::apply_now(&spec_profile_entries(&spec, sysroot).unwrap()).unwrap();
+
+        let profile = sysroot.join(SPEC_REPO_DIR).join(SPEC_PROFILE);
+        let read = |path: Utf8PathBuf| std::fs::read_to_string(path).unwrap();
+        assert_eq!(
+            read(profile.join("parent")),
+            "gentoo:default/linux/riscv/23.0/rv64/lp64d\ngentoo:features/llvm\n"
+        );
+        assert!(read(profile.join("make.defaults")).contains(&format!("CC=\"{t}-clang\"\n")));
+        assert_eq!(
+            read(profile.join("package.use")),
+            "llvm-runtimes/libunwind static-libs\n"
+        );
+        let portage = sysroot.join("etc/portage");
+        assert!(
+            read(portage.join("env/gcc-toolchain.conf")).contains(&format!("CC=\"{t}-gcc\"\n"))
+        );
+        assert_eq!(
+            read(portage.join("package.env").join(SPEC_REPO)),
+            "sys-libs/glibc gcc-toolchain.conf\n"
         );
     }
 

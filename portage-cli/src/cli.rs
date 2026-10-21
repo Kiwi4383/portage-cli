@@ -733,6 +733,58 @@ mod tests {
         assert_eq!(r.build_sysroot().unwrap().as_str(), sysroot);
     }
 
+    #[test]
+    fn a_board_root_does_not_count_the_sysroots_packages_as_installed() {
+        let (_tmp, _g) = crate::test_support::isolate_active_state();
+        let prefix = tempfile::tempdir().unwrap();
+        let board = tempfile::tempdir().unwrap();
+        let tuple = "riscv64-unknown-linux-gnu";
+        let pkg = prefix
+            .path()
+            .join("usr")
+            .join(tuple)
+            .join("var/db/pkg/sys-apps/baselayout-2.18-r1");
+        std::fs::create_dir_all(&pkg).unwrap();
+        for (file, value) in [
+            ("EAPI", "8"),
+            ("SLOT", "0"),
+            ("CONTENTS", ""),
+            ("USE", "build"),
+        ] {
+            std::fs::write(pkg.join(file), value).unwrap();
+        }
+        let prefix_arg = prefix.path().to_str().unwrap();
+        let board_arg = board.path().to_str().unwrap();
+        let installed = |args: &[&str]| {
+            let roots = emerge(args.iter().copied()).roots();
+            portage_resolve::installed::load_target_installed_with_cache(
+                &roots,
+                &Default::default(),
+            )
+        };
+
+        let board_view = installed(&[
+            "--prefix",
+            prefix_arg,
+            "--root",
+            board_arg,
+            "--target",
+            tuple,
+            "-p",
+            "sys-apps/baselayout",
+        ]);
+        assert_eq!(board_view.len(), 0);
+        let sysroot_view = installed(&[
+            "--prefix",
+            prefix_arg,
+            "--target",
+            tuple,
+            "-p",
+            "sys-apps/baselayout",
+        ]);
+        assert_eq!(sysroot_view.len(), 1);
+    }
+
     // `outer_roots()` (what every `use_outer_eroot` merge step — host-side
     // `cross-*` tool installs — actually resolves against) must keep
     // landing on the real host `/`, not a bare `--root` board destination,

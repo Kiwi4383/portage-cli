@@ -22,8 +22,8 @@ file, version atoms and `package.env` per toolchain open).
 | Item | Status | Detail |
 |------|--------|--------|
 | Spec steps 3–4: `--target` takes a file, versions become config | 🔴 | [[cross-sysroot-spec]] |
-| R4: baselayout before any `acct-*` in a sysroot populate | 🔴 | [[crossdev-stages-backend-api]] |
-| R1/R8: verify `--target T --root R` merges, `em portageq envvar` | 🔴 | [[crossdev-stages-backend-api]], [[portageq-workalike-plan]] |
+| R4: baselayout before any `acct-*` in a sysroot populate — em's bootstrap steps already order it; nothing to change (decided 2026-10-21) | ✅ | [[crossdev-stages-backend-api]] |
+| R1: board-root merges fixed and verified 2026-10-21; `em stages` there still unrun. R8: `em portageq envvar` missing | 🟡 | [[crossdev-stages-backend-api]], [[portageq-workalike-plan]] |
 | Execution shape (closure vs re-exec) and the shared container crate | 🔴 needs Luca | [[crossdev-stages-backend-api]] R0/R0b |
 | Merge path residuals: more of `run_phase`, the missing-profile policy | 🟡 | [[merge-path-tidy-up]] |
 | Masked installed version kept: unmeasured modes | 🟡 | [[installed-masked-version-kept-as-candidate]] |

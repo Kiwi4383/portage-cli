@@ -278,6 +278,10 @@ root, `/target`. `--target T` is documented as sugar for
   deps land. Still the first thing to check; everything after toolchain
   setup depends on it.
 - Same combination is needed for `em stages --stage1/--stage3`.
+- **Run 2026-10-21** (sandbox `em-r1-board`, arm64 → riscv64): plain merges under `--target T --root /target` counted the
+  sysroot's VDB as `/target`'s, so baselayout planned as `R` into an empty root. Fixed in `96d57afb`. After it,
+  `sys-apps/file` merged into `/target` as a riscv64 binary, with its DEPEND libraries copied into the sysroot. `em stages`
+  under this combination is still unrun. The sysroot also got both `sys-libs/zlib` and `zlib-ng` (both `||` branches).
 
 ### R2 — Toolchain setup as one call, with a gcc pin
 
@@ -335,6 +339,13 @@ resolves against `${ESYSROOT}/etc/passwd` and then fails.
   / `acct-group` package, regardless of `--jobs`.
 - Worth a regression check that `em`'s own `fowners` lookup uses the same
   root as portage's (`ESYSROOT` in `src_install`).
+- **Cause (2026-10-21).** No ebuild depends on baselayout: the devmanual gives every package an implicit dependency on
+  `@system`, and baselayout is a bootstrap package that stage tooling installs first. `acct-*` runs `useradd`/`groupadd
+  --prefix ROOT`, which creates a one-line `passwd`, and baselayout's `pkg_postinst` then skips its copy. em's own flows
+  already merge baselayout first (`crossdev --setup` step 1, `stages --stage1`); a plain merge into an empty root does not
+  (`-p acct-user/portage sys-apps/baselayout` orders `acct-group/*` first), and neither does Portage.
+- **Decided (Luca, 2026-10-21): nothing in em.** baselayout-first is the bootstrap step `stages --stage1` and
+  `crossdev --setup` already run; the em backend's `stage1` goes through them.
 
 ### R5 — Non-interactive, fully parameterised, meaningful failures
 

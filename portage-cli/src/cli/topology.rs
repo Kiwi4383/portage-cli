@@ -291,12 +291,13 @@ impl Topology {
         // `build_sysroot()` returns `None` when `base == target`, which
         // would drop the toolchain from the compiler's context (confirmed
         // live: `sys-libs/zlib` couldn't find its sysroot's `sys/types.h`).
-        // The installed-view fix lives at the call site instead, via
-        // `Roots::with_target_only_installed_view()` (`crossdev/mod.rs`).
+        // RDEPEND is satisfied in ROOT alone, so a board root never counts the
+        // sysroot's packages as its own; a no-op when the target is the sysroot.
         Roots::default()
             .with_config(Some(sysroot.clone()))
             .with_base(Some(sysroot))
             .with_target(Some(merge_target))
+            .with_target_only_installed_view()
             // BROOT never moves with `--target`: BDEPEND always resolves on
             // the true build host, carried over from the outer (pre-
             // substitution) view rather than left as the sysroot itself.

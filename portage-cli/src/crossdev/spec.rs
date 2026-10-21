@@ -242,6 +242,15 @@ impl SysrootSpec {
         pkgs
     }
 
+    /// The clang toolchain's packages, empty without one
+    pub fn clang_roles(&self) -> Vec<Cpn> {
+        self.toolchain
+            .clang
+            .as_ref()
+            .map(ClangToolchain::cpns)
+            .unwrap_or_default()
+    }
+
     /// The packages built for the target besides its toolchain (`--ex-pkg`)
     pub fn extras(&self) -> Vec<Cpn> {
         self.extra.iter().map(|dep| dep.cpn).collect()

@@ -411,6 +411,31 @@ pub fn toolchain_plan(
         nodeps: false,
         into_sysroot: false,
     });
+    // Mixed: the gcc toolchain built the libc; the per-target clang starts on gcc's
+    // runtimes and builds LLVM's own for the target.
+    if let Some(clang) = &spec.toolchain.clang {
+        steps.push(StageStep {
+            label: "clang wrappers".into(),
+            atoms: vec![kind.llvm_atom(spec, &clang.wrappers)],
+            use_override: vec![],
+            nodeps: false,
+            into_sysroot: false,
+        });
+        for (rt, use_override) in [
+            (&clang.rtlib, vec![]),
+            (&clang.unwind, owned(&["static-libs"])),
+            (&clang.cxxabi, vec![]),
+            (&clang.cxx, vec![]),
+        ] {
+            steps.push(StageStep {
+                label: rt.cpn.package.as_str().into(),
+                atoms: vec![kind.llvm_atom(spec, rt)],
+                use_override,
+                nodeps: false,
+                into_sysroot: false,
+            });
+        }
+    }
     StagePlan { steps }
 }
 
@@ -518,6 +543,32 @@ mod tests {
 
     fn labels(plan: &StagePlan) -> Vec<&str> {
         plan.steps.iter().map(|s| s.label.as_str()).collect()
+    }
+
+    #[test]
+    fn a_mixed_spec_builds_the_gcc_toolchain_then_the_llvm_runtimes() {
+        let spec = crate::crossdev::spec::clang_main_spec();
+        let kind = BootstrapKind::Cross(spec.cross_target().unwrap());
+        let plan = toolchain_plan(&kind, &spec, false, false);
+        assert_eq!(
+            labels(&plan),
+            [
+                "baselayout",
+                "binutils",
+                "gcc-stage1",
+                "kernel headers",
+                "libc",
+                "gcc-stage2",
+                "clang wrappers",
+                "compiler-rt",
+                "libunwind",
+                "libcxxabi",
+                "libcxx",
+            ]
+        );
+        let cat = "cross-riscv64-unknown-linux-gnu";
+        assert_eq!(plan.steps[4].atoms, [format!("{cat}/glibc")]);
+        assert_eq!(plan.steps[10].atoms, [format!("={cat}/libcxx-23*")]);
     }
 
     #[test]

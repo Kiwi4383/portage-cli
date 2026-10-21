@@ -115,7 +115,7 @@ pub async fn run(args: &CrossdevArgs, globals: &Cli) -> Result<()> {
                 "-L/--llvm picks a built-in target's toolchain; a spec file names its own"
             );
             let mut target = spec.cross_target()?;
-            if target.llvm {
+            if spec.toolchain.clang.is_some() {
                 target.llvm_slot = match spec.llvm_slot() {
                     Some(slot) => Some(slot.parse().with_context(|| format!("LLVM slot {slot}"))?),
                     None => llvm_slot(&globals.base_roots(), &main_repo(globals)?),
@@ -263,7 +263,8 @@ async fn setup(
 
     let post_step = {
         let target = target.clone();
-        move |step: &stages::StageStep| post_step_cross(&target, globals, step)
+        let mixed = spec.toolchain.gcc.is_some() && spec.toolchain.clang.is_some();
+        move |step: &stages::StageStep| post_step_cross(&target, globals, step, mixed)
     };
     // Empty-target bootstrap: plain DEPEND is not satisfiable yet. Matches
     // crossdev's `<CTARGET>-emerge` (always implies `--root-deps=rdeps`).
@@ -333,10 +334,19 @@ async fn setup(
 /// (`<CTARGET>-*` wrappers via `binutils-config`/`gcc-config`), and after the
 /// full libc lands (not the headers-only bootstrap step) bridge the ABI osdir
 /// symlinks so the next gcc step links target code against it.
-fn post_step_cross(target: &CrossTarget, globals: &Cli, step: &stages::StageStep) -> Result<()> {
+fn post_step_cross(
+    target: &CrossTarget,
+    globals: &Cli,
+    step: &stages::StageStep,
+    mixed: bool,
+) -> Result<()> {
     activate_toolchain(target, globals, step)?;
-    if step.label == "libc" {
-        link_abi_osdirs(target, globals)?;
+    match step.label.as_str() {
+        "libc" => link_abi_osdirs(target, globals)?,
+        // A mixed target's clang links gcc's runtimes until LLVM's are built for it.
+        "gcc-stage2" if mixed => write_clang_cfg(target, globals, ClangRuntimes::Gcc)?,
+        "libcxx" if mixed => write_clang_cfg(target, globals, ClangRuntimes::Llvm)?,
+        _ => {}
     }
     Ok(())
 }
@@ -731,7 +741,7 @@ async fn run_stage1(args: &crate::cli::StagesArgs, globals: &Cli) -> Result<()> 
         .ok();
         let post_step = {
             let target = target.clone();
-            move |step: &stages::StageStep| post_step_cross(&target, globals, step)
+            move |step: &stages::StageStep| post_step_cross(&target, globals, step, false)
         };
         run_staged(
             RunStagedOpts {
@@ -1870,10 +1880,12 @@ fn cross_env_entries(
             path: env_dir.join(format!("{pkg}.conf")),
             desired: body,
         });
-        mappings.push_str(&env_mapping(&category, pkg, target.llvm));
+        // Built by clang: everything on an LLVM-model target, the clang roles on a mixed one.
+        let clang_built = target.llvm || spec.clang_roles().contains(&cpn);
+        mappings.push_str(&env_mapping(&category, pkg, clang_built));
         if arch == target::PackageArch::Host {
             let pin = spec.pins().into_iter().find(|pin| pin.cpn == cpn);
-            let line = match (pin, target.llvm_slot) {
+            let line = match (pin, target.llvm_slot.filter(|_| clang_built)) {
                 (Some(pin), _) => pinned_keyword_line(&main_repo(globals)?, &category, pin)?,
                 (None, Some(slot)) => format!("={category}/{pkg}-{slot}* **\n"),
                 (None, None) => {
@@ -1916,23 +1928,18 @@ fn cross_env_entries(
         path: portage.join("package.env").join(&category),
         desired: mappings,
     });
-    if target.llvm {
+    if let Some(clang) = &spec.toolchain.clang {
         entries.push(config_plan::ConfigEntry::File {
             path: env_dir.join("llvm.conf"),
-            desired: llvm_env(&target.tuple),
+            desired: env_lines(&clang.env),
         });
-        // The per-target clang wrappers run `clang --config=<this file>`. The
-        // runtimes are the ones -L builds for the target, not the host clang's
-        // defaults (gentoo-runtimes.cfg), which may be libgcc/libstdc++/bfd.
-        let cfg_dir = portage.parent().unwrap_or(&portage).join("clang/cross");
+    }
+    // A mixed target writes this config as its bootstrap reaches each runtime set
+    // (`write_clang_cfg`); an LLVM-model one has no gcc to start from.
+    if target.llvm {
         entries.push(config_plan::ConfigEntry::File {
-            path: cfg_dir.join(format!("{}.cfg", target.tuple)),
-            desired: format!(
-                "--sysroot={}\n--target={}\n--rtlib=compiler-rt\n--unwindlib=libunwind\n\
-                 --stdlib=libc++\n-fuse-ld=lld\n",
-                sysroot(target, globals),
-                target.tuple
-            ),
+            path: clang_cfg_path(target, globals),
+            desired: clang_cfg(target, globals, ClangRuntimes::Llvm)?,
         });
     }
     entries.push(config_plan::ConfigEntry::Derived {
@@ -1987,15 +1994,65 @@ fn env_mapping(category: &str, pkg: &str, llvm: bool) -> String {
     format!("{category}/{pkg} {category}/{pkg}.conf{llvm_conf}\n")
 }
 
-/// Toolchain variables for LLVM-model cross packages: the target's clang
-/// wrappers plus LLVM's own binary tools, since no cross binutils is built.
-fn llvm_env(tuple: &str) -> String {
-    format!(
-        "CC={tuple}-clang\nCXX={tuple}-clang++\nAS=\"{tuple}-clang -c\"\n\
-         CROSS_COMPILE={tuple}-\nLD=ld.lld\nAR=llvm-ar\nNM=llvm-nm\n\
-         RANLIB=llvm-ranlib\nSTRIP=llvm-strip\nOBJCOPY=llvm-objcopy\n\
-         READELF=llvm-readelf\nDLLTOOL=llvm-dlltool\nHOSTCC=clang\nHOSTCXX=clang++\nLLVM=1\n"
-    )
+/// Which runtimes the per-target clang links against
+#[derive(Clone, Copy)]
+enum ClangRuntimes {
+    /// The cross gcc's libgcc and libstdc++, before LLVM's runtimes exist
+    Gcc,
+    /// compiler-rt, libunwind and libc++, built for the target
+    Llvm,
+}
+
+/// The config the per-target clang wrappers run `clang --config=` with
+fn clang_cfg_path(target: &CrossTarget, globals: &Cli) -> Utf8PathBuf {
+    let base = globals.base_roots();
+    let portage = base
+        .config_overlay()
+        .map(Utf8Path::to_owned)
+        .unwrap_or_else(|| base.merge_root().join("etc/portage"));
+    let etc = portage.parent().map(Utf8Path::to_owned).unwrap_or(portage);
+    etc.join("clang/cross")
+        .join(format!("{}.cfg", target.tuple))
+}
+
+/// The clang config for `target`, linking `runtimes`
+///
+/// Not the host clang's defaults (`gentoo-runtimes.cfg`): those are the host's own runtimes.
+fn clang_cfg(target: &CrossTarget, globals: &Cli, runtimes: ClangRuntimes) -> Result<String> {
+    let head = format!(
+        "--sysroot={}\n--target={}\n",
+        sysroot(target, globals),
+        target.tuple
+    );
+    Ok(match runtimes {
+        ClangRuntimes::Llvm => format!(
+            "{head}--rtlib=compiler-rt\n--unwindlib=libunwind\n--stdlib=libc++\n-fuse-ld=lld\n"
+        ),
+        ClangRuntimes::Gcc => {
+            let dir = globals
+                .outer_roots()
+                .merge_root()
+                .join("usr/lib/gcc")
+                .join(&target.tuple);
+            let newest = std::fs::read_dir(&dir)
+                .with_context(|| format!("reading {dir}"))?
+                .filter_map(|e| e.ok()?.file_name().into_string().ok())
+                .filter_map(|name| Some((name.parse::<u64>().ok()?, name)))
+                .max()
+                .with_context(|| format!("no cross gcc under {dir}"))?;
+            format!("{head}--gcc-install-dir={}\n", dir.join(newest.1))
+        }
+    })
+}
+
+/// Point the per-target clang at `runtimes`
+fn write_clang_cfg(target: &CrossTarget, globals: &Cli, runtimes: ClangRuntimes) -> Result<()> {
+    let path = clang_cfg_path(target, globals);
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).with_context(|| format!("creating {dir}"))?;
+    }
+    std::fs::write(&path, clang_cfg(target, globals, runtimes)?)
+        .with_context(|| format!("writing {path}"))
 }
 
 /// Create the ABI osdir compatibility symlinks the libc leaves out, so the cross

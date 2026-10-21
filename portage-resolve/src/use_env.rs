@@ -142,7 +142,7 @@ async fn compute_use_env(
     // profile layer, so its use.force/use.mask/package.use*/package.mask override
     // the resolved make.profile chain. Fold it in so Level-C never cedes a flag a
     // site override pins and the plan honours site masks (portage(5)).
-    let mut stack = ProfileStack::build(profile_path)
+    let mut stack = ProfileStack::build_in(profile_path, root_dir)
         .map_err(|e| anyhow::anyhow!("failed to build profile stack: {e}"))?
         .with_user_profile(portage_dir.join("profile").into_std_path_buf())
         .map_err(|e| anyhow::anyhow!("failed to load /etc/portage/profile: {e}"))?;

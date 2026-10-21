@@ -985,7 +985,7 @@ fn profile_stack(globals: &Cli) -> Result<ProfileStack> {
     let profile_link = config_root.join("etc/portage/make.profile");
     let canon = std::fs::canonicalize(profile_link.as_std_path())
         .with_context(|| format!("cannot resolve make.profile at {profile_link}"))?;
-    ProfileStack::build(canon).context("failed to build profile stack")
+    ProfileStack::build_in(canon, config_root).context("failed to build profile stack")
 }
 
 /// The profile's `BOOTSTRAP_USE` variable, after sourcing the profile chain

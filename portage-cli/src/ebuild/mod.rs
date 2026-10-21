@@ -349,7 +349,7 @@ pub(crate) async fn apply_profile_env(
     else {
         return Ok(false);
     };
-    let mut stack = portage_repo::ProfileStack::build(profile_path)
+    let mut stack = portage_repo::ProfileStack::build_in(profile_path, base)
         .context("building profile stack")?
         .with_user_profile(base.join("etc/portage/profile").into_std_path_buf())
         .context("loading the user profile")?;

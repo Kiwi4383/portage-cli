@@ -2,12 +2,15 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
 
+use camino::Utf8Path;
+
 use gentoo_core::Arch;
 use portage_atom::interner::{DefaultInterner, Interned};
 use portage_atom::{Cpv, Dep};
 use portage_metadata::Eapi;
 
 use super::layout::LayoutConf;
+use super::repos_conf::ReposConf;
 use super::util;
 use crate::error::{Error, Result};
 
@@ -113,7 +116,7 @@ pub struct Profile {
     /// set contributions — only profiles whose `profile_formats` contains
     /// `profile-set` contribute their plain `packages` lines to `@profile`.
     ///
-    /// Resolved at open time by [`resolve_profile_formats`] (walking up to
+    /// Resolved at open time by [`enclosing_repo`] (walking up to
     /// the nearest enclosing repo, matching portage's longest-path-wins
     /// rule). Defaults to empty when no enclosing repo is found —
     /// equivalent to portage's `portage-1`/`portage-1-compat` default.
@@ -123,6 +126,8 @@ pub struct Profile {
     /// [`ProfileStack::with_user_profile`], mirroring portage's own
     /// `LocationsManager.load_profiles` hardcoded value.
     profile_formats: Vec<String>,
+    /// Root of the repository holding this profile, if it is inside one
+    repo: Option<PathBuf>,
 }
 
 /// One entry from a profile `packages` file (PMS 5.2.6)
@@ -147,11 +152,12 @@ impl Profile {
                 .map_err(|e| Error::InvalidProfile(format!("bad EAPI: {e}")))?,
             None => Eapi::Zero,
         };
-        let profile_formats = resolve_profile_formats(&path);
+        let (repo, profile_formats) = enclosing_repo(&path);
         Ok(Profile {
             path,
             eapi,
             profile_formats,
+            repo,
         })
     }
 
@@ -177,10 +183,32 @@ impl Profile {
 
     /// Parse the `parent` file to get parent profile paths
     ///
-    /// Paths are relative to this profile directory and resolved to absolute paths.
-    pub fn parents(&self) -> Result<Vec<PathBuf>> {
-        let lines = util::read_lines(self.path.join("parent"))?;
-        Ok(lines.iter().map(|l| self.path.join(l)).collect())
+    /// Paths are relative to this profile directory. Under the `portage-2` profile format a line
+    /// may instead be `repo:path` or `:path`, a profile under that repository's `profiles/`
+    /// (this profile's own for `:path`); `repos` resolves the name.
+    pub fn parents(&self, repos: Option<&ReposConf>) -> Result<Vec<PathBuf>> {
+        let colon = self.repo.is_none() || self.profile_formats.iter().any(|f| f == "portage-2");
+        util::read_lines(self.path.join("parent"))?
+            .iter()
+            .map(|line| {
+                let Some((name, rel)) = line.split_once(':').filter(|_| colon) else {
+                    return Ok(self.path.join(line));
+                };
+                let root = if name.is_empty() {
+                    self.repo.clone()
+                } else {
+                    repos
+                        .and_then(|r| r.find(name))
+                        .and_then(|e| e.location.as_path().map(Path::to_path_buf))
+                };
+                root.map(|r| r.join("profiles").join(rel)).ok_or_else(|| {
+                    Error::InvalidProfile(format!(
+                        "parent '{line}' not found: {}",
+                        self.path.join("parent").display()
+                    ))
+                })
+            })
+            .collect()
     }
 
     /// Parse the `packages` file into raw [`PackageEntry`]s (no cross-profile
@@ -350,9 +378,21 @@ impl ProfileStack {
     /// Follows `parent` files recursively (depth-first).  Each unique profile
     /// directory is included at most once even in diamond-shaped inheritance.
     /// Cycle detection uses canonicalized paths.
+    ///
+    /// A `repo:path` parent cannot be resolved here; see [`Self::build_in`].
     pub fn build(path: PathBuf) -> Result<Self> {
+        Self::collect(&path, None)
+    }
+
+    /// Build the stack at `path`, resolving `repo:path` parents through the
+    /// repositories `config_root`'s `repos.conf` configures
+    pub fn build_in(path: PathBuf, config_root: &Utf8Path) -> Result<Self> {
+        Self::collect(&path, Some(&ReposConf::load_rooted(config_root, &[])?))
+    }
+
+    fn collect(path: &Path, repos: Option<&ReposConf>) -> Result<Self> {
         let mut visited = HashSet::new();
-        let profiles = collect_stack(&path, &mut visited)?;
+        let profiles = collect_stack(path, &mut visited, repos)?;
         if profiles.is_empty() {
             return Err(Error::InvalidProfile("empty profile stack".into()));
         }
@@ -841,7 +881,11 @@ pub(crate) fn merge_flag_lists_signed<'a>(iter: impl Iterator<Item = &'a str>) -
 ///
 /// `visited` is a set of canonicalized paths already added; a profile seen a
 /// second time (diamond inheritance or cycle) is silently skipped.
-fn collect_stack(path: &Path, visited: &mut HashSet<PathBuf>) -> Result<Vec<Profile>> {
+fn collect_stack(
+    path: &Path,
+    visited: &mut HashSet<PathBuf>,
+    repos: Option<&ReposConf>,
+) -> Result<Vec<Profile>> {
     let canonical = path.canonicalize().map_err(|e| Error::Io {
         path: path.to_path_buf(),
         source: e,
@@ -851,16 +895,16 @@ fn collect_stack(path: &Path, visited: &mut HashSet<PathBuf>) -> Result<Vec<Prof
     }
     let profile = Profile::open(canonical)?;
     let mut result = Vec::new();
-    for parent in profile.parents()? {
-        result.extend(collect_stack(&parent, visited)?);
+    for parent in profile.parents(repos)? {
+        result.extend(collect_stack(&parent, visited, repos)?);
     }
     result.push(profile);
     Ok(result)
 }
 
-/// Resolve the effective `profile-formats` for a profile directory by walking
-/// up to the nearest enclosing repository root (the closest ancestor holding
-/// `metadata/layout.conf`) and reading its `profile-formats` key.
+/// The root and effective `profile-formats` of the repository enclosing a profile
+/// directory: the closest ancestor holding `metadata/layout.conf`, whose
+/// `profile-formats` key it reads.
 ///
 /// Mirrors portage's longest-path-wins `intersecting_repos` rule: of all
 /// repos whose root path the profile path starts with, the most specific
@@ -874,7 +918,7 @@ fn collect_stack(path: &Path, visited: &mut HashSet<PathBuf>) -> Result<Vec<Prof
 /// `profiles/repo_name` marker is checked as a hard stop for that case, so
 /// a real (layout.conf-less) repo root doesn't fall through to an
 /// unrelated ancestor's own `layout.conf` (nested/co-located repos).
-fn resolve_profile_formats(profile_path: &Path) -> Vec<String> {
+fn enclosing_repo(profile_path: &Path) -> (Option<PathBuf>, Vec<String>) {
     let mut dir = profile_path.parent();
     while let Some(d) = dir {
         let layout_path = d.join("metadata").join("layout.conf");
@@ -883,19 +927,19 @@ fn resolve_profile_formats(profile_path: &Path) -> Vec<String> {
             // info is unusable; treat it as "no profile-set" (portage would
             // warn and intersect with the valid-format set, which is empty
             // here) rather than continuing further up the tree.
-            if let Ok(text) = std::fs::read_to_string(&layout_path)
-                && let Ok(parsed) = LayoutConf::parse(&text)
-            {
-                return parsed.profile_formats;
-            }
-            return Vec::new();
+            let formats = std::fs::read_to_string(&layout_path)
+                .ok()
+                .and_then(|text| LayoutConf::parse(&text).ok())
+                .map(|parsed| parsed.profile_formats)
+                .unwrap_or_default();
+            return (Some(d.to_path_buf()), formats);
         }
         if d.join("profiles").join("repo_name").is_file() {
-            return Vec::new();
+            return (Some(d.to_path_buf()), Vec::new());
         }
         dir = d.parent();
     }
-    Vec::new()
+    (None, Vec::new())
 }
 
 /// Read non-blank, non-comment lines from a profile file or directory
@@ -1417,9 +1461,68 @@ mod tests {
     // profiles whose enclosing repo declares `profile-set` in `profile-formats`
     // — a portage extension (PMS 5.2.6 only says plain lines are ignored for the
     // *system* set). The temp dir acts as the repo root for the walk-up in
-    // `resolve_profile_formats` (writing `metadata/layout.conf` there).
+    // `enclosing_repo` (writing `metadata/layout.conf` there).
 
     /// Write a `metadata/layout.conf` body at `dir` (the repo root)
+    /// A `gentoo` repo with `profiles/base`, an overlay declaring `formats` with
+    /// `profiles/leaf/parent` set to `parent`, and a config root naming both
+    fn overlay_profile(parent: &str, formats: &str) -> (TempDir, PathBuf, PathBuf) {
+        let tmp = TempDir::new().unwrap();
+        let gentoo = tmp.path().join("gentoo");
+        std::fs::create_dir_all(gentoo.join("profiles/base")).unwrap();
+        std::fs::write(gentoo.join("profiles/repo_name"), "gentoo\n").unwrap();
+        let overlay = tmp.path().join("sysroot/var/db/repos/spec");
+        std::fs::create_dir_all(overlay.join("metadata")).unwrap();
+        std::fs::write(overlay.join("metadata/layout.conf"), formats).unwrap();
+        std::fs::create_dir_all(overlay.join("profiles/leaf")).unwrap();
+        std::fs::create_dir_all(overlay.join("profiles/shared")).unwrap();
+        std::fs::write(overlay.join("profiles/leaf/parent"), parent).unwrap();
+        let repos_conf = tmp.path().join("sysroot/etc/portage/repos.conf");
+        std::fs::create_dir_all(&repos_conf).unwrap();
+        std::fs::write(
+            repos_conf.join("repos.conf"),
+            format!("[gentoo]\nlocation = {}\n", gentoo.display()),
+        )
+        .unwrap();
+        let leaf = overlay.join("profiles/leaf");
+        (tmp, gentoo, leaf)
+    }
+
+    fn stack_paths(stack: &ProfileStack) -> Vec<PathBuf> {
+        stack
+            .profiles()
+            .iter()
+            .map(|p| p.path().to_path_buf())
+            .collect()
+    }
+
+    #[test]
+    fn a_portage2_parent_names_a_profile_in_another_repository() {
+        let (tmp, gentoo, leaf) =
+            overlay_profile("gentoo:base\n:shared\n", "profile-formats = portage-2\n");
+        let config_root = Utf8Path::from_path(tmp.path()).unwrap().join("sysroot");
+        let stack = ProfileStack::build_in(leaf.clone(), &config_root).unwrap();
+        let shared = leaf.parent().unwrap().join("shared");
+        assert_eq!(
+            stack_paths(&stack),
+            [gentoo.join("profiles/base"), shared, leaf.clone()].map(|p| p.canonicalize().unwrap())
+        );
+        let err = ProfileStack::build(leaf).unwrap_err().to_string();
+        assert!(err.contains("parent 'gentoo:base' not found"), "{err}");
+    }
+
+    #[test]
+    fn a_colon_parent_is_a_plain_path_without_portage2() {
+        let (tmp, _gentoo, leaf) = overlay_profile("gentoo:base\n", "masters = gentoo\n");
+        std::fs::create_dir_all(leaf.join("gentoo:base")).unwrap();
+        let config_root = Utf8Path::from_path(tmp.path()).unwrap().join("sysroot");
+        let stack = ProfileStack::build_in(leaf.clone(), &config_root).unwrap();
+        assert_eq!(
+            stack.profiles()[0].path(),
+            leaf.join("gentoo:base").canonicalize().unwrap()
+        );
+    }
+
     fn write_layout_conf(dir: &TempDir, body: &str) {
         std::fs::create_dir_all(dir.path().join("metadata")).unwrap();
         std::fs::write(dir.path().join("metadata").join("layout.conf"), body).unwrap();

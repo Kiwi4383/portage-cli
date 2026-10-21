@@ -118,7 +118,7 @@ pub async fn run(args: &CrossdevArgs, globals: &Cli) -> Result<()> {
             if spec.toolchain.clang.is_some() {
                 target.llvm_slot = match spec.llvm_slot() {
                     Some(slot) => Some(slot.parse().with_context(|| format!("LLVM slot {slot}"))?),
-                    None => llvm_slot(&globals.base_roots(), &main_repo(globals)?),
+                    None => llvm_slot(&main_repo(globals)?),
                 };
                 if let Some(slot) = target.llvm_slot {
                     spec.bind_llvm_slot(slot);
@@ -134,7 +134,7 @@ pub async fn run(args: &CrossdevArgs, globals: &Cli) -> Result<()> {
         None => {
             let mut target = CrossTarget::parse(&tuple, args.llvm)?;
             if target.llvm {
-                target.llvm_slot = llvm_slot(&globals.base_roots(), &main_repo(globals)?);
+                target.llvm_slot = llvm_slot(&main_repo(globals)?);
             }
             let spec = spec::SysrootSpec::builtin(&target, &extras);
             (target, spec)
@@ -1797,18 +1797,16 @@ fn branch_bound(version: &Version) -> String {
     format!("{major}.{minor}.9999")
 }
 
-/// The LLVM major the `-L` model binds to: the host's newest installed
-/// `llvm-core/clang` slot, else the newest `clang-crossdev-wrappers` that carries
-/// KEYWORDS (its live ebuilds have none but are versioned like releases).
-fn llvm_slot(roots: &portage_resolve::Roots, repo: &Repository) -> Option<u64> {
-    if let Some((_, slot)) = host_installed_versions(roots, "llvm-core", "clang").first() {
-        return slot.as_str().parse().ok();
-    }
-    let wrappers = Cpn::new("sys-devel", "clang-crossdev-wrappers");
-    ebuild_versions(repo.path(), "sys-devel", "clang-crossdev-wrappers")
+/// The LLVM slot a clang toolchain binds to when the spec names none: the newest
+/// `llvm-core/clang` release, i.e. with KEYWORDS (live and snapshot ebuilds have none)
+///
+/// The wrappers run the host's clang of that slot, which the bootstrap builds if missing.
+fn llvm_slot(repo: &Repository) -> Option<u64> {
+    let clang = Cpn::new("llvm-core", "clang");
+    ebuild_versions(repo.path(), "llvm-core", "clang")
         .into_iter()
         .filter(|version| {
-            repo.cache_entry(&Cpv::new(wrappers, version.clone()))
+            repo.cache_entry(&Cpv::new(clang, version.clone()))
                 .ok()
                 .flatten()
                 .is_some_and(|entry| !entry.metadata.keywords.is_empty())
@@ -2657,21 +2655,20 @@ mod tests {
 
     /// A `gentoo` repo holding `clang-crossdev-wrappers` ebuilds, each with an
     /// md5-cache entry carrying `KEYWORDS` only when given.
-    fn wrappers_repo(gentoo: &camino::Utf8Path, versions: &[(&str, &str)]) -> Repository {
-        std::fs::create_dir_all(gentoo.join("metadata/md5-cache/sys-devel")).unwrap();
+    fn clang_repo(gentoo: &camino::Utf8Path, versions: &[(&str, &str)]) -> Repository {
+        std::fs::create_dir_all(gentoo.join("metadata/md5-cache/llvm-core")).unwrap();
         std::fs::write(gentoo.join("metadata/layout.conf"), "masters =\n").unwrap();
         std::fs::create_dir_all(gentoo.join("profiles")).unwrap();
         std::fs::write(gentoo.join("profiles/repo_name"), "gentoo\n").unwrap();
         for (version, keywords) in versions {
-            write_ebuild(gentoo, "sys-devel", "clang-crossdev-wrappers", version);
-            let mut entry = format!("EAPI=8\nDESCRIPTION=t\nSLOT={version}\n");
+            write_ebuild(gentoo, "llvm-core", "clang", version);
+            let slot = version.split('.').next().unwrap();
+            let mut entry = format!("EAPI=8\nDESCRIPTION=t\nSLOT={slot}\n");
             if !keywords.is_empty() {
                 entry.push_str(&format!("KEYWORDS={keywords}\n"));
             }
             std::fs::write(
-                gentoo.join(format!(
-                    "metadata/md5-cache/sys-devel/clang-crossdev-wrappers-{version}"
-                )),
+                gentoo.join(format!("metadata/md5-cache/llvm-core/clang-{version}")),
                 entry,
             )
             .unwrap();
@@ -2682,21 +2679,21 @@ mod tests {
             .unwrap()
     }
 
-    // The host's newest installed clang slot wins; without one, the newest
-    // wrappers release that has KEYWORDS (live ones are versioned like releases).
+    // The newest release wins whatever the host has installed; live ebuilds carry no KEYWORDS.
     #[test]
-    fn llvm_slot_prefers_the_installed_clang_then_the_newest_keyworded_wrappers() {
+    fn llvm_slot_is_the_newest_clang_release() {
         let dir = tempfile::tempdir().unwrap();
         let root = camino::Utf8Path::from_path(dir.path()).unwrap();
-        let repo = wrappers_repo(
+        let repo = clang_repo(
             &root.join("gentoo"),
-            &[("20", "arm64"), ("21", "~arm64"), ("23", "")],
+            &[
+                ("21.1.8", "arm64"),
+                ("23.1.4", "~arm64"),
+                ("24.0.0.9999", ""),
+            ],
         );
-        let roots = portage_resolve::Roots::for_test(root.as_str());
-        assert_eq!(llvm_slot(&roots, &repo), Some(21));
-
-        write_vdb_entry(root, "llvm-core", "clang-20.1.8", "20");
-        assert_eq!(llvm_slot(&roots, &repo), Some(20));
+        write_vdb_entry(root, "llvm-core", "clang-21.1.8", "21");
+        assert_eq!(llvm_slot(&repo), Some(23));
     }
 
     // Every package of an LLVM target also sources the shared `llvm.conf`

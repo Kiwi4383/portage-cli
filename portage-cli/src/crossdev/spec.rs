@@ -263,8 +263,31 @@ impl SysrootSpec {
         CrossTarget::parse(&self.tuple, self.system.built_by == ToolchainId::Clang)
     }
 
+    /// The toolchain packages the spec constrains to some versions; the clang compiler's slot
+    /// is the LLVM binding instead (see [`Self::llvm_slot`])
+    pub fn pins(&self) -> Vec<&Dep> {
+        let Toolchains { gcc, clang } = &self.toolchain;
+        let mut roles: Vec<&Dep> = vec![&self.libc.atom];
+        roles.extend(self.kernel_headers.as_ref().map(|k| &k.atom));
+        if let Some(t) = gcc {
+            roles.extend([&t.compiler, &t.binutils]);
+        }
+        if let Some(t) = clang {
+            roles.extend([
+                &t.linker,
+                &t.wrappers,
+                &t.rtlib,
+                &t.unwind,
+                &t.cxxabi,
+                &t.cxx,
+            ]);
+        }
+        roles.retain(|dep| **dep != Dep::new(dep.cpn));
+        roles
+    }
+
     /// A spec asks for nothing the bootstrap does not honour: the toolchain
-    /// packages the tuple implies, unversioned, one toolchain for everything
+    /// packages the tuple implies, pinned only by version or slot, one toolchain for everything
     fn check_buildable(&self) -> Result<()> {
         ensure!(
             self.libc.built_by == self.system.built_by && self.system.exceptions.is_empty(),
@@ -285,37 +308,36 @@ impl SysrootSpec {
                 .collect::<Vec<_>>()
                 .join(" ")
         );
-        let Toolchains { gcc, clang } = &self.toolchain;
-        let mut roles: Vec<&Dep> = vec![&self.libc.atom];
-        roles.extend(self.kernel_headers.as_ref().map(|k| &k.atom));
-        if let Some(t) = gcc {
-            roles.extend([&t.compiler, &t.binutils]);
-        }
-        if let Some(t) = clang {
-            roles.extend([
-                &t.linker,
-                &t.wrappers,
-                &t.rtlib,
-                &t.unwind,
-                &t.cxxabi,
-                &t.cxx,
-            ]);
+        if let Some(t) = &self.toolchain.clang {
             ensure!(
                 Dep {
                     slot_dep: None,
                     ..t.compiler.clone()
                 } == Dep::new(t.compiler.cpn),
-                "{}: only a slot can constrain the clang compiler yet",
+                "{}: only a slot can constrain the clang compiler",
                 t.compiler
             );
         }
-        if let Some(dep) = roles.into_iter().find(|dep| **dep != Dep::new(dep.cpn)) {
-            bail!(
-                "{dep}: version and slot constraints on toolchain packages are not supported yet"
-            );
+        if let Some(dep) = self.pins().into_iter().find(|dep| !is_pin(dep)) {
+            bail!("{dep}: a toolchain package takes only a version or a slot");
         }
         Ok(())
     }
+}
+
+/// A version or slot constraint that a mask and an unmask can express: no blocker, USE
+/// dependency, repository or slot operator
+fn is_pin(dep: &Dep) -> bool {
+    dep.blocker.is_none()
+        && dep.use_deps.is_none()
+        && dep.repo.is_none()
+        && matches!(
+            dep.slot_dep,
+            None | Some(portage_atom::SlotDep::Slot {
+                slot: Some(_),
+                op: None
+            })
+        )
 }
 
 #[cfg(test)]
@@ -486,8 +508,8 @@ exceptions.gcc = ["sys-libs/glibc", "sys-devel/gcc"]
         for (from, to, why) in [
             (
                 "\"sys-devel/gcc\"",
-                "\"sys-devel/gcc:16\"",
-                "version and slot constraints",
+                "\"sys-devel/gcc[cxx]\"",
+                "takes only a version or a slot",
             ),
             (
                 "\"sys-libs/glibc\"",
@@ -504,6 +526,24 @@ exceptions.gcc = ["sys-libs/glibc", "sys-devel/gcc"]
             let err = load_text(&gnu.replacen(from, to, 1)).unwrap_err();
             assert!(format!("{err:#}").contains(why), "{to}: {err:#}");
         }
+    }
+
+    #[test]
+    fn a_version_or_slot_on_a_toolchain_package_is_a_pin() {
+        let gnu = builtin("riscv64-unknown-linux-gnu", false)
+            .to_toml()
+            .unwrap();
+        let pinned = gnu
+            .replacen("\"sys-devel/gcc\"", "\"sys-devel/gcc:16\"", 1)
+            .replacen("\"sys-libs/glibc\"", "\">=sys-libs/glibc-2.42\"", 1);
+        let spec = load_text(&pinned).unwrap();
+        let pins: Vec<String> = spec.pins().iter().map(ToString::to_string).collect();
+        assert_eq!(pins, [">=sys-libs/glibc-2.42", "sys-devel/gcc:16"]);
+        assert!(
+            builtin("riscv64-unknown-linux-gnu", false)
+                .pins()
+                .is_empty()
+        );
     }
 
     #[test]

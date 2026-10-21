@@ -97,9 +97,15 @@ With a spec file, `--init-target` gives the sysroot its own profile: an overlay 
 there, so later commands given just the tuple read that saved spec. A built-in tuple links
 `make.profile` to the `::gentoo` profile directly, as before.
 
-A spec may not yet ask for what the bootstrap does not honour: version or slot constraints on
-toolchain packages (the clang slot excepted), other toolchain packages than the tuple's, or a
-libc or packages built by another toolchain than the system's. Such a file is refused when read.
+A version or slot on a toolchain package is a pin, e.g. `compiler = "sys-devel/gcc:15"`: the
+sysroot profile masks the package and unmasks the pin, so the target's own packages stay inside
+it, and the host's `package.mask`/`package.unmask`/`package.accept_keywords` for the cross
+category do the same for the cross toolchain, up to the newest keyworded release the pin allows
+(never a live ebuild). The clang compiler's slot is the LLVM slot instead.
+
+A spec may not yet ask for other toolchain packages than the tuple's, or for a libc or packages
+built by another toolchain than the system's. Such a file is refused when read, as is a pin with a
+blocker, USE dependency, repository or slot operator.
 
 ## Examples
 

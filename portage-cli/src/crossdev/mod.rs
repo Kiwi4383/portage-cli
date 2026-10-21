@@ -1178,7 +1178,13 @@ async fn init_target(
         &category,
         spec,
     )?);
-    entries.extend(cross_env_entries(target, globals, &gentoo_path, spec)?);
+    entries.extend(cross_env_entries(
+        target,
+        globals,
+        &gentoo_path,
+        spec,
+        own_profile,
+    )?);
     entries.extend(sysroot_config_entries(
         target,
         spec,
@@ -1469,8 +1475,15 @@ fn sysroot_config_entries(
                 "masters = gentoo\nprofile-formats = portage-2\n".into(),
             ),
             file(repo.join("profiles/repo_name"), format!("{SPEC_REPO}\n")),
+            // Without an `eapi` file the profile is EAPI 0, which has no slot dependencies.
+            file(profile.join("eapi"), "8\n".into()),
             file(profile.join("parent"), format!("gentoo:{}\n", spec.profile)),
             file(profile.join(SPEC_FILE), spec.to_toml()?),
+            file(
+                profile.join("package.mask"),
+                pin_lines(spec, |pin| Dep::new(pin.cpn)),
+            ),
+            file(profile.join("package.unmask"), pin_lines(spec, Dep::clone)),
         ]);
         profile
     } else {
@@ -1481,6 +1494,15 @@ fn sysroot_config_entries(
         target: profile_target,
     });
     Ok(entries)
+}
+
+/// One line per spec pin, as `line` renders it: masking the package and unmasking the pin
+/// leaves only the versions the pin allows
+fn pin_lines(spec: &spec::SysrootSpec, line: impl Fn(&Dep) -> Dep) -> String {
+    spec.pins()
+        .into_iter()
+        .map(|pin| format!("{}\n", line(pin)))
+        .collect()
 }
 
 /// Repository name of the sysroot overlay holding the profile a spec derives
@@ -1731,6 +1753,7 @@ fn cross_env_entries(
     globals: &Cli,
     gentoo: &Utf8Path,
     spec: &spec::SysrootSpec,
+    own_profile: bool,
 ) -> Result<Vec<config_plan::ConfigEntry>> {
     let eclass_dir = gentoo.join("eclass");
     let host_ml = multilib::query(&host_chost(), &eclass_dir)?;
@@ -1784,9 +1807,13 @@ fn cross_env_entries(
         });
         mappings.push_str(&env_mapping(&category, pkg, target.llvm));
         if arch == target::PackageArch::Host {
-            let line = match target.llvm_slot {
-                Some(slot) => format!("={category}/{pkg}-{slot}* **\n"),
-                None => host_arch_keyword_line(&base, gentoo, &category, pkg, real_cat, pkg),
+            let pin = spec.pins().into_iter().find(|pin| pin.cpn == cpn);
+            let line = match (pin, target.llvm_slot) {
+                (Some(pin), _) => pinned_keyword_line(&main_repo(globals)?, &category, pin)?,
+                (None, Some(slot)) => format!("={category}/{pkg}-{slot}* **\n"),
+                (None, None) => {
+                    host_arch_keyword_line(&base, gentoo, &category, pkg, real_cat, pkg)
+                }
             };
             keyword_entries.push_str(&line);
         }
@@ -1847,7 +1874,41 @@ fn cross_env_entries(
         path: portage.join("package.accept_keywords").join(&category),
         desired: keyword_entries,
     });
+    if own_profile {
+        let cross = |pin: &Dep| Dep {
+            cpn: Cpn::new(&category, pin.cpn.package.as_str()),
+            ..pin.clone()
+        };
+        entries.extend([
+            config_plan::ConfigEntry::File {
+                path: portage.join("package.mask").join(&category),
+                desired: pin_lines(spec, |pin| Dep::new(cross(pin).cpn)),
+            },
+            config_plan::ConfigEntry::File {
+                path: portage.join("package.unmask").join(&category),
+                desired: pin_lines(spec, cross),
+            },
+        ]);
+    }
     Ok(entries)
+}
+
+/// The cross package's keyword line under a spec pin: every version up to the release branch
+/// of the newest keyworded one the pin allows, so a live ebuild the pin also matches stays out
+fn pinned_keyword_line(repo: &Repository, category: &str, pin: &Dep) -> Result<String> {
+    let (cat, pkg) = (pin.cpn.category.as_str(), pin.cpn.package.as_str());
+    let newest = ebuild_versions(repo.path(), cat, pkg)
+        .into_iter()
+        .filter(|version| {
+            let cpv = Cpv::new(pin.cpn, version.clone());
+            repo.cache_entry(&cpv).ok().flatten().is_some_and(|entry| {
+                !entry.metadata.keywords.is_empty()
+                    && pin.matches_cpv(&cpv, Some(&entry.metadata.slot))
+            })
+        })
+        .max()
+        .with_context(|| format!("no keyworded version of {} matches {pin}", pin.cpn))?;
+    Ok(format!("<{category}/{pkg}-{} **\n", branch_bound(&newest)))
 }
 
 /// A cross package's `package.env` line: its own env file, plus the shared
@@ -1999,6 +2060,9 @@ mod tests {
         let target = CrossTarget::parse("riscv64-unknown-linux-gnu", false).unwrap();
         let mut spec = spec::SysrootSpec::builtin(&target, &[]);
         spec.cflags = "-O3 -march=rva23u64 -pipe".into();
+        if let Some(gcc) = &mut spec.toolchain.gcc {
+            gcc.compiler = Dep::parse("sys-devel/gcc:16").unwrap();
+        }
         let parent = gentoo.join("profiles").join(&spec.profile);
         std::fs::create_dir_all(&parent).unwrap();
         std::fs::write(gentoo.join("profiles/repo_name"), "gentoo\n").unwrap();
@@ -2014,6 +2078,13 @@ mod tests {
             true,
         ));
         config_plan::apply_now(&entries).unwrap();
+
+        let own = sysroot.join(SPEC_REPO_DIR).join(SPEC_PROFILE);
+        let read = |file: &str| std::fs::read_to_string(own.join(file)).unwrap();
+        assert_eq!(read("package.mask"), "sys-devel/gcc\n");
+        assert_eq!(read("package.unmask"), "sys-devel/gcc:16\n");
+        // Portage drops a slot dependency from an EAPI 0 profile's package.unmask.
+        assert_eq!(read("eapi"), "8\n");
 
         let cli = parse_crossdev(&[
             "--prefix",

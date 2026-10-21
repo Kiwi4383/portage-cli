@@ -2,7 +2,8 @@
 
 Status: 🟡 design agreed 2026-10-07 (Luca); step 1 done 2026-10-08 (the
 built-in spec and `--print-spec`), step 2 mostly done 2026-10-09 (see
-"Progress"), step 3 done 2026-10-21 (loading, and saving as a sysroot overlay profile), steps 4–5 open. Supersedes
+"Progress"), step 3 done 2026-10-21 (loading, and saving as a sysroot overlay profile), step 4's version pins done 2026-10-21;
+`exceptions`, mixed bootstrap and step 5 open. Supersedes
 the flag-based approach in [[crossdev-gcc-version-flag]], whose first
 implementation (`--gcc`/`--libc`/… writing exact pins) was dropped as the
 wrong shape.
@@ -277,3 +278,17 @@ Where step 4 goes: version atoms become the profile's `package.mask`/`package.ac
 profiles), CFLAGS could move to its `make.defaults`. `exceptions` cannot: `package.env` is user config only in Portage,
 so it stays in the sysroot's `/etc/portage`. Open: under `-p` before `--init-target`, `use_env`'s `sysroot_override`
 still points at the `::gentoo` profile, which is right until the derived profile carries masks.
+
+## Progress (2026-10-21): step 4, version pins
+
+`SysrootSpec::pins()` is every toolchain role atom carrying a version or slot (the clang compiler's slot stays the LLVM
+binding). The overlay profile writes `package.mask` (the bare package) and `package.unmask` (the pin), plus an `eapi`
+file: without it Portage reads the profile as EAPI 0 and drops `sys-devel/gcc:15` as invalid. em learned profile
+`package.unmask` (`fcddaf09`, gated on `portage-1`/`portage-2` formats as Portage does). Host side: the same pair under
+`package.{mask,unmask}/<cross category>`, and the cross package's keyword line is `<cross-T/pkg-{branch_bound} **` from
+the newest keyworded version the pin allows, so `gcc:15` never reaches `15.3.9999`.
+
+Live (sandbox `em-r1-board`): cross gcc 15.3.1_p20261016, target gcc 15.3.1_p20261009 from both em and emerge. The two
+differ because the host side accepts the unkeyworded newest snapshot (`**`) and the sysroot only `~riscv`; the spec
+assumes target gcc = cross gcc, which this does not yet enforce. em also accepted the slot atom in an EAPI 0 profile
+where Portage refuses it; left as is.

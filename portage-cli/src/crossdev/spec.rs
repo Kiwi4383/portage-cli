@@ -6,7 +6,8 @@
 
 use std::collections::BTreeMap;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail, ensure};
+use camino::Utf8Path;
 use portage_atom::{Cpn, Dep};
 use serde::{Deserialize, Serialize};
 
@@ -123,15 +124,8 @@ impl SysrootSpec {
         let atom = |cat: &str, pkg: &str| Dep::new(Cpn::new(cat, pkg));
         let (libc_cat, libc_pkg) = target.libc.package();
         let (toolchain, built_by) = if target.llvm {
-            let mut compiler = atom("llvm-core", "clang");
-            if let Some(slot) = target.llvm_slot {
-                compiler.slot_dep = Some(portage_atom::SlotDep::Slot {
-                    slot: Some(portage_atom::Slot::new(slot.to_string())),
-                    op: None,
-                });
-            }
             let clang = ClangToolchain {
-                compiler,
+                compiler: atom("llvm-core", "clang"),
                 linker: atom("llvm-core", "lld"),
                 wrappers: atom("sys-devel", "clang-crossdev-wrappers"),
                 rtlib: atom("llvm-runtimes", "compiler-rt"),
@@ -155,7 +149,7 @@ impl SysrootSpec {
             };
             (toolchains, ToolchainId::Gcc)
         };
-        Self {
+        let mut spec = Self {
             tuple: target.tuple.clone(),
             profile: target.profile_path(),
             cflags: target.cflags().to_owned(),
@@ -172,6 +166,22 @@ impl SysrootSpec {
                 built_by,
                 exceptions: BTreeMap::new(),
             },
+        };
+        if let Some(slot) = target.llvm_slot {
+            spec.bind_llvm_slot(slot);
+        }
+        spec
+    }
+
+    /// Bind the clang compiler to LLVM `slot`, unless the spec already names one
+    pub fn bind_llvm_slot(&mut self, slot: u64) {
+        if let Some(clang) = &mut self.toolchain.clang
+            && clang.compiler.slot_dep.is_none()
+        {
+            clang.compiler.slot_dep = Some(portage_atom::SlotDep::Slot {
+                slot: Some(portage_atom::Slot::new(slot.to_string())),
+                op: None,
+            });
         }
     }
 
@@ -238,6 +248,73 @@ impl SysrootSpec {
     /// The spec as the TOML a user edits
     pub fn to_toml(&self) -> Result<String> {
         toml::to_string(self).context("serializing the sysroot spec to TOML")
+    }
+
+    /// Read a spec file, refusing what `em crossdev` cannot build from it yet
+    pub fn load(path: &Utf8Path) -> Result<Self> {
+        let text = std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?;
+        let spec: Self = toml::from_str(&text).with_context(|| format!("parsing {path}"))?;
+        spec.check_buildable().with_context(|| format!("{path}"))?;
+        Ok(spec)
+    }
+
+    /// The tuple's [`CrossTarget`], LLVM-model when clang builds the system
+    pub fn cross_target(&self) -> Result<CrossTarget> {
+        CrossTarget::parse(&self.tuple, self.system.built_by == ToolchainId::Clang)
+    }
+
+    /// A spec asks for nothing the bootstrap does not honour: the toolchain
+    /// packages the tuple implies, unversioned, one toolchain for everything
+    fn check_buildable(&self) -> Result<()> {
+        ensure!(
+            self.libc.built_by == self.system.built_by && self.system.exceptions.is_empty(),
+            "building the libc or some packages with another toolchain than the system's is not supported yet"
+        );
+        let target = self.cross_target()?;
+        let expected = Self::builtin(&target, &[]);
+        ensure!(
+            self.toolchain.gcc.is_some() == expected.toolchain.gcc.is_some()
+                && self.toolchain.clang.is_some() == expected.toolchain.clang.is_some()
+                && self.packages() == expected.packages(),
+            "the toolchain packages must be the ones {} implies: {}",
+            self.tuple,
+            expected
+                .packages()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        let Toolchains { gcc, clang } = &self.toolchain;
+        let mut roles: Vec<&Dep> = vec![&self.libc.atom];
+        roles.extend(self.kernel_headers.as_ref().map(|k| &k.atom));
+        if let Some(t) = gcc {
+            roles.extend([&t.compiler, &t.binutils]);
+        }
+        if let Some(t) = clang {
+            roles.extend([
+                &t.linker,
+                &t.wrappers,
+                &t.rtlib,
+                &t.unwind,
+                &t.cxxabi,
+                &t.cxx,
+            ]);
+            ensure!(
+                Dep {
+                    slot_dep: None,
+                    ..t.compiler.clone()
+                } == Dep::new(t.compiler.cpn),
+                "{}: only a slot can constrain the clang compiler yet",
+                t.compiler
+            );
+        }
+        if let Some(dep) = roles.into_iter().find(|dep| **dep != Dep::new(dep.cpn)) {
+            bail!(
+                "{dep}: version and slot constraints on toolchain packages are not supported yet"
+            );
+        }
+        Ok(())
     }
 }
 
@@ -376,6 +453,57 @@ exceptions.gcc = ["sys-libs/glibc", "sys-devel/gcc"]
             spec.toolchain.gcc.unwrap().compiler.to_string(),
             "sys-devel/gcc:16"
         );
+    }
+
+    fn load_text(text: &str) -> Result<SysrootSpec> {
+        let dir = tempfile::tempdir().unwrap();
+        let path = Utf8Path::from_path(dir.path()).unwrap().join("spec.toml");
+        std::fs::write(&path, text).unwrap();
+        SysrootSpec::load(&path)
+    }
+
+    #[test]
+    fn a_printed_builtin_spec_loads_back_unchanged() {
+        for (tuple, llvm) in [
+            ("riscv64-unknown-linux-gnu", false),
+            ("x86_64-unknown-linux-musl", true),
+            ("arm-none-eabi", false),
+        ] {
+            let spec = builtin(tuple, llvm);
+            assert_eq!(
+                load_text(&spec.to_toml().unwrap()).unwrap(),
+                spec,
+                "{tuple}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_spec_asking_for_what_the_bootstrap_ignores_is_refused() {
+        let gnu = builtin("riscv64-unknown-linux-gnu", false)
+            .to_toml()
+            .unwrap();
+        for (from, to, why) in [
+            (
+                "\"sys-devel/gcc\"",
+                "\"sys-devel/gcc:16\"",
+                "version and slot constraints",
+            ),
+            (
+                "\"sys-libs/glibc\"",
+                "\"sys-libs/musl\"",
+                "the toolchain packages must be",
+            ),
+            (
+                "[system]\n",
+                "[system]\nexceptions.gcc = [\"dev-lang/perl\"]\n",
+                "not supported yet",
+            ),
+        ] {
+            assert!(gnu.contains(from), "{from}");
+            let err = load_text(&gnu.replacen(from, to, 1)).unwrap_err();
+            assert!(format!("{err:#}").contains(why), "{to}: {err:#}");
+        }
     }
 
     #[test]

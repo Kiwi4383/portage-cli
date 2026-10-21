@@ -36,7 +36,10 @@ Which tree this invocation reads and writes.
 
   A bare `--local` takes the next word as DIR.
 * `--config-root <PATH>` — Read config (profile, make.conf) from this root instead of `--root`
-* `-T, --target <TUPLE>` — Cross-build/setup for a crossdev target tuple
+* `-T, --target <TARGET>` — Cross-build/setup for a crossdev target tuple, or a spec file describing one
+
+  A value containing `/` or ending in `.toml` is a spec file, in the form
+  `em crossdev --print-spec` prints; its `tuple` is the target.
 
   The single source for "which tuple" everywhere: `em crossdev --target T --init-target`
   sets T up; `em stages --target T --stage1` (or any plain atom build) resolves/installs

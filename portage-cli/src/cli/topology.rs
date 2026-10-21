@@ -22,8 +22,10 @@
 //!
 //! `Helper`/`Worker`/`Portageq`/`Grep`/`Atom`/`Completion` get none of this.
 
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 use portage_resolve::Roots;
+
+use crate::crossdev::spec::SysrootSpec;
 
 /// Topology after resolving CLI flags + optional `em active` registration
 ///
@@ -39,6 +41,47 @@ enum TopologySource {
     /// it (`base_roots`), so this variant carries no payload.
     Root,
     Host,
+}
+
+/// `--target`'s value: a built-in tuple, or a spec file read when parsed
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TargetArg {
+    /// A tuple whose built-in spec applies
+    Tuple(String),
+    /// A spec file's contents
+    Spec(Box<SysrootSpec>),
+}
+
+impl TargetArg {
+    /// The target tuple
+    pub fn tuple(&self) -> &str {
+        match self {
+            Self::Tuple(tuple) => tuple,
+            Self::Spec(spec) => &spec.tuple,
+        }
+    }
+
+    /// The spec a file gave, if the value was one
+    pub fn spec(&self) -> Option<&SysrootSpec> {
+        match self {
+            Self::Tuple(_) => None,
+            Self::Spec(spec) => Some(spec),
+        }
+    }
+}
+
+impl std::str::FromStr for TargetArg {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.contains('/') || s.ends_with(".toml") {
+            SysrootSpec::load(Utf8Path::new(s))
+                .map(|spec| Self::Spec(Box::new(spec)))
+                .map_err(|e| format!("{e:#}"))
+        } else {
+            Ok(Self::Tuple(s.to_owned()))
+        }
+    }
 }
 
 /// `s.as_deref()` parsed as a path, or `None`
@@ -74,7 +117,10 @@ pub struct Topology {
     #[arg(long, global, value_name = "PATH", hint = "dir")]
     pub config_root: Option<String>,
 
-    /// Cross-build/setup for a crossdev target tuple
+    /// Cross-build/setup for a crossdev target tuple, or a spec file describing one
+    ///
+    /// A value containing `/` or ending in `.toml` is a spec file, in the form
+    /// `em crossdev --print-spec` prints; its `tuple` is the target.
     ///
     /// The single source for "which tuple" everywhere: `em crossdev --target T --init-target`
     /// sets T up; `em stages --target T --stage1` (or any plain atom build) resolves/installs
@@ -84,8 +130,8 @@ pub struct Topology {
     /// Cross context (CHOST/CBUILD, `--root-deps=rdeps`) is read from the
     /// sysroot make.conf. One flag for both roles — `crossdev` no longer
     /// has its own `-t`/`--target`.
-    #[arg(long, short = 'T', global, value_name = "TUPLE")]
-    pub target: Option<String>,
+    #[arg(from_str, long, short = 'T', global, value_name = "TARGET")]
+    pub target: Option<TargetArg>,
 }
 
 /// Installation root override — the offset an applet installs into / queries.
@@ -133,7 +179,10 @@ pub struct RootedTopology {
     #[arg(long, global, value_name = "PATH", hint = "dir")]
     pub config_root: Option<String>,
 
-    /// Cross-build/setup for a crossdev target tuple
+    /// Cross-build/setup for a crossdev target tuple, or a spec file describing one
+    ///
+    /// A value containing `/` or ending in `.toml` is a spec file, in the form
+    /// `em crossdev --print-spec` prints; its `tuple` is the target.
     ///
     /// The single source for "which tuple" everywhere: `em crossdev --target T --init-target`
     /// sets T up; `em stages --target T --stage1` (or any plain atom build) resolves/installs
@@ -143,8 +192,8 @@ pub struct RootedTopology {
     /// Cross context (CHOST/CBUILD, `--root-deps=rdeps`) is read from the
     /// sysroot make.conf. One flag for both roles — `crossdev` no longer
     /// has its own `-t`/`--target`.
-    #[arg(long, short = 'T', global, value_name = "TUPLE")]
-    pub target: Option<String>,
+    #[arg(from_str, long, short = 'T', global, value_name = "TARGET")]
+    pub target: Option<TargetArg>,
 
     /// Installation root (the offset an applet installs into / queries)
     #[arg(long, global, value_name = "PATH", hint = "dir")]
@@ -203,8 +252,8 @@ pub struct RootTopology {
     pub config_root: Option<String>,
 
     /// Cross-build/setup for a crossdev target tuple
-    #[arg(long, short = 'T', hide, value_name = "TUPLE")]
-    pub target: Option<String>,
+    #[arg(from_str, long, short = 'T', hide, value_name = "TARGET")]
+    pub target: Option<TargetArg>,
 
     /// Prefix-position `--root` for default emerge. Not global; must not
     /// leak into crossdev/active/worker.
@@ -261,7 +310,7 @@ impl Topology {
         // not base_roots's BROOT (host /). Under --prefix the cross sysroot is
         // <prefix>/usr/<tuple>, and base_roots's merge_root is the host — so
         // derive the sysroot from the overlay's prefix (eprefix) when set.
-        let Some(tuple) = self.target.as_deref() else {
+        let Some(tuple) = self.target.as_ref().map(TargetArg::tuple) else {
             return self.outer_roots(root);
         };
         // The outer EROOT the sysroot sits under: `outer_roots().eprefix()`

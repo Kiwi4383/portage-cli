@@ -101,13 +101,39 @@ pub async fn run(args: &CrossdevArgs, globals: &Cli) -> Result<()> {
     let tuple = globals
         .target()
         .ok_or_else(|| anyhow::anyhow!("em crossdev needs a target tuple: pass --target/-T"))?;
-    let mut target = CrossTarget::parse(&tuple, args.llvm)?;
-    if target.llvm {
-        target.llvm_slot = llvm_slot(&globals.base_roots(), &main_repo(globals)?);
-    }
-
     let extras = ex_pkg_atoms(args)?;
-    let spec = spec::SysrootSpec::builtin(&target, &extras);
+    let (target, spec) = match globals.target_spec() {
+        Some(mut spec) => {
+            anyhow::ensure!(
+                !args.llvm,
+                "-L/--llvm picks a built-in target's toolchain; a spec file names its own"
+            );
+            let mut target = spec.cross_target()?;
+            if target.llvm {
+                target.llvm_slot = match spec.llvm_slot() {
+                    Some(slot) => Some(slot.parse().with_context(|| format!("LLVM slot {slot}"))?),
+                    None => llvm_slot(&globals.base_roots(), &main_repo(globals)?),
+                };
+                if let Some(slot) = target.llvm_slot {
+                    spec.bind_llvm_slot(slot);
+                }
+            }
+            for cpn in extras.iter().copied() {
+                if !spec.extras().contains(&cpn) {
+                    spec.extra.push(Dep::new(cpn));
+                }
+            }
+            (target, spec)
+        }
+        None => {
+            let mut target = CrossTarget::parse(&tuple, args.llvm)?;
+            if target.llvm {
+                target.llvm_slot = llvm_slot(&globals.base_roots(), &main_repo(globals)?);
+            }
+            let spec = spec::SysrootSpec::builtin(&target, &extras);
+            (target, spec)
+        }
+    };
 
     if args.show_target_cfg {
         show_target_cfg(&target, globals, &extras);

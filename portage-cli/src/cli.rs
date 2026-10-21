@@ -335,7 +335,15 @@ impl Cli {
 
     /// The active `--target` tuple, if any.
     pub(crate) fn target(&self) -> Option<String> {
-        self.topology_and_root().0.target
+        self.topology_and_root()
+            .0
+            .target
+            .map(|t| t.tuple().to_owned())
+    }
+
+    /// The spec file `--target` named, if it named one
+    pub(crate) fn target_spec(&self) -> Option<crate::crossdev::spec::SysrootSpec> {
+        self.topology_and_root().0.target?.spec().cloned()
     }
 
     /// The dispatched applet's own `--vdb` override, if any — a read-only
@@ -731,6 +739,37 @@ mod tests {
         assert_eq!(r.merge_root().as_str(), "/srv/x");
         assert_eq!(r.target().unwrap().as_str(), "/srv/x");
         assert_eq!(r.build_sysroot().unwrap().as_str(), sysroot);
+    }
+
+    #[test]
+    fn target_takes_a_spec_file_and_reads_its_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("board.toml");
+        let target =
+            crate::crossdev::target::CrossTarget::parse("riscv64-unknown-linux-gnu", false)
+                .unwrap();
+        let mut spec = crate::crossdev::spec::SysrootSpec::builtin(&target, &[]);
+        spec.cflags = "-O3 -march=rva23u64 -pipe".into();
+        std::fs::write(&path, spec.to_toml().unwrap()).unwrap();
+
+        let cli = emerge(["--target", path.to_str().unwrap(), "-p", "sys-libs/zlib"]);
+        assert_eq!(cli.target().as_deref(), Some("riscv64-unknown-linux-gnu"));
+        assert_eq!(cli.target_spec(), Some(spec));
+        assert_eq!(
+            cli.roots().merge_root().as_str(),
+            "/usr/riscv64-unknown-linux-gnu"
+        );
+
+        let tuple = emerge([
+            "--target",
+            "riscv64-unknown-linux-gnu",
+            "-p",
+            "sys-libs/zlib",
+        ]);
+        assert_eq!(tuple.target_spec(), None);
+        assert!(
+            parse_cli_into(&["em", "--target", "./missing.toml", "-p", "sys-libs/zlib"]).is_err()
+        );
     }
 
     #[test]

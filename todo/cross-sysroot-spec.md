@@ -2,7 +2,7 @@
 
 Status: 🟡 design agreed 2026-10-07 (Luca); step 1 done 2026-10-08 (the
 built-in spec and `--print-spec`), step 2 mostly done 2026-10-09 (see
-"Progress"), steps 3–5 open. Supersedes
+"Progress"), step 3's loading done 2026-10-21 (saving waits on spec versus profile), steps 4–5 open. Supersedes
 the flag-based approach in [[crossdev-gcc-version-flag]], whose first
 implementation (`--gcc`/`--libc`/… writing exact pins) was dropped as the
 wrong shape.
@@ -250,3 +250,17 @@ actually asks for it.
 - **Crate home: not yet.** First plan what the shared surface has to
   hold, then pick the crate. Until then target and spec stay where they
   are, in `portage-cli`'s crossdev module.
+
+## Progress (2026-10-21): step 3, loading
+
+`--target` takes a spec file (anything with `/` or ending in `.toml`); the value is read and checked when the
+command line is parsed, so every command gets the file's tuple and `em crossdev` builds from the file
+(`TargetArg` in `cli/topology.rs`, `SysrootSpec::load`). `--ex-pkg` adds to the file's `extra`.
+
+Refused when read, until step 4 makes them take effect: version or slot constraints on toolchain packages
+(the clang slot excepted), toolchain packages other than the tuple's built-in ones, `libc.built-by` differing
+from `system.built-by`, and `exceptions`. Live-checked in sandbox `em-r1-board`: an edited `cflags` reached the
+sysroot's `make.conf` through `--init-target`, and a `sys-devel/gcc:16` pin was refused.
+
+Not done: saving the spec in the sysroot and reading it back (waits on the spec-versus-profile decision), so a
+later bare-tuple invocation uses the built-in again; persistent `extra`.

@@ -1500,7 +1500,6 @@ mod tests {
     // *system* set). The temp dir acts as the repo root for the walk-up in
     // `enclosing_repo` (writing `metadata/layout.conf` there).
 
-    /// Write a `metadata/layout.conf` body at `dir` (the repo root)
     /// A `gentoo` repo with `profiles/base`, an overlay declaring `formats` with
     /// `profiles/leaf/parent` set to `parent`, and a config root naming both
     fn overlay_profile(parent: &str, formats: &str) -> (TempDir, PathBuf, PathBuf) {
@@ -1588,6 +1587,7 @@ mod tests {
         );
     }
 
+    /// Write a `metadata/layout.conf` body at `dir` (the repo root)
     fn write_layout_conf(dir: &TempDir, body: &str) {
         std::fs::create_dir_all(dir.path().join("metadata")).unwrap();
         std::fs::write(dir.path().join("metadata").join("layout.conf"), body).unwrap();

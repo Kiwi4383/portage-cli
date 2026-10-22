@@ -104,10 +104,7 @@ pub async fn run(args: &CrossdevArgs, globals: &Cli) -> Result<()> {
         .target()
         .ok_or_else(|| anyhow::anyhow!("em crossdev needs a target tuple: pass --target/-T"))?;
     let extras = ex_pkg_atoms(args)?;
-    let own = match globals.target_spec() {
-        Some(spec) => Some(spec),
-        None => saved_spec(globals)?,
-    };
+    let own = own_spec(globals)?;
     // A spec from a file, or saved by an earlier one, gets the sysroot its own profile.
     let own_profile = own.is_some();
     let (target, spec) = match own {
@@ -840,20 +837,17 @@ async fn run_stage1(args: &crate::cli::StagesArgs, globals: &Cli) -> Result<()> 
         plan.steps.len()
     )
     .ok();
-    // Conf-layer `USE=-*` wipes IUSE `+` defaults (Portage-identical), so
-    // packages like app-alternatives/* violate REQUIRED_USE until Level-C
-    // cedes those flags. Always enable --autosolve-use; cede prefers the
-    // ebuild's + IUSE default when the config left the flag off.
     // Stage1's `USE="-* build"` resets the spec's `package-use`, which states what its
     // toolchain needs; carry it above the reset.
-    let spec_use = match globals
-        .target_spec()
-        .map_or_else(|| saved_spec(globals), |s| Ok(Some(s)))?
-    {
+    let spec_use = match own_spec(globals)? {
         Some(spec) => DerivedProfile::of(&spec)?.use_overrides(),
         None => Vec::new(),
     };
     let mut stage1_merge = with_buildpkg(globals.merge_flags());
+    // Conf-layer `USE=-*` wipes IUSE `+` defaults (Portage-identical), so
+    // packages like app-alternatives/* violate REQUIRED_USE until Level-C
+    // cedes those flags. Always enable --autosolve-use; cede prefers the
+    // ebuild's + IUSE default when the config left the flag off.
     stage1_merge.autosolve_use = true;
     run_staged(
         RunStagedOpts {
@@ -1764,6 +1758,14 @@ const SPEC_REPO_DIR: &str = "var/db/repos/cross-sysroot";
 const SPEC_PROFILE: &str = "profiles/sysroot";
 /// The spec, saved beside the profile it derives
 const SPEC_FILE: &str = "cross-sysroot.toml";
+
+/// The spec file given as `--target`, else the one an earlier `--init-target` saved
+fn own_spec(globals: &Cli) -> Result<Option<spec::SysrootSpec>> {
+    match globals.target_spec() {
+        Some(spec) => Ok(Some(spec)),
+        None => saved_spec(globals),
+    }
+}
 
 /// The spec saved in the sysroot by an earlier `--init-target` with a spec file, if
 /// `make.profile` links to the profile holding one

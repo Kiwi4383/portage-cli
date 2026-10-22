@@ -120,7 +120,6 @@ fn normalize(path: &Utf8Path) -> Utf8PathBuf {
     out
 }
 
-/// Run both passes over the image; returns counts for the caller to report
 /// A command for `program`, run with the build's `PATH`
 fn tool(program: &str, cfg: &PostProcess) -> std::process::Command {
     let mut cmd = std::process::Command::new(program);
@@ -130,6 +129,7 @@ fn tool(program: &str, cfg: &PostProcess) -> std::process::Command {
     cmd
 }
 
+/// Run both passes over the image; returns counts for the caller to report
 pub fn post_process_image(image_dir: &Utf8Path, cfg: &PostProcess) -> Result<PostStats> {
     let mut stats = PostStats::default();
     if !image_dir.exists() {

@@ -2,6 +2,7 @@ pub(crate) mod commands;
 pub mod env;
 pub(crate) mod profile;
 pub(crate) mod pty;
+pub mod settings;
 pub mod shell;
 pub(crate) mod stubs;
 pub mod terminal;
@@ -9,7 +10,8 @@ pub(crate) mod ver_funcs;
 
 pub use commands::inherit;
 pub use env::EbuildEnv;
-pub use profile::ConfSource;
+pub use profile::{ConfSource, Environment};
+pub use settings::{Layer, Setting, Settings, SettingsSources};
 pub use shell::{EbuildShell, MergeType, PhaseSession, phase_path_dirs, run_helper};
 pub use terminal::{PortageColors, TerminalConfig};
 

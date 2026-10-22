@@ -31,12 +31,27 @@ impl Environment {
     pub fn get(&self, name: &str) -> Option<&str> {
         self.0.get(name).map(String::as_str)
     }
+
+    /// Every variable, by name
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.0.iter().map(|(k, v)| (k.as_str(), v.as_str()))
+    }
+}
+
+impl<K: Into<String>, V: Into<String>> FromIterator<(K, V)> for Environment {
+    fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
+        Self(
+            iter.into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
+        )
+    }
 }
 
 /// Merge a stacked variable's layers. `USE` preserves explicit disables
 /// (`-flag` kept so it can override a `+flag` IUSE default per package); the
 /// `ACCEPT_*` lists keep their negations; every other incremental var drops them.
-fn merge_use_var<'a>(var: &str, iter: impl Iterator<Item = &'a str>) -> Vec<String> {
+pub(super) fn merge_use_var<'a>(var: &str, iter: impl Iterator<Item = &'a str>) -> Vec<String> {
     match var {
         "USE" => merge_flag_lists_signed(iter),
         "ACCEPT_LICENSE" | "ACCEPT_PROPERTIES" | "ACCEPT_RESTRICT" => merge_accept_lists(iter),
@@ -67,7 +82,9 @@ const INCREMENTAL_VARS: &[&str] = &[
     "ACCEPT_RESTRICT",
     "CONFIG_PROTECT",
     "CONFIG_PROTECT_MASK",
+    "ENV_UNSET",
     "IUSE_IMPLICIT",
+    "PROFILE_ONLY_VARIABLES",
 ];
 
 impl Profile {
@@ -154,7 +171,16 @@ impl ProfileStack {
         let mut layers: Vec<ProfileEnvLayer> = Vec::new();
         // External accumulator: keeps the merged state per incremental var.
         // Keys are always drawn from INCREMENTAL_VARS, hence &'static str.
-        let mut acc: HashMap<&'static str, String> = HashMap::new();
+        // Seeded with what lower layers (env.d, make.globals) left in the shell.
+        let mut acc: HashMap<&'static str, String> = INCREMENTAL_VARS
+            .iter()
+            .filter_map(|&v| {
+                shell
+                    .get_var(v)
+                    .filter(|val| !val.is_empty())
+                    .map(|val| (v, val))
+            })
+            .collect();
         // Raw accumulated value of each USE_EXPAND-listed variable
         // (VIDEO_CARDS, L10N, …) across the profile chain, so `${VIDEO_CARDS}`
         // etc. stay visible to later layers/the ebuild env. Dynamic keys,
@@ -391,14 +417,44 @@ pub struct ResolvedUse {
 /// [`ResolvedUse::disabled`]; `use.force` clears a flag from that set.
 ///
 /// The shell's bash state is updated as a side-effect.
-async fn resolve_use_flags(
+pub(super) async fn resolve_use_flags(
     shell: &mut EbuildShell,
     stack: &ProfileStack,
     extra_confs: &[ConfSource<'_>],
     extra_use_override: Option<&str>,
     env: &Environment,
 ) -> Result<ResolvedUse> {
+    resolve_use_flags_observed(
+        shell,
+        stack,
+        extra_confs,
+        extra_use_override,
+        env,
+        &mut |_, _| {},
+    )
+    .await
+}
+
+/// The points of [`resolve_use_flags_observed`] at which the shell holds one more layer
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Stage {
+    /// After the profile stack's `make.defaults`
+    Defaults,
+    /// After `make.conf` and any override
+    Conf,
+}
+
+/// [`resolve_use_flags`], calling `observe` with the shell as each [`Stage`] is reached
+pub(super) async fn resolve_use_flags_observed(
+    shell: &mut EbuildShell,
+    stack: &ProfileStack,
+    extra_confs: &[ConfSource<'_>],
+    extra_use_override: Option<&str>,
+    env: &Environment,
+    observe: &mut dyn FnMut(Stage, &EbuildShell),
+) -> Result<ResolvedUse> {
     let ProfileEnv { layers } = stack.profile_env(shell).await?;
+    observe(Stage::Defaults, shell);
     let defaults_use = shell.get_var("USE").unwrap_or_default();
     let profile_defaults: Vec<(std::path::PathBuf, String)> =
         layers.into_iter().map(|l| (l.path, l.use_tokens)).collect();
@@ -425,6 +481,7 @@ async fn resolve_use_flags(
         }
     }
     let conf_use = merge_flag_lists_signed(conf_deltas.iter().map(String::as_str)).join(" ");
+    observe(Stage::Conf, shell);
 
     // The environment layer's own explicit `USE_EXPAND` assignments — same
     // non-incremental group replace as a conf layer's, one layer higher.
@@ -654,7 +711,7 @@ pub enum ConfSource<'a> {
 }
 
 /// One conf-layer's own incremental contribution (not merged with saved state).
-struct IncrementalContribution {
+pub(super) struct IncrementalContribution {
     expand_assigned: Vec<String>,
     use_delta: String,
 }
@@ -674,7 +731,7 @@ struct IncrementalContribution {
 /// Returns the `USE_EXPAND`-listed variables this layer explicitly assigned,
 /// so the caller can surface them as [`ResolvedUse::conf_expand_assigned`] —
 /// the flat `USE` strip below can't reach the per-package IUSE defaults.
-async fn source_incremental(
+pub(super) async fn source_incremental(
     shell: &mut EbuildShell,
     source: ConfSource<'_>,
 ) -> Result<IncrementalContribution> {

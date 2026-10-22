@@ -122,9 +122,16 @@ from memory. Both halves are values that the files are rendered from, so the two
 sysroot steps through `SysrootOverride`; and the host's cross-category keywords, masks and unmasks
 (`host_cross_config`), handed to the `cross-*` steps as a `PendingConfig`.
 
+## Resuming `--setup`
+
+`--setup` rebuilds every step, like real crossdev, and records each completed one in
+`<sysroot>/var/lib/em/crossdev-setup.json` (the spec, the step's atoms and USE, the installed packages it produced).
+`--setup -r` skips steps from the start while the record holds: same spec, same step, those packages still
+installed. The first step that does not hold runs again, and every step after it, so a changed spec rebuilds from
+the start. It resumes, it does not upgrade: a newer version in the tree does not invalidate a recorded step.
+
 ## Still open
 
-- **`--setup` is not idempotent**: a rerun reinstalls every step.
 - **Cross and target gcc can differ** within a pin: the host side accepts unkeyworded snapshots (`**`), the
   sysroot only the target's keywords.
 - **`cflags`** still goes to the sysroot's `make.conf`; the derived profile's `make.defaults` is the natural place.

@@ -311,6 +311,8 @@ root, `/target`. `--target T` is documented as sugar for
   only, so a changed pin needs `--init-target` as well. Needed: a
   documented "re-run with changed spec" invocation that is safe to issue
   every time.
+  **Done 2026-10-22:** `em crossdev --setup -r` skips the steps a recorded earlier run completed and reruns from
+  the first that changed (a changed spec reruns all); plain `--setup` still rebuilds every step.
 
 ### R3 — Stage semantics the caller can choose
 

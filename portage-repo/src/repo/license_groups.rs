@@ -79,7 +79,10 @@ fn classify_license_token(token: &str) -> Result<GroupEntry<Interned<DefaultInte
 }
 
 /// Effective `ACCEPT_LICENSE` after expanding `@GROUP` tokens and applying
-/// `-` denials (portage `accept_license` semantics).
+/// `-` denials (portage `accept_license` semantics)
+///
+/// Tokens apply in order: a later `x` accepts what an earlier `-@GROUP` denied, and a
+/// later `*` accepts everything again.
 #[derive(Debug, Clone, Default)]
 pub struct AcceptSet {
     /// `*` was present among allow tokens
@@ -114,6 +117,7 @@ impl AcceptSet {
                     continue;
                 }
                 out.allow_all = true;
+                out.denied.clear();
                 continue;
             }
             if let Some(name) = group_ref_name(raw) {
@@ -141,8 +145,10 @@ impl AcceptSet {
 
     fn insert(&mut self, deny: bool, lic: Interned<DefaultInterner>) {
         if deny {
+            self.allowed.remove(&lic);
             self.denied.insert(lic);
         } else {
+            self.denied.remove(&lic);
             self.allowed.insert(lic);
         }
     }
@@ -153,8 +159,8 @@ impl AcceptSet {
     /// When `other` was built from a token list that included `-*`
     /// ([`AcceptSet::cleared`]), replace allow_all/allowed with other's
     /// post-clear state (so `-* @FREE` can restrict a global `*`).
-    /// Otherwise union sets and OR `allow_all` (additive package.license
-    /// lines).
+    /// Otherwise `other`'s tokens apply after this list's, as Portage appends a
+    /// package.license line to the global list.
     pub fn merge(&mut self, other: &AcceptSet) {
         if other.cleared {
             self.allow_all = other.allow_all;
@@ -163,9 +169,16 @@ impl AcceptSet {
             self.cleared = true;
             return;
         }
-        self.allow_all |= other.allow_all;
-        self.allowed.extend(other.allowed.iter().copied());
-        self.denied.extend(other.denied.iter().copied());
+        if other.allow_all {
+            self.allow_all = true;
+            self.denied.clear();
+        }
+        for &lic in &other.allowed {
+            self.insert(false, lic);
+        }
+        for &lic in &other.denied {
+            self.insert(true, lic);
+        }
     }
 
     /// Whether a single license identifier is accepted
@@ -357,6 +370,26 @@ OSI Apache-2.0
         let acc = AcceptSet::from_tokens(&["*".into(), "-MIT".into()], &reg);
         assert!(acc.accepts("GPL-2"));
         assert!(!acc.accepts("MIT"));
+    }
+
+    #[test]
+    fn a_later_token_accepts_what_an_earlier_group_denial_refused() {
+        let reg = LicenseGroupRegistry::parse("EULA geekbench RAR\n");
+        let deny_eula = ["*".into(), "-@EULA".into()];
+        let global = AcceptSet::from_tokens(&deny_eula, &reg);
+        assert!(!global.accepts("geekbench"));
+
+        let mut env = deny_eula.to_vec();
+        env.push("geekbench".into());
+        let env = AcceptSet::from_tokens(&env, &reg);
+        assert!(env.accepts("geekbench"));
+        assert!(!env.accepts("RAR"));
+
+        // A package.license line applies after the global list.
+        let mut pkg = global.clone();
+        pkg.merge(&AcceptSet::from_tokens(&["geekbench".into()], &reg));
+        assert!(pkg.accepts("geekbench"));
+        assert!(!pkg.accepts("RAR"));
     }
 
     #[test]

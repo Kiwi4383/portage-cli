@@ -254,21 +254,17 @@ async fn compute_use_env(
     }
     let license_groups = LicenseGroupRegistry::from_repo(repo)
         .map_err(|e| anyhow::anyhow!("failed to load license groups: {e}"))?;
-    let accept_license_tokens = {
-        let from_profile = {
-            let v = split_var("ACCEPT_LICENSE");
-            if v.is_empty() {
-                vec!["*".to_string()]
-            } else {
-                v
-            }
-        };
-        // Portage honours ACCEPT_LICENSE from the process environment.
-        match std::env::var("ACCEPT_LICENSE") {
-            Ok(env) if !env.is_empty() => env.split_whitespace().map(str::to_string).collect(),
-            _ => from_profile,
+    // The `ACCEPT_*` lists arrive stacked, the process environment included; an empty one
+    // takes Portage's default.
+    let accept_list = |name: &str, default: &str| {
+        let v = split_var(name);
+        if v.is_empty() {
+            default.split_whitespace().map(str::to_string).collect()
+        } else {
+            v
         }
     };
+    let accept_license_tokens = accept_list("ACCEPT_LICENSE", "* -@EULA");
     let accept_license = AcceptSet::from_tokens(&accept_license_tokens, &license_groups);
 
     // Per-package `package.license`, in portage's precedence order: profile
@@ -292,21 +288,10 @@ async fn compute_use_env(
     }
 
     // ACCEPT_PROPERTIES / ACCEPT_RESTRICT: same shape as ACCEPT_LICENSE minus
-    // @GROUP support (no license-group registry to load or pass), process env
-    // overrides the profile/make.conf value, default "*" (accept everything —
-    // portage's make.globals default, why these gates almost never mask).
+    // @GROUP support (no license-group registry to load or pass), default "*"
+    // (accept everything — why these gates almost never mask).
     let no_groups = LicenseGroupRegistry::default();
-    let accept_properties_tokens = match std::env::var("ACCEPT_PROPERTIES") {
-        Ok(env) if !env.is_empty() => env.split_whitespace().map(str::to_string).collect(),
-        _ => {
-            let v = split_var("ACCEPT_PROPERTIES");
-            if v.is_empty() {
-                vec!["*".to_string()]
-            } else {
-                v
-            }
-        }
-    };
+    let accept_properties_tokens = accept_list("ACCEPT_PROPERTIES", "*");
     let accept_properties = AcceptSet::from_tokens_plain(&accept_properties_tokens);
     let mut package_properties: Vec<(Dep, AcceptSet)> =
         load_package_license(portage_dir.join("package.properties").as_str(), &no_groups);
@@ -317,17 +302,7 @@ async fn compute_use_env(
         ));
     }
 
-    let accept_restrict_tokens = match std::env::var("ACCEPT_RESTRICT") {
-        Ok(env) if !env.is_empty() => env.split_whitespace().map(str::to_string).collect(),
-        _ => {
-            let v = split_var("ACCEPT_RESTRICT");
-            if v.is_empty() {
-                vec!["*".to_string()]
-            } else {
-                v
-            }
-        }
-    };
+    let accept_restrict_tokens = accept_list("ACCEPT_RESTRICT", "*");
     let accept_restrict = AcceptSet::from_tokens_plain(&accept_restrict_tokens);
     let mut package_restrict: Vec<(Dep, AcceptSet)> = load_package_license(
         portage_dir.join("package.accept_restrict").as_str(),

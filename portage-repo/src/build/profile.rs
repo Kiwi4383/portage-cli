@@ -547,8 +547,8 @@ fn strip_expand_tokens(use_str: &str, var: &str) -> String {
         .join(" ")
 }
 
-/// Merge process-environment USE variables into the shell as a final
-/// incremental layer: `USE`/`USE_EXPAND_UNPREFIXED` merge with the
+/// Merge process-environment USE and `ACCEPT_*` variables into the shell as a final
+/// incremental layer: `USE`/`USE_EXPAND_UNPREFIXED` and the `ACCEPT_*` lists merge with the
 /// accumulated state (`-`-prefixed tokens remove); a `USE_EXPAND` variable
 /// present in the environment gets the same non-incremental replace
 /// [`source_incremental`] applies to make.conf, one layer higher (so it
@@ -582,6 +582,13 @@ async fn apply_env_layer(shell: &mut EbuildShell) -> Result<()> {
         if expand_keys.contains(var) {
             continue;
         }
+        if let Ok(env_val) = std::env::var(var) {
+            let existing = shell.get_var(var).unwrap_or_default();
+            let merged = merge_use_var(var, [existing.as_str(), env_val.as_str()].into_iter());
+            restore += &format!("{}={}\n", var, shell_quote(&merged.join(" ")));
+        }
+    }
+    for var in ["ACCEPT_LICENSE", "ACCEPT_PROPERTIES", "ACCEPT_RESTRICT"] {
         if let Ok(env_val) = std::env::var(var) {
             let existing = shell.get_var(var).unwrap_or_default();
             let merged = merge_use_var(var, [existing.as_str(), env_val.as_str()].into_iter());

@@ -184,16 +184,32 @@ struct Info {
     unset: Vec<String>,
 }
 
+/// The main repo and a shell holding the profile and make.conf stack of the config root `cli`
+/// selects, with whether a profile was found
+///
+/// `terminal` goes in before the stack, so make.conf can still override `NOCOLOR`.
+pub(crate) async fn profile_shell(
+    cli: &Cli,
+    terminal: Option<portage_repo::TerminalConfig>,
+) -> Result<(portage_repo::Repository, portage_repo::EbuildShell, bool)> {
+    let roots = cli.roots();
+    let repo = crate::crossdev::main_repo(cli)?;
+    let mut shell = repo.shell().await.context("creating shell")?;
+    if let Some(terminal) = terminal {
+        shell.set_terminal(terminal);
+    }
+    let has_profile =
+        crate::ebuild::apply_profile_env(&mut shell, roots.config(), roots.config_overlay())
+            .await?;
+    Ok((repo, shell, has_profile))
+}
+
 pub(crate) async fn run(cli: &Cli) -> Result<()> {
     let roots = cli.roots();
     let config_root = roots.config().unwrap_or(Utf8Path::new("/"));
 
-    let repo = crate::crossdev::main_repo(cli)?;
-    let mut shell = repo.shell().await.context("creating shell")?;
-    shell.set_terminal(crate::style::terminal_config());
-    let has_profile =
-        crate::ebuild::apply_profile_env(&mut shell, roots.config(), roots.config_overlay())
-            .await?;
+    let (repo, shell, has_profile) =
+        profile_shell(cli, Some(crate::style::terminal_config())).await?;
 
     let profile = crate::select::profile::current_profile(cli, &repo);
     let chost = shell.get_var("CHOST");
@@ -641,7 +657,7 @@ async fn toolchain_versions(
 ///   via `ebuild::elog_setting`.
 ///
 /// - Everything else: plain `shell.get_var`.
-fn resolve_info_var(shell: &portage_repo::EbuildShell, name: &str) -> Option<String> {
+pub(crate) fn resolve_info_var(shell: &portage_repo::EbuildShell, name: &str) -> Option<String> {
     match name {
         "LANG" => std::env::var("LANG").ok().filter(|v| !v.is_empty()),
         "DISTDIR" | "PKGDIR" | "PORTAGE_TMPDIR" | "GENTOO_MIRRORS" => {

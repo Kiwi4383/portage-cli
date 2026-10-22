@@ -2344,6 +2344,16 @@ impl EbuildShell {
             .find(|p| p.is_file())
     }
 
+    /// The names of the variables the shell holds, bash's own internals left out
+    pub fn var_names(&self) -> Vec<String> {
+        self.shell
+            .env()
+            .iter()
+            .map(|(name, _)| name.clone())
+            .filter(|name| !is_bash_internal_var(name))
+            .collect()
+    }
+
     /// Read a variable from the shell environment
     pub fn get_var(&self, name: &str) -> Option<String> {
         self.shell.env_str(name).map(|cow| cow.into_owned())

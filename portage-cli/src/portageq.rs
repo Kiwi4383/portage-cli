@@ -1,18 +1,23 @@
 //! `em portageq` — Portage's own query interface (subset)
 //!
 //! Implements the "VDB group" of real `portageq`'s subcommands
-//! (`has_version`/`best_version`/`match`/`mass_best_version`), the ones
-//! with real-world consumers. The settings, repos, metadata/contents/owners,
-//! best_visible and protect/eclass/license groups are not implemented.
+//! (`has_version`/`best_version`/`match`/`mass_best_version`) and `envvar`.
+//! The repos, metadata/contents/owners, best_visible and protect/eclass/license
+//! groups are not implemented.
 //!
-//! Every command here takes `<EROOT>` as its own positional argument (real
+//! The VDB commands take `<EROOT>` as their own positional argument (real
 //! portageq's `uses_eroot` convention), independent of `em`'s own
 //! `--root`/`--prefix`/`--local` — this applet deliberately carries none of
-//! those (see `cli/topology.rs`'s module doc).
+//! those (see `cli/topology.rs`'s module doc). `envvar` reads the config root
+//! `em`'s prefix-position `--root`/`--prefix`/`--local`/`--target` select.
 
-use anyhow::Result;
+use std::io::Write;
+
+use anyhow::{Context, Result};
 use portage_atom::{Cpv, Dep};
 use portage_vdb::{InstalledPackage, Vdb};
+
+use crate::cli::Cli;
 
 /// Real portageq's exit code when `<EROOT>` doesn't exist as a directory.
 const EROOT_NOT_A_DIRECTORY: u8 = 64;
@@ -138,9 +143,180 @@ pub(crate) fn mass_best_version(eroot: &str, atoms: &[String]) -> Result<u8> {
     Ok(0)
 }
 
+/// `envvar [-v] NAME…`: the configuration variables a build would start from, from the profile
+/// stack and `make.conf` of the config root `em`'s topology selects
+pub(crate) async fn envvar(cli: &Cli, verbose: bool, names: &[String]) -> Result<u8> {
+    let (_, shell, _) = crate::info::profile_shell(cli, None).await?;
+    let repos = cli.roots().repos_conf().context("reading repos.conf")?;
+    let (portdir, overlays) = repo_locations(&repos);
+    let lookup = |name: &str| match name {
+        "PORTDIR" => portdir.clone(),
+        "PORTDIR_OVERLAY" => Some(overlays.clone()),
+        _ => crate::info::resolve_info_var(&shell, name),
+    };
+    let all = || shell.var_names();
+    let mut out = std::io::stdout().lock();
+    print_envvar(
+        lookup,
+        all,
+        verbose,
+        names,
+        &mut out,
+        &mut std::io::stderr(),
+    )
+    .context("writing envvar output")
+}
+
+/// `PORTDIR` and `PORTDIR_OVERLAY` as Portage derives them: the main repo's location, and every
+/// other repo's, space-separated
+fn repo_locations(repos: &portage_repo::ReposConf) -> (Option<String>, String) {
+    let main = repos.main_repo().map(|r| r.name);
+    let location =
+        |r: &portage_repo::RepoEntry| r.location.as_path().map(|p| p.display().to_string());
+    let overlays: Vec<String> = repos
+        .repos()
+        .iter()
+        .filter(|r| Some(r.name) != main)
+        .filter_map(location)
+        .collect();
+    (repos.main_repo().and_then(location), overlays.join(" "))
+}
+
+/// `envvar`'s output for `names`, given how to look one up and list them all
+///
+/// A trailing `*` expands to every variable with that prefix, in sorted order (Portage's own
+/// order is its dict's). An unset variable prints an empty value and makes the status 1.
+fn print_envvar(
+    lookup: impl Fn(&str) -> Option<String>,
+    all: impl Fn() -> Vec<String>,
+    verbose: bool,
+    names: &[String],
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> std::io::Result<u8> {
+    let mut status = 0;
+    for name in names {
+        if matches!(name.as_str(), "PORTDIR" | "PORTDIR_OVERLAY" | "SYNC") {
+            writeln!(
+                err,
+                "WARNING: 'portageq envvar {name}' is deprecated. Use any of \
+                 'get_repos, get_repo_path, repos_config' instead."
+            )?;
+        }
+        let keys = match name.strip_suffix('*') {
+            Some(prefix) => {
+                let mut keys: Vec<String> = all()
+                    .into_iter()
+                    .filter(|k| k.starts_with(prefix))
+                    .collect();
+                keys.sort();
+                keys
+            }
+            None => vec![name.clone()],
+        };
+        for key in keys {
+            let value = lookup(&key).unwrap_or_else(|| {
+                status = 1;
+                String::new()
+            });
+            if verbose {
+                writeln!(out, "{key}={}", shell_quote(&value))?;
+            } else {
+                writeln!(out, "{value}")?;
+            }
+        }
+    }
+    Ok(status)
+}
+
+/// Python's `shlex.quote`: unchanged when every character is safe, else single-quoted
+fn shell_quote(value: &str) -> String {
+    let safe = |c: char| c.is_ascii_alphanumeric() || "_@%+=:,./-".contains(c);
+    if !value.is_empty() && value.chars().all(safe) {
+        value.to_owned()
+    } else {
+        format!("'{}'", value.replace('\'', "'\"'\"'"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn envvar_output(verbose: bool, names: &[&str]) -> (String, String, u8) {
+        let vars = [
+            ("CHOST", "aarch64-unknown-linux-gnu"),
+            ("CHOST_arm64", "aarch64-unknown-linux-gnu"),
+            ("CFLAGS", "-mcpu=ampere1a -O3 -pipe"),
+            ("ARCH", "arm64"),
+            ("QUOTE", "it's"),
+        ];
+        let lookup = |n: &str| {
+            vars.iter()
+                .find(|(k, _)| *k == n)
+                .map(|(_, v)| v.to_string())
+        };
+        let all = || vars.iter().map(|(k, _)| k.to_string()).collect();
+        let names: Vec<String> = names.iter().map(|n| n.to_string()).collect();
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let status = print_envvar(lookup, all, verbose, &names, &mut out, &mut err).unwrap();
+        (
+            String::from_utf8(out).unwrap(),
+            String::from_utf8(err).unwrap(),
+            status,
+        )
+    }
+
+    // Byte formats checked against portageq 3.0.82 on a Gentoo host.
+    #[test]
+    fn envvar_prints_values_like_portageq() {
+        assert_eq!(
+            envvar_output(false, &["CHOST", "NOPE", "ARCH"]),
+            (
+                "aarch64-unknown-linux-gnu\n\narm64\n".into(),
+                String::new(),
+                1
+            )
+        );
+        assert_eq!(
+            envvar_output(true, &["CHOST", "CFLAGS", "QUOTE", "NOPE"]).0,
+            "CHOST=aarch64-unknown-linux-gnu\nCFLAGS='-mcpu=ampere1a -O3 -pipe'\nQUOTE='it'\"'\"'s'\nNOPE=''\n"
+        );
+        // shlex.quote's safe set is ASCII only.
+        assert_eq!(shell_quote("caf\u{e9}"), "'caf\u{e9}'");
+        assert_eq!(
+            envvar_output(false, &["CHO*"]).0,
+            "aarch64-unknown-linux-gnu\naarch64-unknown-linux-gnu\n"
+        );
+        assert!(
+            envvar_output(false, &["PORTDIR"])
+                .1
+                .starts_with("WARNING: 'portageq envvar PORTDIR' is deprecated.")
+        );
+    }
+
+    #[test]
+    fn portdir_is_the_main_repo_and_portdir_overlay_the_rest() {
+        let root = tempfile::tempdir().unwrap();
+        let conf = root.path().join("etc/portage/repos.conf");
+        std::fs::create_dir_all(&conf).unwrap();
+        std::fs::write(
+            conf.join("repos.conf"),
+            "[DEFAULT]\nmain-repo = gentoo\n\n[gentoo]\nlocation = /r/gentoo\n\n\
+             [guru]\nlocation = /r/guru\n\n[local]\nlocation = /r/local\n",
+        )
+        .unwrap();
+        let repos = portage_repo::ReposConf::load_rooted(
+            camino::Utf8Path::from_path(root.path()).unwrap(),
+            &[],
+        )
+        .unwrap();
+        let (portdir, overlays) = repo_locations(&repos);
+        assert_eq!(portdir.as_deref(), Some("/r/gentoo"));
+        let mut overlays: Vec<&str> = overlays.split(' ').collect();
+        overlays.sort();
+        assert_eq!(overlays, ["/r/guru", "/r/local"]);
+    }
 
     /// A throwaway VDB tree: `<tmp>/var/db/pkg/<cat>/<pf>/` with the
     /// minimal files `InstalledPackage`/`slot()` need.

@@ -150,8 +150,11 @@ impl RunAsync<&cli::Cli> for MaintArgs {
 impl RunAsync<&cli::Cli> for PortageqArgs {
     type Output = Result<()>;
 
-    async fn run_async(self, _cli: &cli::Cli) -> Self::Output {
+    async fn run_async(self, cli: &cli::Cli) -> Self::Output {
         let status = match &self.command {
+            PortageqCommand::Envvar { verbose, names } => {
+                crate::portageq::envvar(cli, *verbose, names).await
+            }
             PortageqCommand::HasVersion { eroot, atom } => {
                 crate::portageq::has_version(eroot, atom)
             }

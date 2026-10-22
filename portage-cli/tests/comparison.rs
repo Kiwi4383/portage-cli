@@ -1,4 +1,4 @@
-//! Comparison tests: `em query` vs `qfile`/`qlist`/`qsize`/`equery`.
+//! Comparison tests: `em query` vs `qfile`/`qlist`/`qsize`/`equery`, and `em portageq` vs `portageq`.
 //!
 //! These tests only run on a live Gentoo system with `portage-utils` installed.
 //! They are ignored by default; run with `cargo test -- --ignored`.
@@ -178,4 +178,37 @@ fn grep_eclass_matches_qgrep() {
     em_lines.sort_unstable();
     q_lines.sort_unstable();
     assert_eq!(em_lines, q_lines);
+}
+
+/// stdout and exit status of `program args…`
+fn stdout_and_status(program: &str, args: &[&str]) -> (String, Option<i32>) {
+    let output = Command::new(program)
+        .args(args)
+        .output()
+        .expect("failed to run the command");
+    (
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        output.status.code(),
+    )
+}
+
+#[test]
+#[ignore]
+fn portageq_envvar_matches_portage() {
+    for args in [
+        &["envvar", "CHOST"][..],
+        &["envvar", "-v", "CHOST", "CFLAGS", "ACCEPT_KEYWORDS"],
+        &["envvar", "CHOST", "EM_SURELY_UNSET", "ARCH"],
+        &["envvar", "-v", "CHOST_*"],
+        &["envvar", "PORTDIR", "PORTDIR_OVERLAY"],
+        &["envvar"],
+    ] {
+        let mut em_args = vec!["portageq"];
+        em_args.extend_from_slice(args);
+        assert_eq!(
+            stdout_and_status(env!("CARGO_BIN_EXE_em"), &em_args),
+            stdout_and_status("portageq", args),
+            "{args:?}"
+        );
+    }
 }

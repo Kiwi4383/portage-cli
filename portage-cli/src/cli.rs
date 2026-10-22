@@ -2400,13 +2400,13 @@ pub struct MaintArgs {
 }
 
 /// `em portageq` — a subset of Portage's own query interface (byte-compatible
-/// where implemented; only the installed-package query group exists)
+/// where implemented: the installed-package queries and `envvar`)
 #[derive(winnow_args::Args, Debug, Clone)]
 #[arg(
     effect = "read",
     exit_code(0, "query succeeded"),
     exit_code(1, "no match / unset variable"),
-    exit_code(2, "invalid atom"),
+    exit_code(2, "invalid atom, or no variable named"),
     exit_code(64, "<EROOT> is not a directory"),
     example = "em portageq has_version / sys-apps/portage"
 )]
@@ -2447,6 +2447,18 @@ pub enum PortageqCommand {
         /// Empty string matches every installed package
         #[arg(positional, value_name = "ATOM")]
         atom: String,
+    },
+    #[arg(
+        name = "envvar",
+        help = "Print configuration variables as a build would see them"
+    )]
+    Envvar {
+        /// Print `NAME=value` lines, quoted for the shell
+        #[arg(short = 'v')]
+        verbose: bool,
+        /// A trailing `*` matches every variable with that prefix
+        #[arg(positional, required, value_name = "NAME")]
+        names: Vec<String>,
     },
     #[arg(
         name = "mass_best_version",

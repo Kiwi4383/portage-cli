@@ -9,7 +9,9 @@ the real installed `portageq` (portage 3.0.82.2) for every documented case —
 hit, miss, invalid atom, missing `<EROOT>` — all byte-exact, including the
 `"Not a directory: '<x>'" / "Run portageq with --help for info"` error text.
 
-**Not yet done:** steps 3–7 below (settings/`envvar` group, repos group,
+**`envvar` done 2026-10-22** (byte-identical to portageq on a live host for plain, `-v`, unset, `NAME*`,
+`PORTDIR`/`PORTDIR_OVERLAY`, no-args; `FEATURES` differs because em does not stack make.globals' incrementals,
+the same gap `em --info` has). **Not yet done:** the rest of steps 3–7 below (the settings one-liners, repos group,
 metadata/contents/owners, `best_visible`, protect/eclass/license/
 `repos_config` tail) — still bare, not stubbed. `match`'s glob-style extended
 syntax (`cat/*`, `*/*`) is also not yet supported (falls through to

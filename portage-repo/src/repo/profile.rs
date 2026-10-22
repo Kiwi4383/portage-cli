@@ -914,6 +914,21 @@ pub(crate) fn merge_flag_lists_signed<'a>(iter: impl Iterator<Item = &'a str>) -
     out
 }
 
+/// Merge `ACCEPT_LICENSE`-style lists as Portage does: every layer's tokens in order, cut
+/// back to the last `*` or `-*`
+///
+/// Negations stay: `-@EULA` denies a group whether or not an earlier token named it.
+pub(crate) fn merge_accept_lists<'a>(iter: impl Iterator<Item = &'a str>) -> Vec<String> {
+    let tokens: Vec<&str> = iter.flat_map(str::split_whitespace).collect();
+    let kept = match tokens.iter().rposition(|t| matches!(*t, "*" | "-*")) {
+        // A trailing `-*` is kept, so the list stays an explicit "nothing".
+        Some(i) if tokens[i] == "-*" && i + 1 < tokens.len() => &tokens[i + 1..],
+        Some(i) => &tokens[i..],
+        None => &tokens[..],
+    };
+    kept.iter().map(|t| t.to_string()).collect()
+}
+
 /// Recursively collect profiles depth-first, ancestors before self
 ///
 /// `visited` is a set of canonicalized paths already added; a profile seen a
@@ -1127,6 +1142,24 @@ mod tests {
     fn merge_flag_lists_dash_star_alone_empties() {
         let out = merge_flag_lists(["foo bar", "-*"].into_iter());
         assert!(out.is_empty());
+    }
+
+    #[test]
+    fn accept_lists_keep_negations_and_cut_at_the_last_wildcard() {
+        // The base profile's `-* @FREE`, then make.conf's `* -@EULA`.
+        assert_eq!(
+            merge_accept_lists(["-* @FREE", "* -@EULA"].into_iter()),
+            ["*", "-@EULA"]
+        );
+        assert_eq!(merge_accept_lists(["-* @FREE"].into_iter()), ["@FREE"]);
+        assert_eq!(
+            merge_accept_lists(["@FREE GPL-2", "-*"].into_iter()),
+            ["-*"]
+        );
+        assert_eq!(
+            merge_accept_lists(["@FREE", "-GPL-3"].into_iter()),
+            ["@FREE", "-GPL-3"]
+        );
     }
 
     #[test]

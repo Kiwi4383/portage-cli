@@ -12,24 +12,25 @@ use portage_atom::interner::{DefaultInterner, Interned};
 use super::shell::EbuildShell;
 use crate::error::Result;
 use crate::repo::profile::{
-    Profile, ProfileEnv, ProfileEnvLayer, ProfileStack, UseFlags, merge_flag_lists,
-    merge_flag_lists_signed,
+    Profile, ProfileEnv, ProfileEnvLayer, ProfileStack, UseFlags, merge_accept_lists,
+    merge_flag_lists, merge_flag_lists_signed,
 };
 
-/// Merge an incremental variable's layers. `USE` preserves explicit disables
-/// (`-flag` kept so it can override a `+flag` IUSE default per package); every
-/// other incremental var (`USE_EXPAND` values, …) drops them as before.
+/// Merge a stacked variable's layers. `USE` preserves explicit disables
+/// (`-flag` kept so it can override a `+flag` IUSE default per package); the
+/// `ACCEPT_*` lists keep their negations; every other incremental var drops them.
 fn merge_use_var<'a>(var: &str, iter: impl Iterator<Item = &'a str>) -> Vec<String> {
-    if var == "USE" {
-        merge_flag_lists_signed(iter)
-    } else {
-        merge_flag_lists(iter)
+    match var {
+        "USE" => merge_flag_lists_signed(iter),
+        "ACCEPT_LICENSE" | "ACCEPT_PROPERTIES" | "ACCEPT_RESTRICT" => merge_accept_lists(iter),
+        _ => merge_flag_lists(iter),
     }
 }
 
-/// The `portage.const.INCREMENTALS` vars, reset-and-accumulated the same way
-/// (raw string merge, not USE-token translation) across every profile/conf
-/// layer by both [`ProfileStack::profile_env`] and [`source_incremental`].
+/// The `portage.const.INCREMENTALS` vars plus the `ACCEPT_*` lists Portage also
+/// accumulates, reset-and-accumulated the same way (raw string merge, not USE-token
+/// translation) across every profile/conf layer by both [`ProfileStack::profile_env`]
+/// and [`source_incremental`].
 ///
 /// Individual USE_EXPAND-listed variables (`VIDEO_CARDS`, `PYTHON_TARGETS`,
 /// `ELIBC`, …) are deliberately **not** here: they need per-layer USE-token
@@ -45,6 +46,8 @@ const INCREMENTAL_VARS: &[&str] = &[
     "FEATURES",
     "ACCEPT_KEYWORDS",
     "ACCEPT_LICENSE",
+    "ACCEPT_PROPERTIES",
+    "ACCEPT_RESTRICT",
     "CONFIG_PROTECT",
     "CONFIG_PROTECT_MASK",
     "IUSE_IMPLICIT",

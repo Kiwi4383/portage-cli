@@ -65,14 +65,17 @@ Each step lands on its own, with a parity check against the real tool on thalia.
    Checked live: geekbench refused, accepted via `ACCEPT_LICENSE=geekbench` and package.license,
    as emerge does. ACCEPT_PROPERTIES/RESTRICT still print empty where portageq prints
    make.globals' `*` (the resolver already defaults to `*`): that is step 2.
-2. **A `Settings` value** (see "Settings: home and lifecycle"). Typed lookup, the incremental
+2. ✅ (2026-10-23, `85714279`) **A `Settings` value** (see "Settings: home and lifecycle"). Typed lookup, the incremental
    and ACCEPT_* rules above, the USE_EXPAND rebuild from the USE the profile code already
    resolves correctly. Each value keeps which layer it came from (for `--info -v` and
    debugging). Test: an ignored live test diffing `portageq envvar -v` for every name, in a
    clean environment and with `CFLAGS=…`/`FEATURES=…` set, plus `PORTAGE_CONFIGROOT` scratch
    roots for the `-*`/`-x`/profile-only cases. The derived ROOT/EROOT/… are not compared
    here; step 3 adds them.
-3. **`portageq envvar` and `--info` read `Settings`.** The wildcard enumerates settings, not
+3. 🟡 **`portageq envvar` and `--info` read `Settings`.** envvar done 2026-10-23: all 176 variables em prints match
+   portageq; missing are Portage internals, PORTAGE_REPOSITORIES, PORTAGE_ARCHLIST. `--info` still on the shell. Known:
+   `ARCH=x` in the environment gives portageq `''`, em the profile's value; a scratch root's unset GRUB_PLATFORMS is `''`
+   in portageq, absent in em. The wildcard enumerates settings, not
    shell variables (no BASHPID/IFS/`__PORTAGE_ECLASS_DIRS`, PORTDIR included). `portage-cli`
    adds ROOT, EROOT, SYSROOT, ESYSROOT, EPREFIX, BROOT and PORTAGE_CONFIGROOT from `Roots`.
 4. **The resolver reads `Settings`** for ACCEPT_KEYWORDS/LICENSE/PROPERTIES/RESTRICT,

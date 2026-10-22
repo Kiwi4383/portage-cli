@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use camino::Utf8Path;
+use camino::{Utf8Path, Utf8PathBuf};
 use portage_atom::Dep;
 use portage_atom::interner::Interned;
 use portage_atom_pubgrub::{ProfileUseNode, UseLayer, UseOverride};
@@ -87,12 +87,26 @@ pub struct UseEnv {
 /// resolution proceed without the disk writes `-p` deliberately skips.
 #[derive(Clone, Copy)]
 pub struct SysrootOverride<'a> {
-    /// Real, already-existing profile directory the not-yet-written
-    /// `make.profile` symlink would point at.
-    pub profile_dir: &'a Utf8Path,
+    /// Real, already-existing profile directories the not-yet-written profile
+    /// inherits, in order (one for a `make.profile` linking a profile directly)
+    pub parents: &'a [Utf8PathBuf],
     /// The `make.conf` content the not-yet-written file would contain,
     /// sourced directly (see [`portage_repo::ConfSource::Str`]).
     pub make_conf: &'a str,
+    /// What the not-yet-written profile adds on top of `parents`, if it is a derived one
+    pub layer: Option<&'a ProfileLayer>,
+}
+
+/// The files of a profile `em` derives, beyond its `parent`: the in-memory form the files
+/// are rendered from, and what a pending sysroot resolves with
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProfileLayer {
+    /// `package.mask`
+    pub package_mask: Vec<Dep>,
+    /// `package.unmask`
+    pub package_unmask: Vec<Dep>,
+    /// `package.use`
+    pub package_use: Vec<(Dep, Vec<String>)>,
 }
 
 /// Read the config/profile/environment sources (profile stack, `make.conf`,
@@ -126,23 +140,30 @@ async fn compute_use_env(
     let portage_dir = root.unwrap_or(Utf8Path::new("/")).join("etc/portage");
     let root_dir = root.unwrap_or(Utf8Path::new("/"));
 
-    // A `--target` sysroot's `make.profile` always symlinks directly to a
-    // real, already-existing `::gentoo` profile directory (no em-generated
-    // content of its own) — under a still-pending `sysroot_override`, use
-    // that real directory straight, skipping the not-yet-written symlink.
-    let profile_path = match sysroot_override {
-        Some(ov) => ov.profile_dir.as_std_path().to_path_buf(),
+    // Under a still-pending `sysroot_override`, the not-yet-written profile's parents
+    // stand in for `make.profile`, and its own layer is applied below.
+    let stack = match sysroot_override {
+        Some(ov) => {
+            let parents: Vec<_> = ov
+                .parents
+                .iter()
+                .map(|p| p.as_std_path().to_path_buf())
+                .collect();
+            ProfileStack::build_parents_in(&parents, root_dir)
+        }
         None => {
             let profile_link = portage_dir.join("make.profile");
-            std::fs::canonicalize(profile_link.as_std_path())
-                .map_err(|e| anyhow::anyhow!("cannot resolve {profile_link}: {e}"))?
+            let profile_path = std::fs::canonicalize(profile_link.as_std_path())
+                .map_err(|e| anyhow::anyhow!("cannot resolve {profile_link}: {e}"))?;
+            ProfileStack::build_in(profile_path, root_dir)
         }
     };
+    let layer = sysroot_override.and_then(|ov| ov.layer);
     // Portage appends `/etc/portage/profile` as the top (highest-priority)
     // profile layer, so its use.force/use.mask/package.use*/package.mask override
     // the resolved make.profile chain. Fold it in so Level-C never cedes a flag a
     // site override pins and the plan honours site masks (portage(5)).
-    let mut stack = ProfileStack::build_in(profile_path, root_dir)
+    let mut stack = stack
         .map_err(|e| anyhow::anyhow!("failed to build profile stack: {e}"))?
         .with_user_profile(portage_dir.join("profile").into_std_path_buf())
         .map_err(|e| anyhow::anyhow!("failed to load /etc/portage/profile: {e}"))?;
@@ -348,7 +369,7 @@ async fn compute_use_env(
     };
     let mut defaults_by_path: HashMap<std::path::PathBuf, String> =
         resolved.profile_defaults.into_iter().collect();
-    let profile_package_use: Vec<ProfileUseNode> = stack
+    let mut profile_package_use: Vec<ProfileUseNode> = stack
         .profiles()
         .iter()
         .map(|p| {
@@ -368,6 +389,18 @@ async fn compute_use_env(
             }
         })
         .collect();
+    // The derived profile is the leaf, after its parents; it sets no USE defaults of its own.
+    if let Some(layer) = layer {
+        let raw = layer.package_use.clone();
+        let puse_clear_all = raw
+            .iter()
+            .any(|(_, flags)| flags_have_use_clear_all(flags, expand_keys));
+        profile_package_use.push(ProfileUseNode {
+            defaults: UseLayer::empty(),
+            package_use: expand_flags(raw),
+            puse_clear_all,
+        });
+    }
     let mut raw_package_use: Vec<(Dep, Vec<String>)> =
         load_package_use(portage_dir.join("package.use").as_str());
     if let Some(overlay) = config_overlay {
@@ -394,8 +427,10 @@ async fn compute_use_env(
     // overridden per package by the profiles' and the site's `package.unmask`.
     let mut package_mask = repo.repo_package_mask().unwrap_or_default();
     package_mask.extend(stack.package_mask().unwrap_or_default());
+    package_mask.extend(layer.iter().flat_map(|l| l.package_mask.iter().cloned()));
     package_mask.extend(load_dep_list(portage_dir.join("package.mask").as_str()));
     let mut package_unmask = stack.package_unmask().unwrap_or_default();
+    package_unmask.extend(layer.iter().flat_map(|l| l.package_unmask.iter().cloned()));
     package_unmask.extend(load_dep_list(portage_dir.join("package.unmask").as_str()));
     if let Some(overlay) = config_overlay {
         package_mask.extend(load_dep_list(overlay.join("package.mask").as_str()));
@@ -688,8 +723,8 @@ fn load_dep_list(path: &str) -> Vec<Dep> {
 #[cfg(test)]
 mod tests {
     use super::{
-        SysrootOverride, build_use_env, expand_use_expand_colon, flags_have_use_clear_all,
-        load_package_env_use, load_package_keywords, load_package_use,
+        ProfileLayer, SysrootOverride, build_use_env, expand_use_expand_colon,
+        flags_have_use_clear_all, load_package_env_use, load_package_keywords, load_package_use,
     };
     use portage_atom::Dep;
     use portage_atom_pubgrub::UseOverride;
@@ -734,13 +769,48 @@ mod tests {
             ),
         }
 
+        let parents = [profile_dir.to_owned()];
         let ov = SysrootOverride {
-            profile_dir,
+            parents: &parents,
             make_conf: "CHOST=\"riscv64-unknown-linux-gnu\"\n",
+            layer: None,
         };
         build_use_env(&repo, Some(root), None, None, Some(&ov))
             .await
             .expect("a SysrootOverride must let a never-initialized target resolve");
+    }
+
+    #[tokio::test]
+    async fn a_pending_derived_profile_layer_applies_like_its_files() {
+        let repo_dir = tempfile::tempdir().unwrap();
+        let repo = make_test_repo(repo_dir.path());
+        let profile_dir = repo_dir.path().join("test-profile");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        std::fs::write(profile_dir.join("make.defaults"), "").unwrap();
+        let parents = [camino::Utf8PathBuf::try_from(profile_dir).unwrap()];
+        let sysroot = tempfile::tempdir().unwrap();
+        let root = camino::Utf8Path::from_path(sysroot.path()).unwrap();
+        let layer = ProfileLayer {
+            package_mask: vec![Dep::parse("sys-devel/gcc").unwrap()],
+            package_unmask: vec![Dep::parse("sys-devel/gcc:15").unwrap()],
+            package_use: vec![(
+                Dep::parse("llvm-runtimes/libunwind").unwrap(),
+                vec!["static-libs".into()],
+            )],
+        };
+        let ov = SysrootOverride {
+            parents: &parents,
+            make_conf: "",
+            layer: Some(&layer),
+        };
+
+        let env = build_use_env(&repo, Some(root), None, None, Some(&ov))
+            .await
+            .unwrap();
+        assert!(env.package_mask.contains(&layer.package_mask[0]));
+        assert!(env.package_unmask.contains(&layer.package_unmask[0]));
+        let leaf = env.profile_package_use.last().unwrap();
+        assert_eq!(leaf.package_use[0].0, layer.package_use[0].0);
     }
 
     #[tokio::test]
@@ -753,9 +823,11 @@ mod tests {
         let profile_dir = camino::Utf8Path::from_path(&profile_dir).unwrap();
         let sysroot = tempfile::tempdir().unwrap();
         let root = camino::Utf8Path::from_path(sysroot.path()).unwrap();
+        let parents = [profile_dir.to_owned()];
         let ov = SysrootOverride {
-            profile_dir,
+            parents: &parents,
             make_conf: "",
+            layer: None,
         };
 
         let overlay = tempfile::tempdir().unwrap();

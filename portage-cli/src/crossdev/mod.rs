@@ -61,6 +61,7 @@ use portage_atom::interner::{DefaultInterner, Interned};
 use portage_atom::{Cpn, Cpv, Dep, Pf, Version};
 use portage_atom_pubgrub::{DepClass, UseOverride};
 use portage_repo::{MakeConf, ProfileStack, ReposConf, Repository};
+use portage_resolve::use_env::ProfileLayer;
 use portage_vdb::{SlotName, Vdb};
 
 use crate::cli::{Cli, CrossdevArgs, DepgraphFlags, MergeFlags};
@@ -284,19 +285,24 @@ async fn setup(
     // Same pretend-only gate as `extra_aliases` above: a never-initialized
     // target's `make.conf`/`make.profile` don't exist on disk yet under `-p`
     // (init_target only previewed them), so depgraph's own config read would
-    // otherwise hard-fail. The profile directory is real (::gentoo's own,
-    // not em-generated); only make.conf's content needs synthesizing.
-    let profile_dir_holder;
+    // otherwise hard-fail. The parents are real `::gentoo` profiles; a spec's derived
+    // profile is applied from memory, the same value its files are rendered from.
+    let parents_holder: Vec<Utf8PathBuf>;
+    let derived_holder;
     let make_conf_holder;
     let sysroot_override = if globals.pretend() {
         let gentoo_path = main_repo(globals)?.path().to_owned();
-        // A spec's derived profile does not exist yet; its first parent stands in.
-        let first = spec.profile.first().context("a spec names no profile")?;
-        profile_dir_holder = gentoo_path.join("profiles").join(first);
+        parents_holder = spec
+            .profile
+            .iter()
+            .map(|p| gentoo_path.join("profiles").join(p))
+            .collect();
+        derived_holder = own_profile.then(|| DerivedProfile::of(spec)).transpose()?;
         make_conf_holder = make_conf_body(target, &spec.cflags, globals.outer_roots().merge_root());
         Some(portage_resolve::use_env::SysrootOverride {
-            profile_dir: &profile_dir_holder,
+            parents: &parents_holder,
             make_conf: &make_conf_holder,
+            layer: derived_holder.as_ref().map(|d| &d.layer),
         })
     } else {
         None
@@ -773,12 +779,12 @@ async fn run_stage1(args: &crate::cli::StagesArgs, globals: &Cli) -> Result<()> 
     // ebuild's + IUSE default when the config left the flag off.
     // Stage1's `USE="-* build"` resets the spec's `package-use`, which states what its
     // toolchain needs; carry it above the reset.
-    let spec_use = match globals.target_spec() {
-        Some(spec) => spec_package_use(&spec)?,
-        None => saved_spec(globals)?
-            .map(|spec| spec_package_use(&spec))
-            .transpose()?
-            .unwrap_or_default(),
+    let spec_use = match globals
+        .target_spec()
+        .map_or_else(|| saved_spec(globals), |s| Ok(Some(s)))?
+    {
+        Some(spec) => DerivedProfile::of(&spec)?.use_overrides(),
+        None => Vec::new(),
     };
     let mut stage1_merge = with_buildpkg(globals.merge_flags());
     stage1_merge.autosolve_use = true;
@@ -1521,18 +1527,17 @@ fn spec_profile_entries(
     let portage = sysroot.join("etc/portage");
     let file =
         |path: Utf8PathBuf, desired: String| config_plan::ConfigEntry::File { path, desired };
-    let parents: String = spec
-        .profile
+    let derived = DerivedProfile::of(spec)?;
+    let parents: String = derived
+        .parents
         .iter()
         .map(|p| format!("gentoo:{p}\n"))
         .collect();
-    let default_env = spec
-        .env_of(spec.system.built_by)
-        .context("the system's toolchain is not defined")?;
-    let package_use: String = spec
+    let package_use: String = derived
+        .layer
         .package_use
         .iter()
-        .map(|(atom, flags)| format!("{atom} {}\n", flags.join(" ")))
+        .map(|(dep, flags)| format!("{dep} {}\n", flags.join(" ")))
         .collect();
     let mut package_env = String::new();
     let mut entries = vec![
@@ -1547,11 +1552,17 @@ fn spec_profile_entries(
         file(profile.join(SPEC_FILE), spec.to_toml()?),
         file(
             profile.join("package.mask"),
-            pin_lines(spec, |pin| Dep::new(pin.cpn)) + &llvm_slot_masks(spec)?,
+            dep_lines(&derived.layer.package_mask),
         ),
-        file(profile.join("package.unmask"), pin_lines(spec, Dep::clone)),
+        file(
+            profile.join("package.unmask"),
+            dep_lines(&derived.layer.package_unmask),
+        ),
         file(profile.join("package.use"), package_use),
-        file(profile.join("make.defaults"), env_lines(default_env)),
+        file(
+            profile.join("make.defaults"),
+            env_lines(&derived.make_defaults),
+        ),
     ];
     for (id, atoms) in &spec.system.exceptions {
         let env = spec
@@ -1580,11 +1591,64 @@ fn toolchain_name(id: spec::ToolchainId) -> &'static str {
     }
 }
 
+/// The profile a spec derives, in memory: `--init-target` renders it to files, and a `-p`
+/// run before that resolves with it as is
+struct DerivedProfile {
+    /// `::gentoo` profiles it inherits, repo-relative
+    parents: Vec<String>,
+    /// Its masks, unmasks and `package.use`
+    layer: ProfileLayer,
+    /// Its `make.defaults`: the system toolchain's variables
+    make_defaults: std::collections::BTreeMap<String, String>,
+}
+
+impl DerivedProfile {
+    fn of(spec: &spec::SysrootSpec) -> Result<Self> {
+        let (mut package_mask, package_unmask) = pin_masks(spec);
+        package_mask.extend(llvm_slot_masks(spec)?);
+        let package_use = spec
+            .package_use
+            .iter()
+            .map(|(atom, flags)| {
+                let dep = Dep::parse(atom).with_context(|| format!("package-use: {atom}"))?;
+                Ok((dep, flags.clone()))
+            })
+            .collect::<Result<_>>()?;
+        let make_defaults = spec
+            .env_of(spec.system.built_by)
+            .context("the system's toolchain is not defined")?
+            .clone();
+        Ok(Self {
+            parents: spec.profile.clone(),
+            layer: ProfileLayer {
+                package_mask,
+                package_unmask,
+                package_use,
+            },
+            make_defaults,
+        })
+    }
+
+    /// Its `package-use` as staged-run USE overrides, which stage1's `-*` does not reset
+    fn use_overrides(&self) -> Vec<(Dep, Vec<UseOverride>)> {
+        self.layer
+            .package_use
+            .iter()
+            .map(|(dep, flags)| {
+                (
+                    dep.clone(),
+                    flags.iter().map(|f| UseOverride::parse(f)).collect(),
+                )
+            })
+            .collect()
+    }
+}
+
 /// Masks above the clang toolchain's LLVM slot for the target's own LLVM packages: their
 /// runtimes build with `<tuple>-clang-<slot>`, which only the cross toolchain's slot provides
-fn llvm_slot_masks(spec: &spec::SysrootSpec) -> Result<String> {
+fn llvm_slot_masks(spec: &spec::SysrootSpec) -> Result<Vec<Dep>> {
     let (Some(clang), Some(slot)) = (&spec.toolchain.clang, spec.llvm_slot()) else {
-        return Ok(String::new());
+        return Ok(Vec::new());
     };
     let next = slot
         .parse::<u64>()
@@ -1600,30 +1664,24 @@ fn llvm_slot_masks(spec: &spec::SysrootSpec) -> Result<String> {
         &clang.cxx,
     ]
     .map(|dep| dep.cpn);
-    Ok(std::iter::once(llvm)
+    std::iter::once(llvm)
         .chain(cpns)
-        .map(|cpn| format!(">={cpn}-{next}\n"))
-        .collect())
+        .map(|cpn| Dep::parse(&format!(">={cpn}-{next}")).context("an LLVM slot mask"))
+        .collect()
 }
 
-/// One line per spec pin, as `line` renders it: masking the package and unmasking the pin
-/// leaves only the versions the pin allows
-fn pin_lines(spec: &spec::SysrootSpec, line: impl Fn(&Dep) -> Dep) -> String {
+/// The spec's pins as a mask of each package and an unmask of the pin, which together leave
+/// only the versions the pin allows
+fn pin_masks(spec: &spec::SysrootSpec) -> (Vec<Dep>, Vec<Dep>) {
     spec.pins()
         .into_iter()
-        .map(|pin| format!("{}\n", line(pin)))
-        .collect()
+        .map(|pin| (Dep::new(pin.cpn), pin.clone()))
+        .unzip()
 }
 
-/// The spec's `package-use` as staged-run USE overrides
-fn spec_package_use(spec: &spec::SysrootSpec) -> Result<Vec<(Dep, Vec<UseOverride>)>> {
-    spec.package_use
-        .iter()
-        .map(|(atom, flags)| {
-            let dep = Dep::parse(atom).with_context(|| format!("package-use: {atom}"))?;
-            Ok((dep, flags.iter().map(|f| UseOverride::parse(f)).collect()))
-        })
-        .collect()
+/// One atom per line, as `package.mask`/`package.unmask` take them
+fn dep_lines<'a>(deps: impl IntoIterator<Item = &'a Dep>) -> String {
+    deps.into_iter().map(|dep| format!("{dep}\n")).collect()
 }
 
 /// Repository name of the sysroot overlay holding the profile a spec derives
@@ -1998,11 +2056,11 @@ fn cross_env_entries(
         entries.extend([
             config_plan::ConfigEntry::File {
                 path: portage.join("package.mask").join(&category),
-                desired: pin_lines(spec, |pin| Dep::new(cross(pin).cpn)),
+                desired: dep_lines(&pin_masks(spec).0.iter().map(cross).collect::<Vec<_>>()),
             },
             config_plan::ConfigEntry::File {
                 path: portage.join("package.unmask").join(&category),
-                desired: pin_lines(spec, cross),
+                desired: dep_lines(&pin_masks(spec).1.iter().map(cross).collect::<Vec<_>>()),
             },
         ]);
     }
@@ -2308,7 +2366,9 @@ mod tests {
 
     #[test]
     fn a_spec_package_use_becomes_a_stage1_override() {
-        let uses = spec_package_use(&spec::clang_main_spec()).unwrap();
+        let uses = DerivedProfile::of(&spec::clang_main_spec())
+            .unwrap()
+            .use_overrides();
         let [(dep, flags)] = uses.as_slice() else {
             panic!("{uses:?}")
         };

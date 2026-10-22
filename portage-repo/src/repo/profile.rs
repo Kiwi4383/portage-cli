@@ -399,6 +399,21 @@ impl ProfileStack {
         Self::collect(&path, Some(&ReposConf::load_rooted(config_root, &[])?))
     }
 
+    /// The stack a profile with these `parents` (and nothing of its own) would have, resolving
+    /// `repo:path` parents through `config_root`'s `repos.conf`
+    pub fn build_parents_in(parents: &[PathBuf], config_root: &Utf8Path) -> Result<Self> {
+        let repos = ReposConf::load_rooted(config_root, &[])?;
+        let mut visited = HashSet::new();
+        let mut profiles = Vec::new();
+        for parent in parents {
+            profiles.extend(collect_stack(parent, &mut visited, Some(&repos))?);
+        }
+        if profiles.is_empty() {
+            return Err(Error::InvalidProfile("empty profile stack".into()));
+        }
+        Ok(ProfileStack { profiles })
+    }
+
     fn collect(path: &Path, repos: Option<&ReposConf>) -> Result<Self> {
         let mut visited = HashSet::new();
         let profiles = collect_stack(path, &mut visited, repos)?;
@@ -1545,6 +1560,20 @@ mod tests {
             let stack = ProfileStack::build_in(leaf, &config_root).unwrap();
             assert_eq!(stack.package_unmask().unwrap().len(), expected, "{formats}");
         }
+    }
+
+    #[test]
+    fn a_stack_from_parents_matches_a_profile_naming_them() {
+        let (tmp, gentoo, leaf) =
+            overlay_profile("gentoo:base\n:shared\n", "profile-formats = portage-2\n");
+        let config_root = Utf8Path::from_path(tmp.path()).unwrap().join("sysroot");
+        let shared = leaf.parent().unwrap().join("shared");
+        let from_parents =
+            ProfileStack::build_parents_in(&[gentoo.join("profiles/base"), shared], &config_root)
+                .unwrap();
+        let mut expected = stack_paths(&ProfileStack::build_in(leaf, &config_root).unwrap());
+        expected.pop();
+        assert_eq!(stack_paths(&from_parents), expected);
     }
 
     #[test]

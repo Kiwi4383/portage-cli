@@ -141,6 +141,8 @@ pub async fn run(args: &CrossdevArgs, globals: &Cli) -> Result<()> {
         }
     };
 
+    let derived = own_profile.then(|| DerivedProfile::of(&spec)).transpose()?;
+
     if args.show_target_cfg {
         show_target_cfg(&target, globals, &extras);
         return Ok(());
@@ -157,14 +159,14 @@ pub async fn run(args: &CrossdevArgs, globals: &Cli) -> Result<()> {
             globals,
             args,
             &spec,
-            own_profile,
+            derived.as_ref(),
             config_plan::RefreshPolicy::Sync,
         )
         .await
         .map(|_| ());
     }
     if args.setup {
-        return setup(&target, globals, args, &spec, own_profile).await;
+        return setup(&target, globals, args, &spec, derived.as_ref()).await;
     }
     bail!(
         "em crossdev does setup only for now — pass --init-target to lay down the \
@@ -209,7 +211,7 @@ async fn setup(
     globals: &Cli,
     args: &CrossdevArgs,
     spec: &spec::SysrootSpec,
-    own_profile: bool,
+    derived: Option<&DerivedProfile>,
 ) -> Result<()> {
     // Same-tuple as host CHOST is not cross: ebuilds treat CTARGET==CHOST as
     // native and install into host paths (collisions with real packages).
@@ -228,7 +230,7 @@ async fn setup(
         globals,
         args,
         spec,
-        own_profile,
+        derived,
         config_plan::RefreshPolicy::FillGapsOnly,
     )
     .await?;
@@ -329,10 +331,7 @@ async fn setup(
                     .iter()
                     .map(|p| gentoo_path.join("profiles").join(p))
                     .collect(),
-                layer: own_profile
-                    .then(|| DerivedProfile::of(spec))
-                    .transpose()?
-                    .map(|d| d.layer),
+                layer: derived.map(|d| d.layer.clone()),
             }),
             make_conf: Some(make_conf_body(
                 target,
@@ -341,7 +340,7 @@ async fn setup(
             )),
             ..Default::default()
         };
-        let host = host_cross_config(target, globals, &gentoo_path, spec, own_profile)?;
+        let host = host_cross_config(target, globals, &gentoo_path, spec, derived)?;
         Some(PendingTarget { sysroot, host })
     } else {
         None
@@ -1218,7 +1217,7 @@ async fn init_target(
     globals: &Cli,
     _args: &CrossdevArgs,
     spec: &spec::SysrootSpec,
-    own_profile: bool,
+    derived: Option<&DerivedProfile>,
     policy: config_plan::RefreshPolicy,
 ) -> Result<config_plan::Outcome> {
     let ask = globals.merge_flags().ask;
@@ -1262,7 +1261,7 @@ async fn init_target(
         globals,
         &gentoo_path,
         spec,
-        own_profile,
+        derived,
     )?);
     entries.extend(sysroot_config_entries(
         target,
@@ -1270,7 +1269,7 @@ async fn init_target(
         &sysroot,
         globals.outer_roots().merge_root(),
         &gentoo_path,
-        own_profile,
+        derived,
     )?);
     entries.extend(sysroot_repos_conf_entries(
         &sysroot,
@@ -1278,7 +1277,7 @@ async fn init_target(
         target,
         &category,
         spec,
-        own_profile,
+        derived,
     ));
 
     let outcome = config_plan::apply(&entries, globals.pretend(), ask, policy)?;
@@ -1509,7 +1508,7 @@ fn sysroot_config_entries(
     sysroot: &Utf8Path,
     outer_root: &Utf8Path,
     gentoo: &Utf8Path,
-    own_profile: bool,
+    derived: Option<&DerivedProfile>,
 ) -> Result<Vec<config_plan::ConfigEntry>> {
     let portage = sysroot.join("etc/portage");
     let mut entries = Vec::new();
@@ -1549,8 +1548,8 @@ fn sysroot_config_entries(
     {
         bail!("target profile '{name}' not found at {dir}");
     }
-    let profile_target = if own_profile {
-        entries.extend(spec_profile_entries(spec, sysroot)?);
+    let profile_target = if let Some(derived) = derived {
+        entries.extend(spec_profile_entries(spec, derived, sysroot)?);
         sysroot.join(SPEC_REPO_DIR).join(SPEC_PROFILE)
     } else {
         let [dir] = profile_dirs.as_slice() else {
@@ -1572,6 +1571,7 @@ fn sysroot_config_entries(
 /// packages another toolchain builds (`package.env` has no profile form)
 fn spec_profile_entries(
     spec: &spec::SysrootSpec,
+    derived: &DerivedProfile,
     sysroot: &Utf8Path,
 ) -> Result<Vec<config_plan::ConfigEntry>> {
     let repo = sysroot.join(SPEC_REPO_DIR);
@@ -1579,7 +1579,6 @@ fn spec_profile_entries(
     let portage = sysroot.join("etc/portage");
     let file =
         |path: Utf8PathBuf, desired: String| config_plan::ConfigEntry::File { path, desired };
-    let derived = DerivedProfile::of(spec)?;
     let parents: String = derived
         .parents
         .iter()
@@ -1779,11 +1778,11 @@ fn sysroot_repos_conf_entries(
     target: &CrossTarget,
     category: &str,
     spec: &spec::SysrootSpec,
-    own_profile: bool,
+    derived: Option<&DerivedProfile>,
 ) -> Vec<config_plan::ConfigEntry> {
     let dir = sysroot.join("etc/portage/repos.conf");
     let name = overlay_name(target);
-    let own = own_profile.then(|| config_plan::ConfigEntry::File {
+    let own = derived.is_some().then(|| config_plan::ConfigEntry::File {
         path: dir.join(format!("{SPEC_REPO}.conf")),
         desired: format!(
             "[{SPEC_REPO}]\nlocation = {}\n",
@@ -1988,7 +1987,7 @@ fn cross_env_entries(
     globals: &Cli,
     gentoo: &Utf8Path,
     spec: &spec::SysrootSpec,
-    own_profile: bool,
+    derived: Option<&DerivedProfile>,
 ) -> Result<Vec<config_plan::ConfigEntry>> {
     let eclass_dir = gentoo.join("eclass");
     let host_ml = multilib::query(&host_chost(), &eclass_dir)?;
@@ -2076,7 +2075,7 @@ fn cross_env_entries(
             desired: clang_cfg(target, globals, ClangRuntimes::Llvm)?,
         });
     }
-    let host = host_cross_config(target, globals, gentoo, spec, own_profile)?;
+    let host = host_cross_config(target, globals, gentoo, spec, derived)?;
     let keywords: String = host
         .package_accept_keywords
         .iter()
@@ -2089,7 +2088,7 @@ fn cross_env_entries(
         path: portage.join("package.accept_keywords").join(&category),
         desired: keywords,
     });
-    if own_profile {
+    if derived.is_some() {
         entries.extend([
             config_plan::ConfigEntry::File {
                 path: portage.join("package.mask").join(&category),
@@ -2121,7 +2120,7 @@ fn host_cross_config(
     globals: &Cli,
     gentoo: &Utf8Path,
     spec: &spec::SysrootSpec,
-    own_profile: bool,
+    derived: Option<&DerivedProfile>,
 ) -> Result<PendingConfig> {
     let base = globals.base_roots();
     let category = target.category();
@@ -2157,7 +2156,7 @@ fn host_cross_config(
         let atom = host_arch_keyword(&base, gentoo, &category, pkg, real_cat, pkg)?;
         keywords.push((atom, vec![AcceptToken::Any]));
     }
-    let (package_mask, package_unmask) = if own_profile {
+    let (package_mask, package_unmask) = if derived.is_some() {
         let cross = |pin: &Dep| Dep {
             cpn: Cpn::new(&category, pin.cpn.package.as_str()),
             ..pin.clone()
@@ -2404,15 +2403,17 @@ mod tests {
         std::fs::create_dir_all(&parent).unwrap();
         std::fs::write(gentoo.join("profiles/repo_name"), "gentoo\n").unwrap();
         let sysroot = prefix.join("usr").join(&target.tuple);
+        let derived = DerivedProfile::of(&spec).unwrap();
         let mut entries =
-            sysroot_config_entries(&target, &spec, &sysroot, prefix, &gentoo, true).unwrap();
+            sysroot_config_entries(&target, &spec, &sysroot, prefix, &gentoo, Some(&derived))
+                .unwrap();
         entries.extend(sysroot_repos_conf_entries(
             &sysroot,
             &gentoo,
             &target,
             &target.category(),
             &spec,
-            true,
+            Some(&derived),
         ));
         config_plan::apply_now(&entries).unwrap();
 
@@ -2449,7 +2450,8 @@ mod tests {
         let sysroot = Utf8Path::from_path(dir.path()).unwrap();
         let spec = spec::clang_main_spec();
         let t = &spec.tuple;
-        config_plan::apply_now(&spec_profile_entries(&spec, sysroot).unwrap()).unwrap();
+        let derived = DerivedProfile::of(&spec).unwrap();
+        config_plan::apply_now(&spec_profile_entries(&spec, &derived, sysroot).unwrap()).unwrap();
 
         let profile = sysroot.join(SPEC_REPO_DIR).join(SPEC_PROFILE);
         let read = |path: Utf8PathBuf| std::fs::read_to_string(path).unwrap();

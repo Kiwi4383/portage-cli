@@ -24,6 +24,9 @@ em crossdev [OPTIONS]
 * `--setup` — Bootstrap the cross toolchain into the prefix (`/usr/<tuple>`): the full
   intertwined sequence (binutils → headers → gcc-stage1 → libc →
   gcc-stage2). Implies `--init-target`.
+* `-r, --resume` — With `--setup`, skip the bootstrap steps an earlier run completed: steps recorded with
+  the same spec whose packages are still installed. The first step that does not hold
+  runs again, and every step after it.
 * `--show-target-cfg` — Print the derived target configuration and exit (no writes)
 * `--print-spec` — Print the target's built-in sysroot spec as TOML and exit (no writes)
 * `--ex-pkg <CATEGORY/PN>...` — Build an extra package onto the established cross target (may be given multiple times)

@@ -46,6 +46,7 @@
 //! concern.
 // Pending work: crossdev update and version-mismatch warnings.
 
+mod milestones;
 mod multilib;
 pub mod spec;
 pub mod stages;
@@ -262,10 +263,44 @@ async fn setup(
     )
     .ok();
 
+    // Milestones: what `-r` may skip, and the record each completed step updates.
+    let sysroot_dir = sysroot(target, globals);
+    let spec_text = spec.to_toml()?;
+    let outer_root = globals.outer_roots().merge_root().to_owned();
+    let vdb_root = |step: &stages::StageStep| {
+        if step.into_sysroot {
+            sysroot_dir.clone()
+        } else {
+            outer_root.clone()
+        }
+    };
+    let done_steps = match args.resume {
+        true => milestones::Milestones::load(&sysroot_dir, &spec_text)
+            .map_or(0, |m| m.done(&plan.steps, vdb_root)),
+        false => 0,
+    };
+    if !args.resume && !globals.pretend() {
+        milestones::Milestones::clear(&sysroot_dir)?;
+    }
     let post_step = {
         let target = target.clone();
         let mixed = spec.toolchain.gcc.is_some() && spec.toolchain.clang.is_some();
-        move |step: &stages::StageStep| post_step_cross(&target, globals, step, mixed)
+        let (plan, sysroot_dir, spec_text) = (&plan, &sysroot_dir, &spec_text);
+        move |step: &stages::StageStep| {
+            post_step_cross(&target, globals, step, mixed)?;
+            let index = plan
+                .steps
+                .iter()
+                .position(|s| s == step)
+                .context("a step outside its own plan")?;
+            milestones::Milestones::complete(
+                sysroot_dir,
+                spec_text,
+                &plan.steps,
+                index,
+                &vdb_root(step),
+            )
+        }
     };
     // Empty-target bootstrap: plain DEPEND is not satisfiable yet. Matches
     // crossdev's `<CTARGET>-emerge` (always implies `--root-deps=rdeps`).
@@ -331,6 +366,7 @@ async fn setup(
             sysroot_override,
             pending_config: host_config.as_ref(),
             extra_package_use: &[],
+            done_steps,
         },
         post_step,
     )
@@ -395,6 +431,9 @@ struct RunStagedOpts<'a> {
     /// The host-side `/etc/portage` entries for the cross category that `--init-target`
     /// would write, in memory, for the same runs as `sysroot_override`
     pending_config: Option<&'a portage_resolve::use_env::PendingConfig>,
+    /// How many leading steps an earlier run already completed (`--setup -r`); they are
+    /// reported, not run
+    done_steps: usize,
     /// In-memory `package.use` for this staged run only. Native toolchain
     /// fills it; every other caller leaves it empty.
     extra_package_use: &'a [(portage_atom::Dep, Vec<portage_atom_pubgrub::UseOverride>)],
@@ -420,6 +459,7 @@ async fn run_staged(
         extra_aliases,
         sysroot_override,
         pending_config,
+        done_steps,
         extra_package_use,
     } = opts;
     let mut out = anstream::stdout();
@@ -436,6 +476,10 @@ async fn run_staged(
         )
         .ok();
         out.flush().ok();
+        if i < done_steps {
+            writeln!(out, "    done by an earlier run, skipped").ok();
+            continue;
+        }
         // Sysroot baselayout must honour `--target` even when the plan-wide
         // flag forces outer EROOT for host-arch cross-* tools.
         let step_outer = if step.into_sysroot {
@@ -680,6 +724,7 @@ pub(crate) async fn toolchain(args: &crate::cli::ToolchainArgs, globals: &Cli) -
             sysroot_override: None,
             pending_config: None,
             extra_package_use: &extra_package_use,
+            done_steps: 0,
         },
         move |step: &stages::StageStep| activate_native_toolchain(globals, step),
     )
@@ -782,6 +827,7 @@ async fn run_stage1(args: &crate::cli::StagesArgs, globals: &Cli) -> Result<()> 
                 sysroot_override: None,
                 pending_config: None,
                 extra_package_use: &[],
+                done_steps: 0,
             },
             post_step,
         )
@@ -826,6 +872,7 @@ async fn run_stage1(args: &crate::cli::StagesArgs, globals: &Cli) -> Result<()> 
             sysroot_override: None,
             pending_config: None,
             extra_package_use: &spec_use,
+            done_steps: 0,
         },
         |_| Ok(()),
     )
@@ -2307,6 +2354,7 @@ mod tests {
             setup: false,
             show_target_cfg,
             print_spec: false,
+            resume: false,
             ex_pkg: Vec::new(),
             ex_gdb: false,
             depgraph_flags: crate::cli::DepgraphFlags::default(),

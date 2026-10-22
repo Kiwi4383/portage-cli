@@ -3040,6 +3040,12 @@ pub struct CrossdevArgs {
     #[arg(long)]
     pub setup: bool,
 
+    /// With `--setup`, skip the bootstrap steps an earlier run completed: steps recorded with
+    /// the same spec whose packages are still installed. The first step that does not hold
+    /// runs again, and every step after it.
+    #[arg(short = 'r', long)]
+    pub resume: bool,
+
     /// Print the derived target configuration and exit (no writes)
     #[arg(long)]
     pub show_target_cfg: bool,

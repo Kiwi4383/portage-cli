@@ -324,6 +324,9 @@ pub struct DepgraphOpts<'a> {
     /// [`portage_resolve::use_env::SysrootOverride`]. `None` for every
     /// ordinary resolve, including a `--target` sysroot that already exists.
     pub sysroot_override: Option<&'a use_env::SysrootOverride<'a>>,
+    /// `/etc/portage` entries pending `--init-target`'s writes, in memory — see
+    /// [`portage_resolve::use_env::PendingConfig`]. `None` for every ordinary resolve.
+    pub pending_config: Option<&'a use_env::PendingConfig>,
     /// See `output::PrettyCtx::binpkg_index`'s doc — passed straight through
     /// to the `Pretty` printer so `-p` can show `[binary ...]`.
     pub binpkg_index: Option<&'a portage_binpkg::BinpkgIndex>,

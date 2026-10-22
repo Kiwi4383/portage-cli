@@ -114,13 +114,19 @@ plus `features/llvm`, `exceptions.gcc` = glibc and gcc, and `static-libs` on the
   the missing CPP and friends above; stage1 dropping `package-use`; the target's LLVM resolving above the
   cross slot; the sysroot lacking the clang config packages.
 
+## `-p` before `--init-target`
+
+`-p` writes nothing, so a preview of a target never initialised resolves with what `--init-target` would write,
+from memory. Both halves are values that the files are rendered from, so the two cannot drift: the derived profile
+(`DerivedProfile`: parents, a `ProfileLayer` of masks, unmasks and `package.use`, `make.defaults`), handed to the
+sysroot steps through `SysrootOverride`; and the host's cross-category keywords, masks and unmasks
+(`host_cross_config`), handed to the `cross-*` steps as a `PendingConfig`.
+
 ## Still open
 
 - **`--setup` is not idempotent**: a rerun reinstalls every step.
 - **Cross and target gcc can differ** within a pin: the host side accepts unkeyworded snapshots (`**`), the
   sysroot only the target's keywords.
 - **`cflags`** still goes to the sysroot's `make.conf`; the derived profile's `make.defaults` is the natural place.
-- **A spec's derived profile under `-p`** before `--init-target`: the pretend override reads only the first
-  parent profile.
 
 The bootstrap order stays derived in code (`crossdev/stages.rs`) from who builds what, not written in the spec.

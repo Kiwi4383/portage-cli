@@ -109,6 +109,18 @@ pub struct ProfileLayer {
     pub package_use: Vec<(Dep, Vec<String>)>,
 }
 
+/// Entries `em` would write into a root's `/etc/portage` but has not yet (a `-p` run before
+/// `--init-target`): the in-memory form the files are rendered from
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PendingConfig {
+    /// `package.accept_keywords` lines
+    pub package_accept_keywords: Vec<(Dep, Vec<String>)>,
+    /// `package.mask`
+    pub package_mask: Vec<Dep>,
+    /// `package.unmask`
+    pub package_unmask: Vec<Dep>,
+}
+
 /// Read the config/profile/environment sources (profile stack, `make.conf`,
 /// `package.use`/`.mask`/`.unmask`/`.license`/`.accept_keywords`, USE force/
 /// mask) into a resolved [`UseEnv`], the shared input every per-package
@@ -119,6 +131,7 @@ pub async fn build_use_env(
     config_overlay: Option<&Utf8Path>,
     extra_use_override: Option<&str>,
     sysroot_override: Option<&SysrootOverride<'_>>,
+    pending: Option<&PendingConfig>,
 ) -> Result<UseEnv> {
     compute_use_env(
         repo,
@@ -126,6 +139,7 @@ pub async fn build_use_env(
         config_overlay,
         extra_use_override,
         sysroot_override,
+        pending,
     )
     .await
 }
@@ -136,6 +150,7 @@ async fn compute_use_env(
     config_overlay: Option<&Utf8Path>,
     extra_use_override: Option<&str>,
     sysroot_override: Option<&SysrootOverride<'_>>,
+    pending: Option<&PendingConfig>,
 ) -> Result<UseEnv> {
     let portage_dir = root.unwrap_or(Utf8Path::new("/")).join("etc/portage");
     let root_dir = root.unwrap_or(Utf8Path::new("/"));
@@ -243,6 +258,16 @@ async fn compute_use_env(
     if let Some(overlay) = config_overlay {
         package_accept_keywords.extend(load_package_keywords(
             overlay.join("package.accept_keywords").as_str(),
+        ));
+    }
+    if let Some(pending) = pending {
+        package_accept_keywords.extend(pending.package_accept_keywords.iter().map(
+            |(dep, toks)| {
+                (
+                    dep.clone(),
+                    toks.iter().filter_map(|t| AcceptToken::parse(t)).collect(),
+                )
+            },
         ));
     }
     let license_groups = LicenseGroupRegistry::from_repo(repo)
@@ -432,6 +457,10 @@ async fn compute_use_env(
     let mut package_unmask = stack.package_unmask().unwrap_or_default();
     package_unmask.extend(layer.iter().flat_map(|l| l.package_unmask.iter().cloned()));
     package_unmask.extend(load_dep_list(portage_dir.join("package.unmask").as_str()));
+    if let Some(pending) = pending {
+        package_mask.extend(pending.package_mask.iter().cloned());
+        package_unmask.extend(pending.package_unmask.iter().cloned());
+    }
     if let Some(overlay) = config_overlay {
         package_mask.extend(load_dep_list(overlay.join("package.mask").as_str()));
         package_unmask.extend(load_dep_list(overlay.join("package.unmask").as_str()));
@@ -723,7 +752,7 @@ fn load_dep_list(path: &str) -> Vec<Dep> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ProfileLayer, SysrootOverride, build_use_env, expand_use_expand_colon,
+        PendingConfig, ProfileLayer, SysrootOverride, build_use_env, expand_use_expand_colon,
         flags_have_use_clear_all, load_package_env_use, load_package_keywords, load_package_use,
     };
     use portage_atom::Dep;
@@ -759,7 +788,7 @@ mod tests {
         let sysroot = tempfile::tempdir().unwrap();
         let root = camino::Utf8Path::from_path(sysroot.path()).unwrap();
 
-        match build_use_env(&repo, Some(root), None, None, None).await {
+        match build_use_env(&repo, Some(root), None, None, None, None).await {
             Ok(_) => {
                 panic!("a cold, never-initialized target must not resolve without an override")
             }
@@ -775,7 +804,7 @@ mod tests {
             make_conf: "CHOST=\"riscv64-unknown-linux-gnu\"\n",
             layer: None,
         };
-        build_use_env(&repo, Some(root), None, None, Some(&ov))
+        build_use_env(&repo, Some(root), None, None, Some(&ov), None)
             .await
             .expect("a SysrootOverride must let a never-initialized target resolve");
     }
@@ -804,13 +833,48 @@ mod tests {
             layer: Some(&layer),
         };
 
-        let env = build_use_env(&repo, Some(root), None, None, Some(&ov))
+        let env = build_use_env(&repo, Some(root), None, None, Some(&ov), None)
             .await
             .unwrap();
         assert!(env.package_mask.contains(&layer.package_mask[0]));
         assert!(env.package_unmask.contains(&layer.package_unmask[0]));
         let leaf = env.profile_package_use.last().unwrap();
         assert_eq!(leaf.package_use[0].0, layer.package_use[0].0);
+    }
+
+    #[tokio::test]
+    async fn pending_config_applies_like_its_files() {
+        let repo_dir = tempfile::tempdir().unwrap();
+        let repo = make_test_repo(repo_dir.path());
+        let profile_dir = repo_dir.path().join("test-profile");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        std::fs::write(profile_dir.join("make.defaults"), "").unwrap();
+        let parents = [camino::Utf8PathBuf::try_from(profile_dir).unwrap()];
+        let root_dir = tempfile::tempdir().unwrap();
+        let root = camino::Utf8Path::from_path(root_dir.path()).unwrap();
+        let ov = SysrootOverride {
+            parents: &parents,
+            make_conf: "",
+            layer: None,
+        };
+        let wrappers =
+            Dep::parse("=cross-riscv64-unknown-linux-gnu/clang-crossdev-wrappers-23*").unwrap();
+        let pending = PendingConfig {
+            package_accept_keywords: vec![(wrappers.clone(), vec!["**".into()])],
+            package_mask: vec![Dep::parse("cross-riscv64-unknown-linux-gnu/gcc").unwrap()],
+            package_unmask: vec![Dep::parse("cross-riscv64-unknown-linux-gnu/gcc:15").unwrap()],
+        };
+
+        let env = build_use_env(&repo, Some(root), None, None, Some(&ov), Some(&pending))
+            .await
+            .unwrap();
+        assert!(
+            env.package_accept_keywords
+                .iter()
+                .any(|(dep, toks)| *dep == wrappers && toks.len() == 1)
+        );
+        assert!(env.package_mask.contains(&pending.package_mask[0]));
+        assert!(env.package_unmask.contains(&pending.package_unmask[0]));
     }
 
     #[tokio::test]
@@ -835,7 +899,7 @@ mod tests {
         std::fs::write(overlay.path().join("package.unmask"), "=dev-libs/foo-3\n").unwrap();
         let overlay = camino::Utf8Path::from_path(overlay.path()).unwrap();
 
-        let env = build_use_env(&repo, Some(root), Some(overlay), None, Some(&ov))
+        let env = build_use_env(&repo, Some(root), Some(overlay), None, Some(&ov), None)
             .await
             .unwrap();
         assert!(

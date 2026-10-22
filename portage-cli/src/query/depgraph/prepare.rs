@@ -115,6 +115,7 @@ pub(super) async fn prepare<'a>(
         extra_use_override,
         extra_package_use,
         sysroot_override,
+        pending_config,
         binpkg_index,
         exclude,
         resume_completed,
@@ -183,6 +184,7 @@ pub(super) async fn prepare<'a>(
                 roots.config_overlay(),
                 extra_use_override,
                 sysroot_override,
+                pending_config,
             )
             .await;
             (result, start.elapsed())

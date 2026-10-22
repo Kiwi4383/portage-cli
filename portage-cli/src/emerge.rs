@@ -196,6 +196,9 @@ pub(crate) struct EmergeOpts<'a> {
     /// target passes this so the plan can still be computed. Empty for
     /// every normal emerge, and for a `--target` that already exists.
     pub sysroot_override: Option<portage_resolve::use_env::SysrootOverride<'a>>,
+    /// `/etc/portage` entries pending `--init-target`'s writes, in memory (see
+    /// [`portage_resolve::use_env::PendingConfig`]); same cases as `sysroot_override`.
+    pub pending_config: Option<&'a portage_resolve::use_env::PendingConfig>,
 }
 
 /// [`EmergeOpts`] minus its borrowed `use_override` (already folded into
@@ -218,6 +221,7 @@ struct ResolvedEmergeOpts<'a> {
     autounmask_widen: bool,
     extra_package_use: &'a [(portage_atom::Dep, Vec<portage_atom_pubgrub::UseOverride>)],
     sysroot_override: Option<portage_resolve::use_env::SysrootOverride<'a>>,
+    pending_config: Option<&'a portage_resolve::use_env::PendingConfig>,
 }
 
 pub(crate) async fn emerge_atoms(
@@ -250,6 +254,7 @@ pub(crate) async fn emerge_atoms(
             autounmask_widen: opts.autounmask_widen,
             extra_package_use: opts.extra_package_use,
             sysroot_override: opts.sysroot_override,
+            pending_config: opts.pending_config,
         },
     )
     .await
@@ -338,6 +343,7 @@ async fn emerge_atoms_inner(
         autounmask_widen,
         extra_package_use,
         sysroot_override,
+        pending_config,
     } = opts;
     let extra_use_override = extra_use_override.as_deref();
     let merge_flags = merge_flags_override.unwrap_or_else(|| cli.merge_flags());
@@ -565,6 +571,7 @@ async fn emerge_atoms_inner(
         extra_use_override,
         extra_package_use,
         sysroot_override: sysroot_override.as_ref(),
+        pending_config,
         binpkg_index: binpkg_index.as_ref(),
         exclude: &merge_flags.exclude,
         // On `-r`, drop packages already finished in a prior attempt so the
@@ -945,6 +952,7 @@ pub(crate) async fn run_emerge(cli: &cli::Cli) -> Result<()> {
             autounmask_widen: false,
             extra_package_use: &[],
             sysroot_override: None,
+            pending_config: None,
         },
     )
     .await
@@ -1001,6 +1009,7 @@ async fn resume_atoms(cli: &cli::Cli) -> Result<()> {
             autounmask_widen: false,
             extra_package_use: &[],
             sysroot_override: None,
+            pending_config: None,
         },
     )
     .await

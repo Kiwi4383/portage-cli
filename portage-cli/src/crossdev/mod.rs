@@ -290,6 +290,18 @@ async fn setup(
     let parents_holder: Vec<Utf8PathBuf>;
     let derived_holder;
     let make_conf_holder;
+    let host_config = if globals.pretend() {
+        let gentoo_path = main_repo(globals)?.path().to_owned();
+        Some(host_cross_config(
+            target,
+            globals,
+            &gentoo_path,
+            spec,
+            own_profile,
+        )?)
+    } else {
+        None
+    };
     let sysroot_override = if globals.pretend() {
         let gentoo_path = main_repo(globals)?.path().to_owned();
         parents_holder = spec
@@ -317,6 +329,7 @@ async fn setup(
             target_only_installed_view: false,
             extra_aliases,
             sysroot_override,
+            pending_config: host_config.as_ref(),
             extra_package_use: &[],
         },
         post_step,
@@ -379,6 +392,9 @@ struct RunStagedOpts<'a> {
     /// `-a`) — see [`portage_resolve::use_env::SysrootOverride`]. `None`
     /// for native `toolchain --setup` and every already-initialized target.
     sysroot_override: Option<portage_resolve::use_env::SysrootOverride<'a>>,
+    /// The host-side `/etc/portage` entries for the cross category that `--init-target`
+    /// would write, in memory, for the same runs as `sysroot_override`
+    pending_config: Option<&'a portage_resolve::use_env::PendingConfig>,
     /// In-memory `package.use` for this staged run only. Native toolchain
     /// fills it; every other caller leaves it empty.
     extra_package_use: &'a [(portage_atom::Dep, Vec<portage_atom_pubgrub::UseOverride>)],
@@ -403,6 +419,7 @@ async fn run_staged(
         target_only_installed_view,
         extra_aliases,
         sysroot_override,
+        pending_config,
         extra_package_use,
     } = opts;
     let mut out = anstream::stdout();
@@ -431,6 +448,7 @@ async fn run_staged(
         // `cross-*` step resolves against the outer EROOT's own real config,
         // which the override must never shadow.
         let step_sysroot_override = if step_outer { None } else { sysroot_override };
+        let step_pending_config = if step_outer { pending_config } else { None };
         crate::emerge_atoms(
             globals,
             &step.atoms,
@@ -451,6 +469,7 @@ async fn run_staged(
                 autounmask_widen: true,
                 extra_package_use,
                 sysroot_override: step_sysroot_override,
+                pending_config: step_pending_config,
             },
         )
         .await?;
@@ -659,6 +678,7 @@ pub(crate) async fn toolchain(args: &crate::cli::ToolchainArgs, globals: &Cli) -
             target_only_installed_view: true,
             extra_aliases: &[],
             sysroot_override: None,
+            pending_config: None,
             extra_package_use: &extra_package_use,
         },
         move |step: &stages::StageStep| activate_native_toolchain(globals, step),
@@ -760,6 +780,7 @@ async fn run_stage1(args: &crate::cli::StagesArgs, globals: &Cli) -> Result<()> 
                 target_only_installed_view: false,
                 extra_aliases: &[],
                 sysroot_override: None,
+                pending_config: None,
                 extra_package_use: &[],
             },
             post_step,
@@ -803,6 +824,7 @@ async fn run_stage1(args: &crate::cli::StagesArgs, globals: &Cli) -> Result<()> 
             target_only_installed_view: true,
             extra_aliases: &[],
             sysroot_override: None,
+            pending_config: None,
             extra_package_use: &spec_use,
         },
         |_| Ok(()),
@@ -874,6 +896,7 @@ async fn run_stage3(args: &crate::cli::StagesArgs, globals: &Cli) -> Result<()> 
             autounmask_widen: true,
             extra_package_use: &[],
             sysroot_override: None,
+            pending_config: None,
         },
     )
     .await?;
@@ -993,6 +1016,7 @@ async fn resolve_gcc_version(globals: &Cli) -> Option<String> {
         extra_use_override: None,
         extra_package_use: &[],
         sysroot_override: None,
+        pending_config: None,
         binpkg_index: None,
         exclude: &[],
         resume_completed: std::collections::HashSet::new(),
@@ -1445,6 +1469,7 @@ async fn ensure_config_site_packages(globals: &Cli) -> Result<()> {
             autounmask_widen: false,
             extra_package_use: &[],
             sysroot_override: None,
+            pending_config: None,
         },
     )
     .await
@@ -1845,7 +1870,7 @@ fn ebuild_versions(gentoo: &Utf8Path, cat: &str, pkg: &str) -> Vec<Version> {
 }
 
 /// `{major}.{minor}.9999` from `version`'s first two numeric components —
-/// the upper bound of its release branch (see [`host_arch_keyword_line`]):
+/// the upper bound of its release branch (see [`host_arch_keyword`]):
 /// includes every dated snapshot on that branch (`X.Y.Z_pDATE` sorts below
 /// `X.Y.9999`) but excludes the branch's own live/rolling `X.Y.9999` ebuild
 /// and any newer branch or slot.
@@ -1880,40 +1905,38 @@ fn llvm_slot(repo: &Repository) -> Option<u64> {
 /// - Installed version still in tree → pin exactly (host/cross stay aligned).
 /// - Else → [`branch_bound`] of installed or newest available, with `**`
 ///   only inside that bound (some packages are permanently unkeyworded).
-fn host_arch_keyword_line(
+fn host_arch_keyword(
     roots: &portage_resolve::Roots,
     gentoo: &Utf8Path,
     category: &str,
     pkg: &str,
     real_cat: &str,
     real_pkg: &str,
-) -> String {
+) -> Result<Dep> {
     let available = ebuild_versions(gentoo, real_cat, real_pkg);
     let installed = host_installed_versions(roots, real_cat, real_pkg);
 
-    if let Some((version, slot)) = installed.first() {
+    let atom = if let Some((version, slot)) = installed.first() {
         let slot_suffix = if slot != "0" {
             format!(":{slot}")
         } else {
             String::new()
         };
         if available.contains(version) {
-            return format!("={category}/{pkg}-{version}{slot_suffix} **\n");
+            format!("={category}/{pkg}-{version}{slot_suffix}")
+        } else {
+            format!("<{category}/{pkg}-{}{slot_suffix}", branch_bound(version))
         }
-        let bound = branch_bound(version);
-        return format!("<{category}/{pkg}-{bound}{slot_suffix} **\n");
-    }
-
-    match available.iter().max() {
-        Some(newest) => {
-            let bound = branch_bound(newest);
-            format!("<{category}/{pkg}-{bound} **\n")
+    } else {
+        match available.iter().max() {
+            Some(newest) => format!("<{category}/{pkg}-{}", branch_bound(newest)),
+            // No ebuild at all — unreachable in practice (existence is already
+            // validated up front by `alias_repo_conf_entry`), but a blanket `**`
+            // is a safe, honest fallback rather than silently writing nothing.
+            None => format!("{category}/{pkg}"),
         }
-        // No ebuild at all — unreachable in practice (existence is already
-        // validated up front by `alias_repo_conf_entry`), but a blanket `**`
-        // is a safe, honest fallback rather than silently writing nothing.
-        None => format!("{category}/{pkg} **\n"),
-    }
+    };
+    Dep::parse(&atom).with_context(|| format!("keyword atom {atom}"))
 }
 
 /// Write the cross packages' `package.env` + `env/<category>/<pkg>.conf` into the
@@ -1965,11 +1988,6 @@ fn cross_env_entries(
     let mut entries = Vec::new();
 
     let mut mappings = String::new();
-    // Host-arch tools (binutils/gcc/…, see `PackageArch`) run on the build
-    // host; keyword them for the *host* arch, not the active `--target` arch.
-    // Prefer the host's installed/release-branch pin over a blanket `**`
-    // (which would also pick live `9999` ebuilds).
-    let mut keyword_entries = String::new();
     for cpn in spec.packages() {
         let (real_cat, pkg) = (cpn.category.as_str(), cpn.package.as_str());
         // Host, as real crossdev treats a package its table does not name.
@@ -1982,20 +2000,7 @@ fn cross_env_entries(
             path: env_dir.join(format!("{pkg}.conf")),
             desired: body,
         });
-        // Built by clang: everything on an LLVM-model target, the clang roles on a mixed one.
-        let clang_built = target.llvm || spec.clang_roles().contains(&cpn);
-        mappings.push_str(&env_mapping(&category, pkg, clang_built));
-        if arch == target::PackageArch::Host {
-            let pin = spec.pins().into_iter().find(|pin| pin.cpn == cpn);
-            let line = match (pin, target.llvm_slot.filter(|_| clang_built)) {
-                (Some(pin), _) => pinned_keyword_line(&main_repo(globals)?, &category, pin)?,
-                (None, Some(slot)) => format!("={category}/{pkg}-{slot}* **\n"),
-                (None, None) => {
-                    host_arch_keyword_line(&base, gentoo, &category, pkg, real_cat, pkg)
-                }
-            };
-            keyword_entries.push_str(&line);
-        }
+        mappings.push_str(&env_mapping(&category, pkg, clang_built(target, spec, cpn)));
     }
     // `--ex-pkg`/`--ex-gdb` extras: always the host-ABI branch, matching real
     // crossdev's `for_each_extra_pkg set_portage X` (set_env's `case ${l} in
@@ -2016,14 +2021,6 @@ fn cross_env_entries(
             desired: body,
         });
         mappings.push_str(&env_mapping(&category, pkg.as_str(), target.llvm));
-        keyword_entries.push_str(&host_arch_keyword_line(
-            &base,
-            gentoo,
-            &category,
-            pkg.as_str(),
-            cpn.category.as_str(),
-            pkg.as_str(),
-        ));
     }
 
     entries.push(config_plan::ConfigEntry::File {
@@ -2044,32 +2041,107 @@ fn cross_env_entries(
             desired: clang_cfg(target, globals, ClangRuntimes::Llvm)?,
         });
     }
+    let host = host_cross_config(target, globals, gentoo, spec, own_profile)?;
+    let keywords: String = host
+        .package_accept_keywords
+        .iter()
+        .map(|(dep, toks)| format!("{dep} {}\n", toks.join(" ")))
+        .collect();
     entries.push(config_plan::ConfigEntry::Derived {
         path: portage.join("package.accept_keywords").join(&category),
-        desired: keyword_entries,
+        desired: keywords,
     });
     if own_profile {
-        let cross = |pin: &Dep| Dep {
-            cpn: Cpn::new(&category, pin.cpn.package.as_str()),
-            ..pin.clone()
-        };
         entries.extend([
             config_plan::ConfigEntry::File {
                 path: portage.join("package.mask").join(&category),
-                desired: dep_lines(&pin_masks(spec).0.iter().map(cross).collect::<Vec<_>>()),
+                desired: dep_lines(&host.package_mask),
             },
             config_plan::ConfigEntry::File {
                 path: portage.join("package.unmask").join(&category),
-                desired: dep_lines(&pin_masks(spec).1.iter().map(cross).collect::<Vec<_>>()),
+                desired: dep_lines(&host.package_unmask),
             },
         ]);
     }
     Ok(entries)
 }
 
-/// The cross package's keyword line under a spec pin: every version up to the release branch
+/// Built by clang: everything on an LLVM-model target, the clang roles on a mixed one
+fn clang_built(target: &CrossTarget, spec: &spec::SysrootSpec, cpn: Cpn) -> bool {
+    target.llvm || spec.clang_roles().contains(&cpn)
+}
+
+/// The host-side config of the cross category: what `--init-target` writes to the host's
+/// `package.accept_keywords`/`package.mask`/`package.unmask` for it, and what a `-p` run
+/// before that resolves the `cross-*` steps with
+///
+/// Host-arch tools (binutils/gcc/…, see `PackageArch`) run on the build host, so they are
+/// keyworded for the host arch, preferring the host's installed or release-branch version
+/// over a blanket `**`, which would also pick live ebuilds. Masks and unmasks carry a spec's pins.
+fn host_cross_config(
+    target: &CrossTarget,
+    globals: &Cli,
+    gentoo: &Utf8Path,
+    spec: &spec::SysrootSpec,
+    own_profile: bool,
+) -> Result<portage_resolve::use_env::PendingConfig> {
+    let base = globals.base_roots();
+    let category = target.category();
+    let pins = spec.pins();
+    let repo = if pins.is_empty() {
+        None
+    } else {
+        Some(main_repo(globals)?)
+    };
+    let mut keywords = Vec::new();
+    for cpn in spec.packages() {
+        let (real_cat, pkg) = (cpn.category.as_str(), cpn.package.as_str());
+        let arch = target::cross_package_arch(real_cat, pkg).unwrap_or(target::PackageArch::Host);
+        if arch != target::PackageArch::Host {
+            continue;
+        }
+        let pin = pins.iter().find(|pin| pin.cpn == cpn);
+        let atom = match (
+            pin,
+            &repo,
+            target.llvm_slot.filter(|_| clang_built(target, spec, cpn)),
+        ) {
+            (Some(pin), Some(repo), _) => pinned_keyword(repo, &category, pin)?,
+            (_, _, Some(slot)) => Dep::parse(&format!("={category}/{pkg}-{slot}*"))
+                .with_context(|| format!("{category}/{pkg} slot {slot}"))?,
+            _ => host_arch_keyword(&base, gentoo, &category, pkg, real_cat, pkg)?,
+        };
+        keywords.push((atom, vec!["**".to_owned()]));
+    }
+    // `--ex-pkg`/`--ex-gdb` extras: always the host-ABI branch, like crossdev's own extras.
+    for cpn in spec.extras() {
+        let (real_cat, pkg) = (cpn.category.as_str(), cpn.package.as_str());
+        let atom = host_arch_keyword(&base, gentoo, &category, pkg, real_cat, pkg)?;
+        keywords.push((atom, vec!["**".to_owned()]));
+    }
+    let (package_mask, package_unmask) = if own_profile {
+        let cross = |pin: &Dep| Dep {
+            cpn: Cpn::new(&category, pin.cpn.package.as_str()),
+            ..pin.clone()
+        };
+        let (mask, unmask) = pin_masks(spec);
+        (
+            mask.iter().map(cross).collect(),
+            unmask.iter().map(cross).collect(),
+        )
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    Ok(portage_resolve::use_env::PendingConfig {
+        package_accept_keywords: keywords,
+        package_mask,
+        package_unmask,
+    })
+}
+
+/// The cross package's keyword atom under a spec pin: every version up to the release branch
 /// of the newest keyworded one the pin allows, so a live ebuild the pin also matches stays out
-fn pinned_keyword_line(repo: &Repository, category: &str, pin: &Dep) -> Result<String> {
+fn pinned_keyword(repo: &Repository, category: &str, pin: &Dep) -> Result<Dep> {
     let (cat, pkg) = (pin.cpn.category.as_str(), pin.cpn.package.as_str());
     let newest = ebuild_versions(repo.path(), cat, pkg)
         .into_iter()
@@ -2082,7 +2154,8 @@ fn pinned_keyword_line(repo: &Repository, category: &str, pin: &Dep) -> Result<S
         })
         .max()
         .with_context(|| format!("no keyworded version of {} matches {pin}", pin.cpn))?;
-    Ok(format!("<{category}/{pkg}-{} **\n", branch_bound(&newest)))
+    let atom = format!("<{category}/{pkg}-{}", branch_bound(&newest));
+    Dep::parse(&atom).with_context(|| format!("keyword atom {atom}"))
 }
 
 /// A cross package's `package.env` line: its own env file, plus the shared
@@ -2702,18 +2775,20 @@ mod tests {
         let gentoo = root.join("gentoo");
         let roots = portage_resolve::Roots::for_test(root.as_str());
 
-        let line = host_arch_keyword_line(
+        let line = host_arch_keyword(
             &roots,
             &gentoo,
             "cross-riscv64-unknown-linux-gnu",
             "gcc",
             "sys-devel",
             "gcc",
-        );
-        assert_eq!(line, "cross-riscv64-unknown-linux-gnu/gcc **\n");
+        )
+        .unwrap()
+        .to_string();
+        assert_eq!(line, "cross-riscv64-unknown-linux-gnu/gcc");
     }
 
-    /// A `gentoo` repo holding `clang-crossdev-wrappers` ebuilds, each with an
+    /// A `gentoo` repo holding `llvm-core/clang` ebuilds, each with an
     /// md5-cache entry carrying `KEYWORDS` only when given.
     fn clang_repo(gentoo: &camino::Utf8Path, versions: &[(&str, &str)]) -> Repository {
         std::fs::create_dir_all(gentoo.join("metadata/md5-cache/llvm-core")).unwrap();
@@ -2784,18 +2859,17 @@ mod tests {
         write_ebuild(&gentoo, "sys-devel", "rust-std", "1.95.0");
         let roots = portage_resolve::Roots::for_test(root.as_str());
 
-        let line = host_arch_keyword_line(
+        let line = host_arch_keyword(
             &roots,
             &gentoo,
             "cross-riscv64-unknown-linux-gnu",
             "rust-std",
             "sys-devel",
             "rust-std",
-        );
-        assert_eq!(
-            line,
-            "<cross-riscv64-unknown-linux-gnu/rust-std-1.95.9999 **\n"
-        );
+        )
+        .unwrap()
+        .to_string();
+        assert_eq!(line, "<cross-riscv64-unknown-linux-gnu/rust-std-1.95.9999");
     }
 
     // Installed, and that exact version's ebuild still exists in the tree:
@@ -2810,17 +2884,19 @@ mod tests {
         write_vdb_entry(root, "sys-devel", "binutils-2.46.0", "2.46");
         let roots = portage_resolve::Roots::for_test(root.as_str());
 
-        let line = host_arch_keyword_line(
+        let line = host_arch_keyword(
             &roots,
             &gentoo,
             "cross-riscv64-unknown-linux-gnu",
             "binutils",
             "sys-devel",
             "binutils",
-        );
+        )
+        .unwrap()
+        .to_string();
         assert_eq!(
             line,
-            "=cross-riscv64-unknown-linux-gnu/binutils-2.46.0:2.46 **\n"
+            "=cross-riscv64-unknown-linux-gnu/binutils-2.46.0:2.46"
         );
     }
 
@@ -2840,18 +2916,17 @@ mod tests {
         write_vdb_entry(root, "sys-devel", "gcc-16.1.0", "16");
         let roots = portage_resolve::Roots::for_test(root.as_str());
 
-        let line = host_arch_keyword_line(
+        let line = host_arch_keyword(
             &roots,
             &gentoo,
             "cross-riscv64-unknown-linux-gnu",
             "gcc",
             "sys-devel",
             "gcc",
-        );
-        assert_eq!(
-            line,
-            "<cross-riscv64-unknown-linux-gnu/gcc-16.1.9999:16 **\n"
-        );
+        )
+        .unwrap()
+        .to_string();
+        assert_eq!(line, "<cross-riscv64-unknown-linux-gnu/gcc-16.1.9999:16");
     }
 
     // `write_alias_repo_conf` emits a `Location::Alias` repos.conf entry that

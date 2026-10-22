@@ -182,6 +182,7 @@ pub async fn run(cli: &cli::Cli, library: Option<&str>) -> Result<()> {
             autounmask_widen: false,
             extra_package_use: &[],
             sysroot_override: None,
+            pending_config: None,
         },
     )
     .await

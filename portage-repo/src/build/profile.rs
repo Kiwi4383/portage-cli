@@ -16,6 +16,23 @@ use crate::repo::profile::{
     merge_flag_lists, merge_flag_lists_signed,
 };
 
+/// One snapshot of a process environment, which the profile evaluation reads in place of
+/// `std::env`
+#[derive(Debug, Clone, Default)]
+pub struct Environment(std::collections::BTreeMap<String, String>);
+
+impl Environment {
+    /// This process's environment, as it is now
+    pub fn process() -> Self {
+        Self(std::env::vars().collect())
+    }
+
+    /// The value of `name`, if set
+    pub fn get(&self, name: &str) -> Option<&str> {
+        self.0.get(name).map(String::as_str)
+    }
+}
+
 /// Merge a stacked variable's layers. `USE` preserves explicit disables
 /// (`-flag` kept so it can override a `+flag` IUSE default per package); the
 /// `ACCEPT_*` lists keep their negations; every other incremental var drops them.
@@ -93,7 +110,7 @@ impl ProfileStack {
         shell: &mut EbuildShell,
         extra_confs: &[ConfSource<'_>],
     ) -> Result<ResolvedUse> {
-        resolve_use_flags(shell, self, extra_confs, None).await
+        resolve_use_flags(shell, self, extra_confs, None, &Environment::process()).await
     }
 
     /// As [`use_flags`](Self::use_flags), plus a transient conf-layer USE
@@ -105,7 +122,14 @@ impl ProfileStack {
         extra_confs: &[ConfSource<'_>],
         extra_use_override: &str,
     ) -> Result<ResolvedUse> {
-        resolve_use_flags(shell, self, extra_confs, Some(extra_use_override)).await
+        resolve_use_flags(
+            shell,
+            self,
+            extra_confs,
+            Some(extra_use_override),
+            &Environment::process(),
+        )
+        .await
     }
 
     /// Build the layered profile environment by sourcing each `make.defaults`
@@ -294,7 +318,8 @@ pub async fn configure_shell(
     stack: &ProfileStack,
     extra_confs: &[ConfSource<'_>],
 ) -> Result<()> {
-    let resolved = resolve_use_flags(shell, stack, extra_confs, None).await?;
+    let resolved =
+        resolve_use_flags(shell, stack, extra_confs, None, &Environment::process()).await?;
     let refs: Vec<&str> = resolved.enabled.iter().map(|f| f.as_str()).collect();
     shell.set_use_flags(&refs)
 }
@@ -371,6 +396,7 @@ async fn resolve_use_flags(
     stack: &ProfileStack,
     extra_confs: &[ConfSource<'_>],
     extra_use_override: Option<&str>,
+    env: &Environment,
 ) -> Result<ResolvedUse> {
     let ProfileEnv { layers } = stack.profile_env(shell).await?;
     let defaults_use = shell.get_var("USE").unwrap_or_default();
@@ -406,7 +432,7 @@ async fn resolve_use_flags(
         .get_var("USE_EXPAND")
         .unwrap_or_default()
         .split_whitespace()
-        .filter(|k| std::env::var(k).is_ok())
+        .filter(|k| env.get(k).is_some())
         .map(str::to_string)
         .collect();
 
@@ -415,9 +441,9 @@ async fn resolve_use_flags(
     // per-package fold must resume from *before* `package.use`/`env`. See
     // `ResolvedUse::pre_env`'s doc.
     let pre_env = shell.get_var("USE").unwrap_or_default();
-    let env_use = env_layer_use(shell).join(" ");
+    let env_use = env_layer_use(shell, env).join(" ");
 
-    apply_env_layer(shell).await?;
+    apply_env_layer(shell, env).await?;
 
     let CollectedUse {
         mut enabled,
@@ -507,7 +533,7 @@ fn expand_var_tokens(
 /// values, the raw `USE`, then prefixed `USE_EXPAND` expansions — portage's
 /// within-layer order for the `env` layer (a `-*` in the environment `USE`
 /// clears lower layers but not the environment's own expand variables).
-fn env_layer_use(shell: &EbuildShell) -> Vec<String> {
+fn env_layer_use(shell: &EbuildShell, env: &Environment) -> Vec<String> {
     let expand_keys: Vec<String> = shell
         .get_var("USE_EXPAND")
         .unwrap_or_default()
@@ -520,10 +546,13 @@ fn env_layer_use(shell: &EbuildShell) -> Vec<String> {
         .split_whitespace()
         .map(str::to_string)
         .collect();
-    let (unpref, pref) =
-        expand_var_tokens(|k| std::env::var(k).ok(), &unprefixed_keys, &expand_keys);
+    let (unpref, pref) = expand_var_tokens(
+        |k| env.get(k).map(str::to_owned),
+        &unprefixed_keys,
+        &expand_keys,
+    );
     let mut out = unpref;
-    out.extend(std::env::var("USE").ok());
+    out.extend(env.get("USE").map(str::to_owned));
     out.extend(pref);
     out
 }
@@ -556,7 +585,7 @@ fn strip_expand_tokens(use_str: &str, var: &str) -> String {
 ///
 /// This is how `PYTHON_TARGETS=python3_15 em cat/pkg` selects a target,
 /// mirroring how `CC=my-cc` is applied in `init_build_env`.
-async fn apply_env_layer(shell: &mut EbuildShell) -> Result<()> {
+async fn apply_env_layer(shell: &mut EbuildShell, env: &Environment) -> Result<()> {
     let expand_keys: Vec<String> = shell
         .get_var("USE_EXPAND")
         .unwrap_or_default()
@@ -573,7 +602,7 @@ async fn apply_env_layer(shell: &mut EbuildShell) -> Result<()> {
     let mut restore = String::new();
     let mut use_base = shell.get_var("USE").unwrap_or_default();
     for var in &expand_keys {
-        if let Ok(env_val) = std::env::var(var) {
+        if let Some(env_val) = env.get(var) {
             use_base = strip_expand_tokens(&use_base, var);
             restore += &format!("{}={}\n", var, shell_quote(env_val.trim()));
         }
@@ -582,20 +611,20 @@ async fn apply_env_layer(shell: &mut EbuildShell) -> Result<()> {
         if expand_keys.contains(var) {
             continue;
         }
-        if let Ok(env_val) = std::env::var(var) {
+        if let Some(env_val) = env.get(var) {
             let existing = shell.get_var(var).unwrap_or_default();
-            let merged = merge_use_var(var, [existing.as_str(), env_val.as_str()].into_iter());
+            let merged = merge_use_var(var, [existing.as_str(), env_val].into_iter());
             restore += &format!("{}={}\n", var, shell_quote(&merged.join(" ")));
         }
     }
     for var in ["ACCEPT_LICENSE", "ACCEPT_PROPERTIES", "ACCEPT_RESTRICT"] {
-        if let Ok(env_val) = std::env::var(var) {
+        if let Some(env_val) = env.get(var) {
             let existing = shell.get_var(var).unwrap_or_default();
-            let merged = merge_use_var(var, [existing.as_str(), env_val.as_str()].into_iter());
+            let merged = merge_use_var(var, [existing.as_str(), env_val].into_iter());
             restore += &format!("{}={}\n", var, shell_quote(&merged.join(" ")));
         }
     }
-    let layer_use = env_layer_use(shell);
+    let layer_use = env_layer_use(shell, env);
     if layer_use.is_empty() {
         if use_base != shell.get_var("USE").unwrap_or_default() {
             restore += &format!("USE={}\n", shell_quote(&use_base));

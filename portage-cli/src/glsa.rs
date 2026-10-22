@@ -594,7 +594,6 @@ async fn run_fix(globals: &Cli, ids: &[String]) -> Result<()> {
             extra_path: &[],
             autounmask_widen: false,
             extra_package_use: &[],
-            sysroot_override: None,
             pending_config: None,
         },
     )

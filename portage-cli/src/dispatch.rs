@@ -628,7 +628,6 @@ async fn run_query(command: &QueryCommand, globals: &cli::Cli) -> Result<()> {
                 nodeps: false,
                 extra_use_override: None,
                 extra_package_use: &[],
-                sysroot_override: None,
                 pending_config: None,
                 binpkg_index: binpkg_index.as_ref(),
                 exclude: &merge_flags.exclude,

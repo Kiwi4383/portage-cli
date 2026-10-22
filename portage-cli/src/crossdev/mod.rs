@@ -62,7 +62,8 @@ use portage_atom::interner::{DefaultInterner, Interned};
 use portage_atom::{Cpn, Cpv, Dep, Pf, Version};
 use portage_atom_pubgrub::{DepClass, UseOverride};
 use portage_repo::{MakeConf, ProfileStack, ReposConf, Repository};
-use portage_resolve::use_env::ProfileLayer;
+use portage_resolve::repo::AcceptToken;
+use portage_resolve::use_env::{PendingConfig, PendingProfile, ProfileLayer};
 use portage_vdb::{SlotName, Vdb};
 
 use crate::cli::{Cli, CrossdevArgs, DepgraphFlags, MergeFlags};
@@ -319,35 +320,29 @@ async fn setup(
     // (init_target only previewed them), so depgraph's own config read would
     // otherwise hard-fail. The parents are real `::gentoo` profiles; a spec's derived
     // profile is applied from memory, the same value its files are rendered from.
-    let parents_holder: Vec<Utf8PathBuf>;
-    let derived_holder;
-    let make_conf_holder;
-    let host_config = if globals.pretend() {
+    let pending = if globals.pretend() {
         let gentoo_path = main_repo(globals)?.path().to_owned();
-        Some(host_cross_config(
-            target,
-            globals,
-            &gentoo_path,
-            spec,
-            own_profile,
-        )?)
-    } else {
-        None
-    };
-    let sysroot_override = if globals.pretend() {
-        let gentoo_path = main_repo(globals)?.path().to_owned();
-        parents_holder = spec
-            .profile
-            .iter()
-            .map(|p| gentoo_path.join("profiles").join(p))
-            .collect();
-        derived_holder = own_profile.then(|| DerivedProfile::of(spec)).transpose()?;
-        make_conf_holder = make_conf_body(target, &spec.cflags, globals.outer_roots().merge_root());
-        Some(portage_resolve::use_env::SysrootOverride {
-            parents: &parents_holder,
-            make_conf: &make_conf_holder,
-            layer: derived_holder.as_ref().map(|d| &d.layer),
-        })
+        let sysroot = PendingConfig {
+            profile: Some(PendingProfile {
+                parents: spec
+                    .profile
+                    .iter()
+                    .map(|p| gentoo_path.join("profiles").join(p))
+                    .collect(),
+                layer: own_profile
+                    .then(|| DerivedProfile::of(spec))
+                    .transpose()?
+                    .map(|d| d.layer),
+            }),
+            make_conf: Some(make_conf_body(
+                target,
+                &spec.cflags,
+                globals.outer_roots().merge_root(),
+            )),
+            ..Default::default()
+        };
+        let host = host_cross_config(target, globals, &gentoo_path, spec, own_profile)?;
+        Some(PendingTarget { sysroot, host })
     } else {
         None
     };
@@ -360,8 +355,7 @@ async fn setup(
             use_outer_eroot: true,
             target_only_installed_view: false,
             extra_aliases,
-            sysroot_override,
-            pending_config: host_config.as_ref(),
+            pending: pending.as_ref(),
             extra_package_use: &[],
             done_steps,
         },
@@ -403,6 +397,14 @@ fn post_step_cross(
     Ok(())
 }
 
+/// The config `--init-target` would write for a target, held in memory for a `-p` run
+struct PendingTarget {
+    /// The sysroot's profile and `make.conf`
+    sysroot: PendingConfig,
+    /// The host's `package.*` entries for the cross category
+    host: PendingConfig,
+}
+
 /// Options for the staged bootstrap driver ([`run_staged`])
 struct RunStagedOpts<'a> {
     plan: &'a stages::StagePlan,
@@ -420,14 +422,9 @@ struct RunStagedOpts<'a> {
     target_only_installed_view: bool,
     /// In-memory crossdev aliases (pretend / repos.conf not written yet)
     extra_aliases: &'a [portage_repo::RepoEntry],
-    /// In-memory sysroot `make.conf`/profile for a `--target` never
-    /// `--init-target`'d for real (staged crossdev `-p`/an unconfirmed
-    /// `-a`) — see [`portage_resolve::use_env::SysrootOverride`]. `None`
-    /// for native `toolchain --setup` and every already-initialized target.
-    sysroot_override: Option<portage_resolve::use_env::SysrootOverride<'a>>,
-    /// The host-side `/etc/portage` entries for the cross category that `--init-target`
-    /// would write, in memory, for the same runs as `sysroot_override`
-    pending_config: Option<&'a portage_resolve::use_env::PendingConfig>,
+    /// The config `--init-target` would write, for a `-p` run before it. `None` for native
+    /// `toolchain --setup` and for an initialized target.
+    pending: Option<&'a PendingTarget>,
     /// How many leading steps an earlier run already completed (`--setup -r`); they are
     /// reported, not run
     done_steps: usize,
@@ -454,8 +451,7 @@ async fn run_staged(
         use_outer_eroot,
         target_only_installed_view,
         extra_aliases,
-        sysroot_override,
-        pending_config,
+        pending,
         done_steps,
         extra_package_use,
     } = opts;
@@ -484,12 +480,9 @@ async fn run_staged(
         } else {
             use_outer_eroot
         };
-        // `sysroot_override` only makes sense for a step that actually
-        // resolves against the (possibly not-yet-real) sysroot — a host-side
-        // `cross-*` step resolves against the outer EROOT's own real config,
-        // which the override must never shadow.
-        let step_sysroot_override = if step_outer { None } else { sysroot_override };
-        let step_pending_config = if step_outer { pending_config } else { None };
+        // A host-side `cross-*` step resolves against the outer EROOT's real profile, so it
+        // reads only the host's pending entries; a sysroot step reads the sysroot's.
+        let step_pending = pending.map(|p| if step_outer { &p.host } else { &p.sysroot });
         crate::emerge_atoms(
             globals,
             &step.atoms,
@@ -509,8 +502,7 @@ async fn run_staged(
                 extra_path: &[],
                 autounmask_widen: true,
                 extra_package_use,
-                sysroot_override: step_sysroot_override,
-                pending_config: step_pending_config,
+                pending_config: step_pending,
             },
         )
         .await?;
@@ -718,8 +710,7 @@ pub(crate) async fn toolchain(args: &crate::cli::ToolchainArgs, globals: &Cli) -
             use_outer_eroot: false,
             target_only_installed_view: true,
             extra_aliases: &[],
-            sysroot_override: None,
-            pending_config: None,
+            pending: None,
             extra_package_use: &extra_package_use,
             done_steps: 0,
         },
@@ -821,8 +812,7 @@ async fn run_stage1(args: &crate::cli::StagesArgs, globals: &Cli) -> Result<()> 
                 use_outer_eroot: true,
                 target_only_installed_view: false,
                 extra_aliases: &[],
-                sysroot_override: None,
-                pending_config: None,
+                pending: None,
                 extra_package_use: &[],
                 done_steps: 0,
             },
@@ -863,8 +853,7 @@ async fn run_stage1(args: &crate::cli::StagesArgs, globals: &Cli) -> Result<()> 
             // toolchain bootstrap under `--local`/`--prefix` above.
             target_only_installed_view: true,
             extra_aliases: &[],
-            sysroot_override: None,
-            pending_config: None,
+            pending: None,
             extra_package_use: &spec_use,
             done_steps: 0,
         },
@@ -936,7 +925,6 @@ async fn run_stage3(args: &crate::cli::StagesArgs, globals: &Cli) -> Result<()> 
             extra_path: &[],
             autounmask_widen: true,
             extra_package_use: &[],
-            sysroot_override: None,
             pending_config: None,
         },
     )
@@ -1056,7 +1044,6 @@ async fn resolve_gcc_version(globals: &Cli) -> Option<String> {
         nodeps: true,
         extra_use_override: None,
         extra_package_use: &[],
-        sysroot_override: None,
         pending_config: None,
         binpkg_index: None,
         exclude: &[],
@@ -1509,7 +1496,6 @@ async fn ensure_config_site_packages(globals: &Cli) -> Result<()> {
             extra_path: &[],
             autounmask_widen: false,
             extra_package_use: &[],
-            sysroot_override: None,
             pending_config: None,
         },
     )
@@ -2094,7 +2080,10 @@ fn cross_env_entries(
     let keywords: String = host
         .package_accept_keywords
         .iter()
-        .map(|(dep, toks)| format!("{dep} {}\n", toks.join(" ")))
+        .map(|(dep, toks)| {
+            let toks: Vec<String> = toks.iter().map(AcceptToken::to_string).collect();
+            format!("{dep} {}\n", toks.join(" "))
+        })
         .collect();
     entries.push(config_plan::ConfigEntry::Derived {
         path: portage.join("package.accept_keywords").join(&category),
@@ -2133,7 +2122,7 @@ fn host_cross_config(
     gentoo: &Utf8Path,
     spec: &spec::SysrootSpec,
     own_profile: bool,
-) -> Result<portage_resolve::use_env::PendingConfig> {
+) -> Result<PendingConfig> {
     let base = globals.base_roots();
     let category = target.category();
     let pins = spec.pins();
@@ -2160,13 +2149,13 @@ fn host_cross_config(
                 .with_context(|| format!("{category}/{pkg} slot {slot}"))?,
             _ => host_arch_keyword(&base, gentoo, &category, pkg, real_cat, pkg)?,
         };
-        keywords.push((atom, vec!["**".to_owned()]));
+        keywords.push((atom, vec![AcceptToken::Any]));
     }
     // `--ex-pkg`/`--ex-gdb` extras: always the host-ABI branch, like crossdev's own extras.
     for cpn in spec.extras() {
         let (real_cat, pkg) = (cpn.category.as_str(), cpn.package.as_str());
         let atom = host_arch_keyword(&base, gentoo, &category, pkg, real_cat, pkg)?;
-        keywords.push((atom, vec!["**".to_owned()]));
+        keywords.push((atom, vec![AcceptToken::Any]));
     }
     let (package_mask, package_unmask) = if own_profile {
         let cross = |pin: &Dep| Dep {
@@ -2181,10 +2170,11 @@ fn host_cross_config(
     } else {
         (Vec::new(), Vec::new())
     };
-    Ok(portage_resolve::use_env::PendingConfig {
+    Ok(PendingConfig {
         package_accept_keywords: keywords,
         package_mask,
         package_unmask,
+        ..Default::default()
     })
 }
 

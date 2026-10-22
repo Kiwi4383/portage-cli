@@ -451,16 +451,9 @@ async fn resolve_active_use(
         return Ok(None);
     };
 
-    let env = build_use_env(
-        repo,
-        roots.config(),
-        roots.config_overlay(),
-        None,
-        None,
-        None,
-    )
-    .await
-    .context("resolving active profile")?;
+    let env = build_use_env(repo, roots.config(), roots.config_overlay(), None, None)
+        .await
+        .context("resolving active profile")?;
 
     let (resolved, extras) = portage_resolve::repo::ResolvedPolicy::from_use_env(env, arch);
     let policy = resolved.as_policy();

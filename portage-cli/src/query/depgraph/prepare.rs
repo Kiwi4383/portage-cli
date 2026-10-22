@@ -114,7 +114,6 @@ pub(super) async fn prepare<'a>(
         host_merge_root,
         extra_use_override,
         extra_package_use,
-        sysroot_override,
         pending_config,
         binpkg_index,
         exclude,
@@ -183,7 +182,6 @@ pub(super) async fn prepare<'a>(
                 config_root,
                 roots.config_overlay(),
                 extra_use_override,
-                sysroot_override,
                 pending_config,
             )
             .await;

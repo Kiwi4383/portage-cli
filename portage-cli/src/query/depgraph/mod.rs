@@ -318,13 +318,7 @@ pub struct DepgraphOpts<'a> {
     /// every ordinary emerge; `em toolchain --setup` uses this for
     /// `util-linux -pam -su`.
     pub extra_package_use: &'a [(Dep, Vec<UseOverride>)],
-    /// In-memory config for a `--target` sysroot whose on-disk `make.conf`/
-    /// `make.profile` haven't been written yet (e.g. `em crossdev --setup
-    /// -p` on a never-initialized target) — see
-    /// [`portage_resolve::use_env::SysrootOverride`]. `None` for every
-    /// ordinary resolve, including a `--target` sysroot that already exists.
-    pub sysroot_override: Option<&'a use_env::SysrootOverride<'a>>,
-    /// `/etc/portage` entries pending `--init-target`'s writes, in memory — see
+    /// Config pending `--init-target`'s writes, read in place of the files — see
     /// [`portage_resolve::use_env::PendingConfig`]. `None` for every ordinary resolve.
     pub pending_config: Option<&'a use_env::PendingConfig>,
     /// See `output::PrettyCtx::binpkg_index`'s doc — passed straight through

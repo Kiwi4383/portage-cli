@@ -81,20 +81,14 @@ pub struct UseEnv {
     pub provided: Vec<portage_atom::Cpv>,
 }
 
-/// In-memory override for a `--target` sysroot whose on-disk config hasn't
-/// been written yet (e.g. `em crossdev --setup -p`/an unconfirmed `-a`, on a
-/// target `--init-target` would create in the same run). Lets policy
-/// resolution proceed without the disk writes `-p` deliberately skips.
-#[derive(Clone, Copy)]
-pub struct SysrootOverride<'a> {
-    /// Real, already-existing profile directories the not-yet-written profile
-    /// inherits, in order (one for a `make.profile` linking a profile directly)
-    pub parents: &'a [Utf8PathBuf],
-    /// The `make.conf` content the not-yet-written file would contain,
-    /// sourced directly (see [`portage_repo::ConfSource::Str`]).
-    pub make_conf: &'a str,
-    /// What the not-yet-written profile adds on top of `parents`, if it is a derived one
-    pub layer: Option<&'a ProfileLayer>,
+/// A `make.profile` `em` would write but has not yet
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PendingProfile {
+    /// Real, already-existing profile directories it inherits, in order (one for a
+    /// `make.profile` linking a profile directly)
+    pub parents: Vec<Utf8PathBuf>,
+    /// What it adds on top of `parents`, if it is a derived one
+    pub layer: Option<ProfileLayer>,
 }
 
 /// The files of a profile `em` derives, beyond its `parent`: the in-memory form the files
@@ -109,12 +103,17 @@ pub struct ProfileLayer {
     pub package_use: Vec<(Dep, Vec<String>)>,
 }
 
-/// Entries `em` would write into a root's `/etc/portage` but has not yet (a `-p` run before
-/// `--init-target`): the in-memory form the files are rendered from
+/// Config `em` would write into a root's `/etc/portage` but has not yet (a `-p` run before
+/// `--init-target`): the in-memory form the files are rendered from, which a resolve then
+/// reads in their place
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PendingConfig {
+    /// The profile `make.profile` would link, standing in for the root's own
+    pub profile: Option<PendingProfile>,
+    /// `make.conf` content, read after any `make.conf` on disk
+    pub make_conf: Option<String>,
     /// `package.accept_keywords` lines
-    pub package_accept_keywords: Vec<(Dep, Vec<String>)>,
+    pub package_accept_keywords: Vec<(Dep, Vec<AcceptToken>)>,
     /// `package.mask`
     pub package_mask: Vec<Dep>,
     /// `package.unmask`
@@ -130,18 +129,9 @@ pub async fn build_use_env(
     root: Option<&Utf8Path>,
     config_overlay: Option<&Utf8Path>,
     extra_use_override: Option<&str>,
-    sysroot_override: Option<&SysrootOverride<'_>>,
     pending: Option<&PendingConfig>,
 ) -> Result<UseEnv> {
-    compute_use_env(
-        repo,
-        root,
-        config_overlay,
-        extra_use_override,
-        sysroot_override,
-        pending,
-    )
-    .await
+    compute_use_env(repo, root, config_overlay, extra_use_override, pending).await
 }
 
 async fn compute_use_env(
@@ -149,17 +139,16 @@ async fn compute_use_env(
     root: Option<&Utf8Path>,
     config_overlay: Option<&Utf8Path>,
     extra_use_override: Option<&str>,
-    sysroot_override: Option<&SysrootOverride<'_>>,
     pending: Option<&PendingConfig>,
 ) -> Result<UseEnv> {
     let portage_dir = root.unwrap_or(Utf8Path::new("/")).join("etc/portage");
     let root_dir = root.unwrap_or(Utf8Path::new("/"));
 
-    // Under a still-pending `sysroot_override`, the not-yet-written profile's parents
-    // stand in for `make.profile`, and its own layer is applied below.
-    let stack = match sysroot_override {
-        Some(ov) => {
-            let parents: Vec<_> = ov
+    // A pending profile's parents stand in for `make.profile`, and its own layer is applied below.
+    let pending_profile = pending.and_then(|p| p.profile.as_ref());
+    let stack = match pending_profile {
+        Some(profile) => {
+            let parents: Vec<_> = profile
                 .parents
                 .iter()
                 .map(|p| p.as_std_path().to_path_buf())
@@ -173,7 +162,7 @@ async fn compute_use_env(
             ProfileStack::build_in(profile_path, root_dir)
         }
     };
-    let layer = sysroot_override.and_then(|ov| ov.layer);
+    let layer = pending_profile.and_then(|p| p.layer.as_ref());
     // Portage appends `/etc/portage/profile` as the top (highest-priority)
     // profile layer, so its use.force/use.mask/package.use*/package.mask override
     // the resolved make.profile chain. Fold it in so Level-C never cedes a flag a
@@ -208,8 +197,8 @@ async fn compute_use_env(
         .iter()
         .map(|p| portage_repo::ConfSource::File(p.as_path()))
         .collect();
-    if let Some(ov) = sysroot_override {
-        confs.push(portage_repo::ConfSource::Str(ov.make_conf));
+    if let Some(make_conf) = pending.and_then(|p| p.make_conf.as_deref()) {
+        confs.push(portage_repo::ConfSource::Str(make_conf));
     }
 
     let resolved = match extra_use_override {
@@ -261,14 +250,7 @@ async fn compute_use_env(
         ));
     }
     if let Some(pending) = pending {
-        package_accept_keywords.extend(pending.package_accept_keywords.iter().map(
-            |(dep, toks)| {
-                (
-                    dep.clone(),
-                    toks.iter().filter_map(|t| AcceptToken::parse(t)).collect(),
-                )
-            },
-        ));
+        package_accept_keywords.extend(pending.package_accept_keywords.iter().cloned());
     }
     let license_groups = LicenseGroupRegistry::from_repo(repo)
         .map_err(|e| anyhow::anyhow!("failed to load license groups: {e}"))?;
@@ -752,8 +734,9 @@ fn load_dep_list(path: &str) -> Vec<Dep> {
 #[cfg(test)]
 mod tests {
     use super::{
-        PendingConfig, ProfileLayer, SysrootOverride, build_use_env, expand_use_expand_colon,
-        flags_have_use_clear_all, load_package_env_use, load_package_keywords, load_package_use,
+        AcceptToken, PendingConfig, PendingProfile, ProfileLayer, build_use_env,
+        expand_use_expand_colon, flags_have_use_clear_all, load_package_env_use,
+        load_package_keywords, load_package_use,
     };
     use portage_atom::Dep;
     use portage_atom_pubgrub::UseOverride;
@@ -770,7 +753,7 @@ mod tests {
 
     // Regression: `em crossdev --setup -p` on a target that has never been
     // `--init-target`'d for real has no `etc/portage/make.profile`/
-    // `make.conf` on disk yet. Without a `SysrootOverride`, resolving
+    // `make.conf` on disk yet. Without a pending profile, resolving
     // against that root must fail exactly the way it used to (proving this
     // is a real repro, not a vacuous pass); with one, it must succeed using
     // the real profile dir plus the synthesized make.conf content.
@@ -788,7 +771,7 @@ mod tests {
         let sysroot = tempfile::tempdir().unwrap();
         let root = camino::Utf8Path::from_path(sysroot.path()).unwrap();
 
-        match build_use_env(&repo, Some(root), None, None, None, None).await {
+        match build_use_env(&repo, Some(root), None, None, None).await {
             Ok(_) => {
                 panic!("a cold, never-initialized target must not resolve without an override")
             }
@@ -798,15 +781,17 @@ mod tests {
             ),
         }
 
-        let parents = [profile_dir.to_owned()];
-        let ov = SysrootOverride {
-            parents: &parents,
-            make_conf: "CHOST=\"riscv64-unknown-linux-gnu\"\n",
-            layer: None,
+        let pending = PendingConfig {
+            profile: Some(PendingProfile {
+                parents: vec![profile_dir.to_owned()],
+                layer: None,
+            }),
+            make_conf: Some("CHOST=\"riscv64-unknown-linux-gnu\"\n".into()),
+            ..Default::default()
         };
-        build_use_env(&repo, Some(root), None, None, Some(&ov), None)
+        build_use_env(&repo, Some(root), None, None, Some(&pending))
             .await
-            .expect("a SysrootOverride must let a never-initialized target resolve");
+            .expect("a pending profile must let a never-initialized target resolve");
     }
 
     #[tokio::test]
@@ -816,7 +801,7 @@ mod tests {
         let profile_dir = repo_dir.path().join("test-profile");
         std::fs::create_dir_all(&profile_dir).unwrap();
         std::fs::write(profile_dir.join("make.defaults"), "").unwrap();
-        let parents = [camino::Utf8PathBuf::try_from(profile_dir).unwrap()];
+        let parents = vec![camino::Utf8PathBuf::try_from(profile_dir).unwrap()];
         let sysroot = tempfile::tempdir().unwrap();
         let root = camino::Utf8Path::from_path(sysroot.path()).unwrap();
         let layer = ProfileLayer {
@@ -827,13 +812,15 @@ mod tests {
                 vec!["static-libs".into()],
             )],
         };
-        let ov = SysrootOverride {
-            parents: &parents,
-            make_conf: "",
-            layer: Some(&layer),
+        let pending = PendingConfig {
+            profile: Some(PendingProfile {
+                parents,
+                layer: Some(layer.clone()),
+            }),
+            ..Default::default()
         };
 
-        let env = build_use_env(&repo, Some(root), None, None, Some(&ov), None)
+        let env = build_use_env(&repo, Some(root), None, None, Some(&pending))
             .await
             .unwrap();
         assert!(env.package_mask.contains(&layer.package_mask[0]));
@@ -849,23 +836,23 @@ mod tests {
         let profile_dir = repo_dir.path().join("test-profile");
         std::fs::create_dir_all(&profile_dir).unwrap();
         std::fs::write(profile_dir.join("make.defaults"), "").unwrap();
-        let parents = [camino::Utf8PathBuf::try_from(profile_dir).unwrap()];
+        let parents = vec![camino::Utf8PathBuf::try_from(profile_dir).unwrap()];
         let root_dir = tempfile::tempdir().unwrap();
         let root = camino::Utf8Path::from_path(root_dir.path()).unwrap();
-        let ov = SysrootOverride {
-            parents: &parents,
-            make_conf: "",
-            layer: None,
-        };
         let wrappers =
             Dep::parse("=cross-riscv64-unknown-linux-gnu/clang-crossdev-wrappers-23*").unwrap();
         let pending = PendingConfig {
-            package_accept_keywords: vec![(wrappers.clone(), vec!["**".into()])],
+            profile: Some(PendingProfile {
+                parents,
+                layer: None,
+            }),
+            make_conf: None,
+            package_accept_keywords: vec![(wrappers.clone(), vec![AcceptToken::Any])],
             package_mask: vec![Dep::parse("cross-riscv64-unknown-linux-gnu/gcc").unwrap()],
             package_unmask: vec![Dep::parse("cross-riscv64-unknown-linux-gnu/gcc:15").unwrap()],
         };
 
-        let env = build_use_env(&repo, Some(root), None, None, Some(&ov), Some(&pending))
+        let env = build_use_env(&repo, Some(root), None, None, Some(&pending))
             .await
             .unwrap();
         assert!(
@@ -887,11 +874,12 @@ mod tests {
         let profile_dir = camino::Utf8Path::from_path(&profile_dir).unwrap();
         let sysroot = tempfile::tempdir().unwrap();
         let root = camino::Utf8Path::from_path(sysroot.path()).unwrap();
-        let parents = [profile_dir.to_owned()];
-        let ov = SysrootOverride {
-            parents: &parents,
-            make_conf: "",
-            layer: None,
+        let pending = PendingConfig {
+            profile: Some(PendingProfile {
+                parents: vec![profile_dir.to_owned()],
+                layer: None,
+            }),
+            ..Default::default()
         };
 
         let overlay = tempfile::tempdir().unwrap();
@@ -899,7 +887,7 @@ mod tests {
         std::fs::write(overlay.path().join("package.unmask"), "=dev-libs/foo-3\n").unwrap();
         let overlay = camino::Utf8Path::from_path(overlay.path()).unwrap();
 
-        let env = build_use_env(&repo, Some(root), Some(overlay), None, Some(&ov), None)
+        let env = build_use_env(&repo, Some(root), Some(overlay), None, Some(&pending))
             .await
             .unwrap();
         assert!(

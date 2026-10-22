@@ -61,7 +61,7 @@ pub struct AutounmaskCandidate {
 /// independent negations and foreign-arch crossdev tokens stay first-class.
 /// See [ACCEPT_KEYWORDS accept-set folding](../../docs/design/architecture.md)
 /// for the PMS-vs-Portage spec split and the bugs this shape fixes.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AcceptToken {
     /// `arch` — accept the stable package keyword for this arch (any arch name)
     Stable(Interned<DefaultInterner>),
@@ -90,6 +90,23 @@ pub enum AcceptToken {
     NegateAnyTesting,
     /// `-**` — withdraw the `**` grant specifically
     NegateAny,
+}
+
+impl std::fmt::Display for AcceptToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Stable(arch) => write!(f, "{arch}"),
+            Self::Testing(arch) => write!(f, "~{arch}"),
+            Self::AnyStable => f.write_str("*"),
+            Self::AnyTesting => f.write_str("~*"),
+            Self::Any => f.write_str("**"),
+            Self::ClearAll => f.write_str("-*"),
+            Self::Negate(arch) => write!(f, "-{arch}"),
+            Self::NegateTesting(arch) => write!(f, "-~{arch}"),
+            Self::NegateAnyTesting => f.write_str("-~*"),
+            Self::NegateAny => f.write_str("-**"),
+        }
+    }
 }
 
 impl AcceptToken {

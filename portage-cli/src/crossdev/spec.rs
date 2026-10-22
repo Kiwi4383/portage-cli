@@ -39,8 +39,12 @@ pub struct SysrootSpec {
     /// What builds the packages of the target system itself
     pub system: SystemSpec,
     /// USE flags per package atom, for what the toolchains need (e.g. `static-libs` on a runtime)
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub package_use: BTreeMap<String, Vec<String>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        with = "package_use_table"
+    )]
+    pub package_use: Vec<(Dep, Vec<String>)>,
 }
 
 /// The toolchains a spec defines; only those some `built-by` names get built
@@ -165,7 +169,7 @@ impl SysrootSpec {
                 built_by,
                 exceptions: BTreeMap::new(),
             },
-            package_use: BTreeMap::new(),
+            package_use: Vec::new(),
         };
         if let Some(slot) = target.llvm_slot {
             spec.bind_llvm_slot(slot);
@@ -215,14 +219,22 @@ impl SysrootSpec {
                 built_by: ToolchainId::Gcc,
                 exceptions: BTreeMap::new(),
             },
-            package_use: BTreeMap::new(),
+            package_use: Vec::new(),
         }
     }
 
     /// The LLVM slot the clang toolchain is bound to, if the spec names one
-    pub fn llvm_slot(&self) -> Option<String> {
+    ///
+    /// LLVM slots are major versions; [`Self::load`] refuses a spec naming another kind.
+    pub fn llvm_slot(&self) -> Option<u64> {
+        self.llvm_slot_name()?.parse().ok()
+    }
+
+    fn llvm_slot_name(&self) -> Option<&str> {
         match self.toolchain.clang.as_ref()?.compiler.slot_dep.as_ref()? {
-            portage_atom::SlotDep::Slot { slot, .. } => slot.as_ref().map(ToString::to_string),
+            portage_atom::SlotDep::Slot {
+                slot: Some(slot), ..
+            } => Some(slot.slot.as_str()),
             _ => None,
         }
     }
@@ -378,8 +390,11 @@ impl SysrootSpec {
         if let Some(dep) = self.pins().into_iter().find(|dep| !is_pin(dep)) {
             bail!("{dep}: a toolchain package takes only a version or a slot");
         }
-        for atom in self.package_use.keys() {
-            Dep::parse(atom).with_context(|| format!("package-use: {atom}"))?;
+        if let Some(slot) = self.llvm_slot_name() {
+            ensure!(
+                slot.parse::<u64>().is_ok(),
+                "LLVM slot {slot} is not a major version"
+            );
         }
         Ok(())
     }
@@ -491,6 +506,42 @@ fn join(cpns: &[Cpn]) -> String {
 }
 
 /// A field that is one string or a list of them, written back as a string when it holds one
+/// `package_use` as a TOML table keyed by atom, in the order written
+mod package_use_table {
+    use portage_atom::Dep;
+    use serde::de::{MapAccess, Visitor};
+    use serde::ser::SerializeMap;
+    use serde::{Deserializer, Serializer};
+
+    type Entries = Vec<(Dep, Vec<String>)>;
+
+    pub fn serialize<S: Serializer>(entries: &Entries, s: S) -> Result<S::Ok, S::Error> {
+        let mut map = s.serialize_map(Some(entries.len()))?;
+        for (dep, flags) in entries {
+            map.serialize_entry(dep, flags)?;
+        }
+        map.end()
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Entries, D::Error> {
+        struct Table;
+        impl<'de> Visitor<'de> for Table {
+            type Value = Entries;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a table of atoms to USE flags")
+            }
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Entries, A::Error> {
+                let mut entries = Vec::new();
+                while let Some(entry) = map.next_entry()? {
+                    entries.push(entry);
+                }
+                Ok(entries)
+            }
+        }
+        d.deserialize_map(Table)
+    }
+}
+
 mod one_or_many {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -545,8 +596,10 @@ pub(crate) fn clang_main_spec() -> SysrootSpec {
         ToolchainId::Gcc,
         vec![Dep::parse("sys-libs/glibc").unwrap()],
     );
-    spec.package_use
-        .insert("llvm-runtimes/libunwind".into(), vec!["static-libs".into()]);
+    spec.package_use.push((
+        Dep::parse("llvm-runtimes/libunwind").unwrap(),
+        vec!["static-libs".into()],
+    ));
     spec
 }
 
@@ -772,7 +825,7 @@ exceptions.gcc = ["sys-libs/glibc", "sys-devel/gcc"]
         let target = spec.cross_target().unwrap();
         assert!(!target.llvm);
         assert_eq!(target.category(), "cross-riscv64-unknown-linux-gnu");
-        assert_eq!(spec.llvm_slot().as_deref(), Some("23"));
+        assert_eq!(spec.llvm_slot(), Some(23));
 
         let mut clang_libc = spec.clone();
         clang_libc.libc.built_by = ToolchainId::Clang;

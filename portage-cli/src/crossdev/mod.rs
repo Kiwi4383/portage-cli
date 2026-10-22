@@ -59,7 +59,7 @@ use std::io::Write;
 use anyhow::{Context, Result, bail};
 use camino::{Utf8Path, Utf8PathBuf};
 use portage_atom::interner::{DefaultInterner, Interned};
-use portage_atom::{Cpn, Cpv, Dep, Pf, Version};
+use portage_atom::{Cpn, Cpv, Dep, Operator, Pf, Version};
 use portage_atom_pubgrub::{DepClass, UseOverride};
 use portage_repo::{MakeConf, ProfileStack, ReposConf, Repository};
 use portage_resolve::repo::AcceptToken;
@@ -117,7 +117,7 @@ pub async fn run(args: &CrossdevArgs, globals: &Cli) -> Result<()> {
             let mut target = spec.cross_target()?;
             if spec.toolchain.clang.is_some() {
                 target.llvm_slot = match spec.llvm_slot() {
-                    Some(slot) => Some(slot.parse().with_context(|| format!("LLVM slot {slot}"))?),
+                    Some(slot) => Some(slot),
                     None => llvm_slot(&main_repo(globals)?),
                 };
                 if let Some(slot) = target.llvm_slot {
@@ -1657,14 +1657,7 @@ impl DerivedProfile {
     fn of(spec: &spec::SysrootSpec) -> Result<Self> {
         let (mut package_mask, package_unmask) = pin_masks(spec);
         package_mask.extend(llvm_slot_masks(spec)?);
-        let package_use = spec
-            .package_use
-            .iter()
-            .map(|(atom, flags)| {
-                let dep = Dep::parse(atom).with_context(|| format!("package-use: {atom}"))?;
-                Ok((dep, flags.clone()))
-            })
-            .collect::<Result<_>>()?;
+        let package_use = spec.package_use.clone();
         let make_defaults = spec
             .env_of(spec.system.built_by)
             .context("the system's toolchain is not defined")?
@@ -1701,10 +1694,7 @@ fn llvm_slot_masks(spec: &spec::SysrootSpec) -> Result<Vec<Dep>> {
     let (Some(clang), Some(slot)) = (&spec.toolchain.clang, spec.llvm_slot()) else {
         return Ok(Vec::new());
     };
-    let next = slot
-        .parse::<u64>()
-        .with_context(|| format!("LLVM slot {slot}"))?
-        + 1;
+    let from_next_slot = |cpn| versioned(cpn, Operator::GreaterOrEqual, Version::new(&[slot + 1]));
     let llvm = Cpn::new("llvm-core", "llvm");
     let cpns = [
         &clang.compiler,
@@ -1715,10 +1705,10 @@ fn llvm_slot_masks(spec: &spec::SysrootSpec) -> Result<Vec<Dep>> {
         &clang.cxx,
     ]
     .map(|dep| dep.cpn);
-    std::iter::once(llvm)
+    Ok(std::iter::once(llvm)
         .chain(cpns)
-        .map(|cpn| Dep::parse(&format!(">={cpn}-{next}")).context("an LLVM slot mask"))
-        .collect()
+        .map(from_next_slot)
+        .collect())
 }
 
 /// The spec's pins as a mask of each package and an unmask of the pin, which together leave
@@ -1908,10 +1898,19 @@ fn ebuild_versions(gentoo: &Utf8Path, cat: &str, pkg: &str) -> Vec<Version> {
 /// includes every dated snapshot on that branch (`X.Y.Z_pDATE` sorts below
 /// `X.Y.9999`) but excludes the branch's own live/rolling `X.Y.9999` ebuild
 /// and any newer branch or slot.
-fn branch_bound(version: &Version) -> String {
+fn branch_bound(version: &Version) -> Version {
     let major = version.numbers.first().copied().unwrap_or(0);
     let minor = version.numbers.get(1).copied().unwrap_or(0);
-    format!("{major}.{minor}.9999")
+    Version::new(&[major, minor, 9999])
+}
+
+/// `cpn` constrained to `op version`
+fn versioned(cpn: Cpn, op: Operator, version: Version) -> Dep {
+    Dep {
+        op: Some(op),
+        version: Some(version),
+        ..Dep::new(cpn)
+    }
 }
 
 /// The LLVM slot a clang toolchain binds to when the spec names none: the newest
@@ -1950,27 +1949,29 @@ fn host_arch_keyword(
     let available = ebuild_versions(gentoo, real_cat, real_pkg);
     let installed = host_installed_versions(roots, real_cat, real_pkg);
 
-    let atom = if let Some((version, slot)) = installed.first() {
-        let slot_suffix = if slot != "0" {
-            format!(":{slot}")
+    let cpn = Cpn::new(category, pkg);
+    Ok(if let Some((version, slot)) = installed.first() {
+        let atom = if available.contains(version) {
+            versioned(cpn, Operator::Equal, version.clone())
         } else {
-            String::new()
+            versioned(cpn, Operator::Less, branch_bound(version))
         };
-        if available.contains(version) {
-            format!("={category}/{pkg}-{version}{slot_suffix}")
-        } else {
-            format!("<{category}/{pkg}-{}{slot_suffix}", branch_bound(version))
+        Dep {
+            slot_dep: (slot != "0").then(|| portage_atom::SlotDep::Slot {
+                slot: Some(portage_atom::Slot::new(slot)),
+                op: None,
+            }),
+            ..atom
         }
     } else {
         match available.iter().max() {
-            Some(newest) => format!("<{category}/{pkg}-{}", branch_bound(newest)),
+            Some(newest) => versioned(cpn, Operator::Less, branch_bound(newest)),
             // No ebuild at all — unreachable in practice (existence is already
             // validated up front by `alias_repo_conf_entry`), but a blanket `**`
             // is a safe, honest fallback rather than silently writing nothing.
-            None => format!("{category}/{pkg}"),
+            None => Dep::new(cpn),
         }
-    };
-    Dep::parse(&atom).with_context(|| format!("keyword atom {atom}"))
+    })
 }
 
 /// Write the cross packages' `package.env` + `env/<category>/<pkg>.conf` into the
@@ -2144,8 +2145,14 @@ fn host_cross_config(
             target.llvm_slot.filter(|_| clang_built(target, spec, cpn)),
         ) {
             (Some(pin), Some(repo), _) => pinned_keyword(repo, &category, pin)?,
-            (_, _, Some(slot)) => Dep::parse(&format!("={category}/{pkg}-{slot}*"))
-                .with_context(|| format!("{category}/{pkg} slot {slot}"))?,
+            (_, _, Some(slot)) => Dep {
+                glob: true,
+                ..versioned(
+                    Cpn::new(&category, pkg),
+                    Operator::Equal,
+                    Version::new(&[slot]),
+                )
+            },
             _ => host_arch_keyword(&base, gentoo, &category, pkg, real_cat, pkg)?,
         };
         keywords.push((atom, vec![AcceptToken::Any]));
@@ -2192,8 +2199,11 @@ fn pinned_keyword(repo: &Repository, category: &str, pin: &Dep) -> Result<Dep> {
         })
         .max()
         .with_context(|| format!("no keyworded version of {} matches {pin}", pin.cpn))?;
-    let atom = format!("<{category}/{pkg}-{}", branch_bound(&newest));
-    Dep::parse(&atom).with_context(|| format!("keyword atom {atom}"))
+    Ok(versioned(
+        Cpn::new(category, pkg),
+        Operator::Less,
+        branch_bound(&newest),
+    ))
 }
 
 /// A cross package's `package.env` line: its own env file, plus the shared
@@ -2748,11 +2758,14 @@ mod tests {
     #[test]
     fn branch_bound_uses_major_minor() {
         assert_eq!(
-            branch_bound(&Version::parse("16.2.1_p20260523").unwrap()),
+            branch_bound(&Version::parse("16.2.1_p20260523").unwrap()).to_string(),
             "16.2.9999"
         );
         // Single-component version: minor defaults to 0.
-        assert_eq!(branch_bound(&Version::parse("9").unwrap()), "9.0.9999");
+        assert_eq!(
+            branch_bound(&Version::parse("9").unwrap()).to_string(),
+            "9.0.9999"
+        );
     }
 
     fn write_ebuild(gentoo: &camino::Utf8Path, cat: &str, pkg: &str, version: &str) {

@@ -1,6 +1,6 @@
 # One resolved Portage configuration, instead of one per consumer
 
-Status: 🔴 planned 2026-10-22, decisions taken the same day, nothing implemented. Started from `em portageq envvar` not
+Status: 🟡 planned 2026-10-22, decisions taken the same day; step 1 done. Started from `em portageq envvar` not
 matching `portageq envvar`; the diff led to a live resolver bug (below). Related:
 [[pms-env-unset]], [[use-order-repo-layer]], [[use-stable-in-defaults]].
 
@@ -58,11 +58,13 @@ PROFILE_ONLY_VARIABLES).
 
 Each step lands on its own, with a parity check against the real tool on thalia.
 
-1. **ACCEPT_LICENSE, now.** Stack ACCEPT_LICENSE/PROPERTIES/RESTRICT by Portage's rule (concat,
-   cut at the last `*`/`-*`, keep negations), with the environment as the top layer rather
-   than a replacement, and `* -@EULA` / `*` when empty. Take ACCEPT_LICENSE out of
-   `INCREMENTAL_VARS`. Test: a unit test on the stacking, and `em -p app-benchmarks/geekbench`
-   refused as emerge refuses it.
+1. ✅ **ACCEPT_LICENSE/PROPERTIES/RESTRICT** (2026-10-22): stacked by Portage's rule (concat, cut
+   at the last `*`/`-*`, negations kept) with their own merge in `merge_use_var`, the
+   environment as the top layer, `* -@EULA` / `*` when empty (`fb42cbda`, `446ea895`), and
+   `AcceptSet` applying tokens in order, which also fixed package.license overrides (`a582eaf2`).
+   Checked live: geekbench refused, accepted via `ACCEPT_LICENSE=geekbench` and package.license,
+   as emerge does. ACCEPT_PROPERTIES/RESTRICT still print empty where portageq prints
+   make.globals' `*` (the resolver already defaults to `*`): that is step 2.
 2. **A `Settings` value** (see "Settings: home and lifecycle"). Typed lookup, the incremental
    and ACCEPT_* rules above, the USE_EXPAND rebuild from the USE the profile code already
    resolves correctly. Each value keeps which layer it came from (for `--info -v` and

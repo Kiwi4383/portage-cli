@@ -1,6 +1,6 @@
 # One resolved Portage configuration, instead of one per consumer
 
-Status: 🔴 planned 2026-10-22, nothing implemented. Started from `em portageq envvar` not
+Status: 🔴 planned 2026-10-22, decisions taken the same day, nothing implemented. Started from `em portageq envvar` not
 matching `portageq envvar`; the diff led to a live resolver bug (below). Related:
 [[pms-env-unset]], [[use-order-repo-layer]], [[use-stable-in-defaults]].
 
@@ -63,41 +63,59 @@ Each step lands on its own, with a parity check against the real tool on thalia.
    than a replacement, and `* -@EULA` / `*` when empty. Take ACCEPT_LICENSE out of
    `INCREMENTAL_VARS`. Test: a unit test on the stacking, and `em -p app-benchmarks/geekbench`
    refused as emerge refuses it.
-2. **A `Settings` value.** Built once per config root from: env.d, make.globals, repo
-   make.defaults, profile stack, make.conf (+ `--prefix` overlay), filtered environment, and
-   the derived variables from `Roots`/repos.conf. Typed lookup, the incremental and ACCEPT_*
-   rules above, the USE_EXPAND rebuild from the USE the profile code already resolves
-   correctly. Each value keeps which layer it came from (for `--info -v` and debugging).
-   Test: an ignored live test diffing `portageq envvar -v` for every name, in a clean
-   environment and with `CFLAGS=…`/`FEATURES=…` set, plus `PORTAGE_CONFIGROOT` scratch roots
-   for the `-*`/`-x`/profile-only cases.
+2. **A `Settings` value** (see "Settings: home and lifecycle"). Typed lookup, the incremental
+   and ACCEPT_* rules above, the USE_EXPAND rebuild from the USE the profile code already
+   resolves correctly. Each value keeps which layer it came from (for `--info -v` and
+   debugging). Test: an ignored live test diffing `portageq envvar -v` for every name, in a
+   clean environment and with `CFLAGS=…`/`FEATURES=…` set, plus `PORTAGE_CONFIGROOT` scratch
+   roots for the `-*`/`-x`/profile-only cases. The derived ROOT/EROOT/… are not compared
+   here; step 3 adds them.
 3. **`portageq envvar` and `--info` read `Settings`.** The wildcard enumerates settings, not
-   shell variables (no BASHPID/IFS/`__PORTAGE_ECLASS_DIRS`, PORTDIR included).
+   shell variables (no BASHPID/IFS/`__PORTAGE_ECLASS_DIRS`, PORTDIR included). `portage-cli`
+   adds ROOT, EROOT, SYSROOT, ESYSROOT, EPREFIX, BROOT and PORTAGE_CONFIGROOT from `Roots`.
 4. **The resolver reads `Settings`** for ACCEPT_KEYWORDS/LICENSE/PROPERTIES/RESTRICT,
    replacing `use_env`'s own make.conf and environment reads. `-p` parity sweep
    (`bench-em-vs-emerge.sh`, resolve-mode matrix) before and after.
 5. **Retire the hand-assembled readers**: protect.rs, `elog_setting`, binpkg PKGDIR,
    `resolve_info_var` all read `Settings`. Merge-time CONFIG_PROTECT parity checked against a
    real merge.
-6. **The build environment** (needs D2/D3): the shell gets its variables from `Settings`.
+6. **The build environment:** the shell is seeded from `Settings` instead of re-sourcing, with
+   FEATURES limited to what em provides (D3); still no process environment (D2).
 
-## Decisions for Luca
+## Decisions (Luca, 2026-10-22)
 
-- **D1 — no make.globals** (`--local` on Debian/FreeBSD, a prefix without Portage). Read it at
-  runtime when present. Without it: no globals layer, or em's own defaults for the few values
-  em needs, written from the documented behaviour (ACCEPT_LICENSE, ACCEPT_PROPERTIES, the
-  paths), never copied from the file.
-- **D2 — the environment in builds.** Portage passes a filtered environment into phases, so
-  `CFLAGS=-O0 emerge foo` builds with `-O0`. em's build shell starts clean on purpose. Match
-  Portage (with its filter), or keep em's clean shell and only layer the environment into
-  `Settings` for config decisions.
-- **D3 — FEATURES in the ebuild environment.** em acts on about ten FEATURES; ebuilds and
-  eclasses test others (`has network-sandbox`, `has userpriv`, `splitdebug`, `installsources`).
-  Exporting make.globals' full set claims features em does not provide; exporting only what
-  em honours diverges from Portage. Needs a per-feature table.
-- **D4 — crate home.** `portage-repo` (has `ProfileStack`, the shell, make.conf parsing) or
-  `portage-resolve` (has `Roots`, `use_env`). `Settings` needs both the profile code and the
-  roots.
+- **D1 — no make.globals:** postponed. The globals layer is the file when it exists and empty
+  otherwise; which defaults em gives a host without one is decided later.
+- **D2 — the environment in builds:** later. The build shell stays clean; Portage's override
+  (`CFLAGS=-O0 emerge foo` builds with `-O0`) is a separate item below. The environment is
+  still a `Settings` layer, for config decisions and display.
+- **D3 — FEATURES in the ebuild environment:** what em provides, not make.globals' set.
+  Parity is [[features-parity]].
+- **D4 — crate home:** `portage-repo`, beside `ProfileStack` and the make.conf parser. It does
+  not need `Roots`: ROOT, EROOT, SYSROOT and the rest are the caller's topology, not a config
+  layer, so `portage-cli` adds them where it shows or exports them. (The first draft said
+  `Settings` needs both crates; it does not.)
+
+## Settings: home and lifecycle
+
+- **Inputs, all resolved by the caller:** the config root, its profile stack, the make.globals
+  and env.d paths, the `--prefix` overlay, one snapshot of the process environment, and a
+  `PendingConfig` standing in for files `--init-target` has not written. Nothing below reads
+  `std::env` or picks paths on its own.
+- **Built once per config root per invocation**, then immutable. A plain run has one; crossdev
+  has the host's, the sysroot's and the outer root's. A per-invocation cache keyed by config
+  root hands out shared references, like `VdbSnapshotCache`.
+- **Evaluation once:** make.defaults and make.conf are evaluated with the shell em already
+  uses (`ProfileStack::profile_env`), and `Settings` keeps the result as data. Consumers never
+  re-source the files.
+- **Consumers derive, never mutate:** the resolver builds its `UseEnv` from it; a build session
+  seeds its shell from it; per-package layers (`package.env`, `package.use`, `pkg`) are views
+  over it. Portage's `setcpv` mutates one shared config per package; em keeps the base fixed.
+
+## Later
+
+- The environment in build phases, filtered as Portage's `environ_filter` does (D2).
+- make.globals defaults for hosts without Portage (D1).
 
 ## Not in scope here
 

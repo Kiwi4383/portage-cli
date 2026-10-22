@@ -33,8 +33,10 @@ const INCREMENTALS: &[&str] = &[
 /// Lists that keep their order and negations (see `merge_accept_lists`)
 const ACCEPT_LISTS: &[&str] = &["ACCEPT_LICENSE", "ACCEPT_PROPERTIES", "ACCEPT_RESTRICT"];
 
-/// Names that describe a package or a phase, never configuration: ignored in every layer
+/// Names that describe a package or a phase, never configuration, and bash's `_`: ignored in
+/// every layer
 const NOT_CONFIG: &[&str] = &[
+    "_",
     "A",
     "AA",
     "BDEPEND",
@@ -187,10 +189,15 @@ impl Settings {
         for (layer, stage) in &stages {
             for (name, value) in stage {
                 if previous.get(name) != Some(value) && !initial.contains_key(name) {
+                    // A config file's newlines are spaces, as Portage reads it.
+                    let value = match layer {
+                        Layer::Env => value.clone(),
+                        _ => value.replace('\n', " "),
+                    };
                     vars.insert(
                         name.clone(),
                         Setting {
-                            value: value.clone(),
+                            value,
                             layer: *layer,
                         },
                     );
@@ -255,6 +262,26 @@ impl Settings {
             }
         }
         vars.retain(|name, _| !name.starts_with("__") && !NOT_CONFIG.contains(&name.as_str()));
+        if !vars.contains_key("CBUILD")
+            && let Some(chost) = vars.get("CHOST").cloned()
+        {
+            vars.insert("CBUILD".to_owned(), chost);
+        }
+        vars.entry("USERLAND".to_owned())
+            .or_insert_with(|| Setting {
+                value: if cfg!(any(
+                    target_os = "freebsd",
+                    target_os = "openbsd",
+                    target_os = "netbsd",
+                    target_os = "dragonfly"
+                )) {
+                    "BSD"
+                } else {
+                    "GNU"
+                }
+                .to_owned(),
+                layer: Layer::Globals,
+            });
         // Portage's own default when no layer accepts or denies anything.
         if vars
             .get("ACCEPT_LICENSE")

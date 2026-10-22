@@ -143,18 +143,21 @@ pub(crate) fn mass_best_version(eroot: &str, atoms: &[String]) -> Result<u8> {
     Ok(0)
 }
 
-/// `envvar [-v] NAME…`: the configuration variables a build would start from, from the profile
-/// stack and `make.conf` of the config root `em`'s topology selects
+/// `envvar [-v] NAME…`: the configuration of the config root `em`'s topology selects, as
+/// Portage resolves it, with the variables it derives from the roots and repositories
 pub(crate) async fn envvar(cli: &Cli, verbose: bool, names: &[String]) -> Result<u8> {
-    let (_, shell, _) = crate::info::profile_shell(cli, None).await?;
-    let repos = cli.roots().repos_conf().context("reading repos.conf")?;
-    let (portdir, overlays) = repo_locations(&repos);
-    let lookup = |name: &str| match name {
-        "PORTDIR" => portdir.clone(),
-        "PORTDIR_OVERLAY" => Some(overlays.clone()),
-        _ => crate::info::resolve_info_var(&shell, name),
-    };
-    let all = || shell.var_names();
+    let settings = crate::settings::load(cli).await?.unwrap_or_default();
+    let mut vars: std::collections::BTreeMap<String, String> = settings
+        .iter()
+        .map(|(name, setting)| (name.to_owned(), setting.value.clone()))
+        .collect();
+    vars.extend(
+        crate::settings::derived(&cli.roots())?
+            .into_iter()
+            .map(|(name, value)| (name.to_owned(), value)),
+    );
+    let lookup = |name: &str| vars.get(name).cloned();
+    let all = || vars.keys().cloned().collect();
     let mut out = std::io::stdout().lock();
     print_envvar(
         lookup,
@@ -165,21 +168,6 @@ pub(crate) async fn envvar(cli: &Cli, verbose: bool, names: &[String]) -> Result
         &mut std::io::stderr(),
     )
     .context("writing envvar output")
-}
-
-/// `PORTDIR` and `PORTDIR_OVERLAY` as Portage derives them: the main repo's location, and every
-/// other repo's, space-separated
-fn repo_locations(repos: &portage_repo::ReposConf) -> (Option<String>, String) {
-    let main = repos.main_repo().map(|r| r.name);
-    let location =
-        |r: &portage_repo::RepoEntry| r.location.as_path().map(|p| p.display().to_string());
-    let overlays: Vec<String> = repos
-        .repos()
-        .iter()
-        .filter(|r| Some(r.name) != main)
-        .filter_map(location)
-        .collect();
-    (repos.main_repo().and_then(location), overlays.join(" "))
 }
 
 /// `envvar`'s output for `names`, given how to look one up and list them all
@@ -293,29 +281,6 @@ mod tests {
                 .1
                 .starts_with("WARNING: 'portageq envvar PORTDIR' is deprecated.")
         );
-    }
-
-    #[test]
-    fn portdir_is_the_main_repo_and_portdir_overlay_the_rest() {
-        let root = tempfile::tempdir().unwrap();
-        let conf = root.path().join("etc/portage/repos.conf");
-        std::fs::create_dir_all(&conf).unwrap();
-        std::fs::write(
-            conf.join("repos.conf"),
-            "[DEFAULT]\nmain-repo = gentoo\n\n[gentoo]\nlocation = /r/gentoo\n\n\
-             [guru]\nlocation = /r/guru\n\n[local]\nlocation = /r/local\n",
-        )
-        .unwrap();
-        let repos = portage_repo::ReposConf::load_rooted(
-            camino::Utf8Path::from_path(root.path()).unwrap(),
-            &[],
-        )
-        .unwrap();
-        let (portdir, overlays) = repo_locations(&repos);
-        assert_eq!(portdir.as_deref(), Some("/r/gentoo"));
-        let mut overlays: Vec<&str> = overlays.split(' ').collect();
-        overlays.sort();
-        assert_eq!(overlays, ["/r/guru", "/r/local"]);
     }
 
     /// A throwaway VDB tree: `<tmp>/var/db/pkg/<cat>/<pf>/` with the

@@ -344,30 +344,10 @@ pub(crate) async fn apply_profile_env(
     // PORTAGE_CONFIGROOT: profile/make.conf come from here (host unless --root
     // / --config-root offsets it). See docs/user/root-model.md.
     let base = config_root.unwrap_or_else(|| Utf8Path::new("/"));
-    let Ok(profile_path) =
-        std::fs::canonicalize(base.join("etc/portage/make.profile").as_std_path())
-    else {
+    let Some(stack) = crate::settings::profile_stack(base, config_overlay)? else {
         return Ok(false);
     };
-    let mut stack = portage_repo::ProfileStack::build_in(profile_path, base)
-        .context("building profile stack")?
-        .with_user_profile(base.join("etc/portage/profile").into_std_path_buf())
-        .context("loading the user profile")?;
-    // `--prefix`'s config overlay (`<prefix>/etc/portage/profile`) layers on
-    // the host profile, same as its `package.use`/`bashrc`. Site
-    // `use.force`/`use.mask` there have to reach ebuild phases.
-    if let Some(overlay) = config_overlay {
-        stack = stack
-            .with_user_profile(overlay.join("profile").into_std_path_buf())
-            .context("loading the prefix overlay profile")?;
-    }
-    // make.conf(5): file or Flat directory of fragments. Legacy first, then
-    // `/etc/portage/make.conf` (later overrides — same order as Portage).
-    let conf_owned = portage_repo::expand_make_conf_paths([
-        base.join("etc/make.conf"),
-        base.join("etc/portage/make.conf"),
-    ])
-    .context("listing make.conf")?;
+    let conf_owned = crate::settings::make_conf_files(base)?;
     let confs: Vec<portage_repo::ConfSource> = conf_owned
         .iter()
         .map(|p| portage_repo::ConfSource::File(p.as_path()))

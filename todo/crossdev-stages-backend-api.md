@@ -416,7 +416,7 @@ phases are in this repo; `cs` phases are in crossdev-stages.
 | # | Repo | Phase | Unblocks | State |
 |---|------|-------|----------|-------|
 | 1 | em | **Toolchain version preferences** — `--binutils/--gcc/--kernel/--libc`, resolved and written as config for both the cross and the sysroot packages ([[crossdev-gcc-version-flag]]) | R2 pin; the live-gcc leak | flags dropped 2026-10-07 as the wrong shape; replaced by the spec ([[cross-sysroot-spec]]), whose type, `--print-spec` and consumers are on master; loading a spec file and the version atoms (steps 3–4) are open |
-| 2 | em | **Preference axes beyond GCC+glibc** — LLVM-model slot/runtimes, `--profile` and a flavour → profile mapping, GCC model + LLVM flavour | clang as main compiler, other libcs | modelled in the spec's toolchain roles; clang-main reached by hand ([[clang-main-glibc-experiment]]), taking effect is spec step 4 |
+| 2 | em | **Preference axes beyond GCC+glibc** — LLVM-model slot/runtimes, `--profile` and a flavour → profile mapping, GCC model + LLVM flavour | clang as main compiler, other libcs | done 2026-10-22 for clang-main on glibc: mixed bootstrap and stage1 from a spec ([[cross-sysroot-spec]]); other libcs untested |
 | 3 | em | **Sysroot ordering** — baselayout before any `acct-*` in sysroot-populating resolves, with a regression test (R4) | from-scratch stage1 | open |
 | 4 | em | **Verify the three-root path** — plain atom merge and `em stages` under `--target T --root R` (R1), `em portageq envvar` (R8) | everything after toolchain setup | open |
 | 5 | cs | **Safety net** — exec trait under the runner, recording fake, snapshot the real backend's commands | every later cs refactor | open |

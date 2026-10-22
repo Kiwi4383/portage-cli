@@ -103,9 +103,15 @@ it, and the host's `package.mask`/`package.unmask`/`package.accept_keywords` for
 category do the same for the cross toolchain, up to the newest keyworded release the pin allows
 (never a live ebuild). The clang compiler's slot is the LLVM slot instead.
 
-A spec may not yet ask for other toolchain packages than the tuple's, or for a libc or packages
-built by another toolchain than the system's. Such a file is refused when read, as is a pin with a
-blocker, USE dependency, repository or slot operator.
+A spec may define both toolchains: `[system] built-by = "clang"` with `exceptions.gcc = [...]` makes
+clang the target's compiler and keeps gcc for the listed packages, and `--setup` builds the gcc
+toolchain and the libc first, then the clang wrappers and LLVM's runtimes. `profile` may list several
+parents (e.g. the arch profile plus `features/llvm`), `[package-use]` gives packages the flags the
+toolchain needs, and `[toolchain.<name>.env]` overrides the variables that select a toolchain.
+
+A spec is refused when read if it asks for other toolchain packages than the tuple's, has gcc and
+clang but not gcc building the libc, names an undefined toolchain, or pins with a blocker, USE
+dependency, repository or slot operator.
 
 How each part of a spec maps to Portage files, and what is still planned:
 [cross-sysroot-spec.md](../design/cross-sysroot-spec.md).

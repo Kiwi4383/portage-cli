@@ -300,3 +300,12 @@ per-package toolchains in the sysroot's user config (`make.defaults` for the def
 `exceptions`, planned with the mixed bootstrap), plus the fields the spec has to grow (parent list, per-toolchain
 variables, clang driver cfg, toolchain `package.use`). Luca agreed the second conversion sits on top of the first and
 will likely expand the spec.
+
+## Progress (2026-10-22): step 4 done, clang-main live
+
+Implemented per `docs/design/cross-sysroot-spec.md`: profile list, per-toolchain `env`, `package-use`, exceptions
+as sysroot `package.env`, the mixed gcc+clang bootstrap, the LLVM slot rule (newest keyworded clang, Luca:
+"latest available for everything") with target masks, and stage1 keeping `package-use`. Live in sandbox
+`em-clang-main`: a 12-step `--setup` and a 106-package riscv64 stage1 with clang as the system compiler and gcc for
+glibc, the same package count the hand-made experiment reached. Five bugs fixed on the way (see the design doc).
+Step 5 (a crossdev-stages board build) is open.

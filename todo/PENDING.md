@@ -21,7 +21,7 @@ file, version atoms and `package.env` per toolchain open).
 
 | Item | Status | Detail |
 |------|--------|--------|
-| Spec: file `--target`, sysroot overlay profile, version pins ✅ 2026-10-21; `exceptions`, mixed gcc+clang, cross/target gcc snapshot alignment open | 🟡 | [[cross-sysroot-spec]] |
+| Spec: file `--target`, derived profile, pins, exceptions, mixed gcc+clang (clang-main riscv64 stage1 live ✅ 2026-10-22); `--setup` idempotency, cross/target gcc snapshot alignment open | 🟡 | [[cross-sysroot-spec]] |
 | R4: baselayout before any `acct-*` in a sysroot populate — em's bootstrap steps already order it; nothing to change (decided 2026-10-21) | ✅ | [[crossdev-stages-backend-api]] |
 | R1: board-root merges fixed and verified 2026-10-21; `em stages` there still unrun. R8: `em portageq envvar` missing | 🟡 | [[crossdev-stages-backend-api]], [[portageq-workalike-plan]] |
 | Execution shape (closure vs re-exec) and the shared container crate | 🔴 needs Luca | [[crossdev-stages-backend-api]] R0/R0b |

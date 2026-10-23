@@ -30,7 +30,7 @@ file, version atoms and `package.env` per toolchain open).
 | Tests for spec pins: newest keyworded version in the pin, host mask/unmask of the cross category | 🔴 later | review 2026-10-22 |
 | `env_lines` writes `KEY="value"` unescaped (spec values with `"`/`$`): think it through | 🔴 | review 2026-10-22 |
 | `ProfileStack::build_in` parses repos.conf for every profile (malformed one now fails all): think it through | 🔴 | review 2026-10-22 |
-| One resolved Portage config (make.globals, env.d, environment): ACCEPT_* fixed 2026-10-22, `Settings` next | 🟡 | [[portage-config-layering]] |
+| One resolved Portage config: `Settings` landed 2026-10-23 (envvar, --info, resolver, merge protection); build env seeding waits on FEATURES parity | 🟡 | [[portage-config-layering]], [[features-parity]] |
 | Parity: `texlive-core` pulls a perl stack via `virtual/perl-File-Temp`; firefox misses `python-3.15` | 🔴 | found 2026-10-14 by `bench-em-vs-emerge.sh`, not yet filed |
 
 Closed since 2026-09-25 and archived under `todo/done/`: the phase order audit

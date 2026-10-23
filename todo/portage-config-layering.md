@@ -1,6 +1,6 @@
 # One resolved Portage configuration, instead of one per consumer
 
-Status: 🟡 planned 2026-10-22, decisions taken the same day; step 1 done. Started from `em portageq envvar` not
+Status: 🟡 steps 1–5 done 2026-10-22/23; step 6 partly (targeted seeding), the rest waits on [[features-parity]]. Started from `em portageq envvar` not
 matching `portageq envvar`; the diff led to a live resolver bug (below). Related:
 [[pms-env-unset]], [[use-order-repo-layer]], [[use-stable-in-defaults]].
 
@@ -72,20 +72,21 @@ Each step lands on its own, with a parity check against the real tool on thalia.
    clean environment and with `CFLAGS=…`/`FEATURES=…` set, plus `PORTAGE_CONFIGROOT` scratch
    roots for the `-*`/`-x`/profile-only cases. The derived ROOT/EROOT/… are not compared
    here; step 3 adds them.
-3. 🟡 **`portageq envvar` and `--info` read `Settings`.** envvar done 2026-10-23: all 176 variables em prints match
-   portageq; missing are Portage internals, PORTAGE_REPOSITORIES, PORTAGE_ARCHLIST. `--info` still on the shell. Known:
-   `ARCH=x` in the environment gives portageq `''`, em the profile's value; a scratch root's unset GRUB_PLATFORMS is `''`
-   in portageq, absent in em. The wildcard enumerates settings, not
-   shell variables (no BASHPID/IFS/`__PORTAGE_ECLASS_DIRS`, PORTDIR included). `portage-cli`
-   adds ROOT, EROOT, SYSROOT, ESYSROOT, EPREFIX, BROOT and PORTAGE_CONFIGROOT from `Roots`.
-4. **The resolver reads `Settings`** for ACCEPT_KEYWORDS/LICENSE/PROPERTIES/RESTRICT,
-   replacing `use_env`'s own make.conf and environment reads. `-p` parity sweep
-   (`bench-em-vs-emerge.sh`, resolve-mode matrix) before and after.
-5. **Retire the hand-assembled readers**: protect.rs, `elog_setting`, binpkg PKGDIR,
-   `resolve_info_var` all read `Settings`. Merge-time CONFIG_PROTECT parity checked against a
-   real merge.
-6. **The build environment:** the shell is seeded from `Settings` instead of re-sourcing, with
-   FEATURES limited to what em provides (D3); still no process environment (D2).
+3. ✅ **`portageq envvar` and `--info` read `Settings`** (`fa5fe890`, `f5e934f3`). All 176 variables em prints
+   match portageq; missing are Portage internals, PORTAGE_REPOSITORIES, PORTAGE_ARCHLIST. `--info`'s 21 variables
+   match `emerge --info`. Known: `ARCH=x` in the environment gives portageq `''`, em the profile's value; a scratch
+   root's unset GRUB_PLATFORMS is `''` in portageq, absent in em.
+4. ✅ **The resolver reads `Settings`** (`5cdfa855`): fixed `ACCEPT_KEYWORDS` from the environment being ignored.
+   env.d and make.globals are not layered there (nothing a resolve reads). Parity table and resolve-mode matrix
+   unchanged.
+5. ✅ **Hand-assembled readers retired** (`89f17f5c`): `em etc`, the mirror and elog lookups, mirrordist. Fixed a
+   merge diverting env.d-masked files to `._cfg` (checked in a sandbox with sys-apps/sandbox). Kept: the PKGDIR chain,
+   which ignores make.globals for a non-host root on purpose; `privilege.rs`'s DISTDIR (runs before the runtime);
+   `read_make_conf_var_for_roots` (make.conf-only CFLAGS etc. for per-entry roots); `ProfileStack` cannot be empty,
+   so a root without a profile has no `Settings`.
+6. 🟡 **The build environment:** done for CONFIG_PROTECT(_MASK), GENTOO_MIRRORS, PORTAGE_ELOG_CLASSES/SYSTEM, seeded
+   from `Settings`. Seeding everything is not safe yet: make.globals' FETCHCOMMAND would switch em's fetcher to wget,
+   PORTAGE_COMPRESS and others change behaviour, and FEATURES needs the [[features-parity]] table (D3) first.
 
 ## Decisions (Luca, 2026-10-22)
 

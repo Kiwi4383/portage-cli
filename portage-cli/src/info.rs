@@ -12,8 +12,7 @@ use std::collections::BTreeMap;
 use std::io::Write as _;
 
 use anstyle::{AnsiColor, Color, Effects, Style};
-use anyhow::{Context, Result};
-use camino::Utf8Path;
+use anyhow::Result;
 use portage_atom::interner::{DefaultInterner, Interned};
 use portage_repo::UseExpand;
 use serde::Serialize;
@@ -184,35 +183,24 @@ struct Info {
     unset: Vec<String>,
 }
 
-/// The main repo and a shell holding the profile and make.conf stack of the config root `cli`
-/// selects, with whether a profile was found
-///
-/// `terminal` goes in before the stack, so make.conf can still override `NOCOLOR`.
-pub(crate) async fn profile_shell(
-    cli: &Cli,
-    terminal: Option<portage_repo::TerminalConfig>,
-) -> Result<(portage_repo::Repository, portage_repo::EbuildShell, bool)> {
-    let roots = cli.roots();
-    let repo = crate::crossdev::main_repo(cli)?;
-    let mut shell = repo.shell().await.context("creating shell")?;
-    if let Some(terminal) = terminal {
-        shell.set_terminal(terminal);
-    }
-    let has_profile =
-        crate::ebuild::apply_profile_env(&mut shell, roots.config(), roots.config_overlay())
-            .await?;
-    Ok((repo, shell, has_profile))
-}
-
 pub(crate) async fn run(cli: &Cli) -> Result<()> {
     let roots = cli.roots();
-    let config_root = roots.config().unwrap_or(Utf8Path::new("/"));
-
-    let (repo, shell, has_profile) =
-        profile_shell(cli, Some(crate::style::terminal_config())).await?;
+    let repo = crate::crossdev::main_repo(cli)?;
+    let settings = crate::settings::load(cli).await?;
+    let has_profile = settings.is_some();
+    let settings = settings.unwrap_or_default();
+    let derived = crate::settings::derived(&roots)?;
+    let var = |name: &str| {
+        settings.get(name).map(str::to_owned).or_else(|| {
+            derived
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, v)| v.clone())
+        })
+    };
 
     let profile = crate::select::profile::current_profile(cli, &repo);
-    let chost = shell.get_var("CHOST");
+    let chost = var("CHOST");
 
     let repositories: Vec<RepoInfo> = match roots.repos_conf() {
         Ok(conf) => {
@@ -278,8 +266,8 @@ pub(crate) async fn run(cli: &Cli) -> Result<()> {
 
     let sets = (cli.verbose() > 0).then(|| resolve_all_sets(&roots));
 
-    let use_expand_names = shell.get_var("USE_EXPAND").unwrap_or_default();
-    let use_str = shell.get_var("USE").unwrap_or_default();
+    let use_expand_names = var("USE_EXPAND").unwrap_or_default();
+    let use_str = var("USE").unwrap_or_default();
     let expand = UseExpand::from_var(&use_expand_names);
     let flags: Vec<&str> = use_str.split_whitespace().collect();
     let mut groups = expand.group(flags);
@@ -304,14 +292,14 @@ pub(crate) async fn run(cli: &Cli) -> Result<()> {
     let mut vars = BTreeMap::new();
     let mut unset = Vec::new();
     for &name in INFO_VARS {
-        match resolve_info_var(&shell, name) {
+        match var(name) {
             Some(v) => {
                 vars.insert(name.to_string(), v);
             }
             None => unset.push(name.to_string()),
         }
     }
-    vars.insert("PORTAGE_CONFIGROOT".to_string(), config_root.to_string());
+    vars.extend(var("PORTAGE_CONFIGROOT").map(|v| ("PORTAGE_CONFIGROOT".to_string(), v)));
 
     let info = Info {
         em_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -639,33 +627,6 @@ async fn toolchain_versions(
             (cp, joined)
         })
         .collect()
-}
-
-/// Resolve one `INFO_VARS` entry the way real `emerge --info` actually would,
-/// not just `shell.get_var`:
-///
-/// - `LANG`: real portage reads this from the literal process environment,
-///   not make.conf/profile — and `ProfileStack`'s shell deliberately does
-///   *not* inherit the ambient environment, so `shell.get_var("LANG")`
-///   alone would always report it unset even when the shell running `em`
-///   clearly has one.
-///
-/// - `DISTDIR`/`PKGDIR`/`PORTAGE_TMPDIR`/`GENTOO_MIRRORS`: real
-///   `make.globals`-only defaults — `ProfileStack` never sources
-///   `make.globals` into the shell at all, so these need the same env →
-///   shell → `make.globals` fallback `em`'s fetch/binpkg code already uses,
-///   via `ebuild::elog_setting`.
-///
-/// - Everything else: plain `shell.get_var`.
-pub(crate) fn resolve_info_var(shell: &portage_repo::EbuildShell, name: &str) -> Option<String> {
-    match name {
-        "LANG" => std::env::var("LANG").ok().filter(|v| !v.is_empty()),
-        "DISTDIR" | "PKGDIR" | "PORTAGE_TMPDIR" | "GENTOO_MIRRORS" => {
-            let v = crate::ebuild::elog_setting(shell, name);
-            (!v.is_empty()).then_some(v)
-        }
-        _ => shell.get_var(name),
-    }
 }
 
 /// `Linux-<release>-<machine>`-shaped, matching the style real `emerge

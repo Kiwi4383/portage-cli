@@ -186,9 +186,10 @@ struct Info {
 pub(crate) async fn run(cli: &Cli) -> Result<()> {
     let roots = cli.roots();
     let repo = crate::crossdev::main_repo(cli)?;
-    let settings = crate::settings::load(cli).await?;
-    let has_profile = settings.is_some();
-    let settings = settings.unwrap_or_default();
+    let loaded = crate::settings::load(cli).await?;
+    let has_profile = loaded.is_some();
+    let empty = portage_repo::Settings::default();
+    let settings = loaded.as_deref().unwrap_or(&empty);
     let derived = crate::settings::derived(&roots)?;
     let var = |name: &str| {
         settings.get(name).map(str::to_owned).or_else(|| {

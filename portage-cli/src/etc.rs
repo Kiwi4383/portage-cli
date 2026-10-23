@@ -58,7 +58,10 @@ impl Kind {
 
 pub async fn run(globals: &Cli, command: Option<&EtcCommand>, opts: &EtcOpts) -> Result<()> {
     let roots = globals.roots();
-    let protect = crate::ebuild::ConfigProtect::from_roots(&roots).await;
+    let settings = crate::settings::load(globals).await?;
+    let empty = portage_repo::Settings::default();
+    let protect =
+        crate::ebuild::ConfigProtect::from_settings(settings.as_deref().unwrap_or(&empty));
     let mut pending = scan(roots.merge_root(), &protect);
     // Oldest first: accepting the newest sidecar first would silently discard
     // the intermediate versions behind it.

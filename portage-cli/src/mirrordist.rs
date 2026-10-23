@@ -86,7 +86,14 @@ pub async fn run(cli: &cli::Cli, opts: &MirrorDistOpts) -> Result<()> {
         .with_context(|| format!("creating distfiles dir {}", opts.distfiles))?;
 
     let gentoo_mirrors = if opts.gentoo_mirrors_fallback {
-        gentoo_mirrors_list(cli)
+        let settings = crate::settings::load(cli).await?;
+        settings
+            .as_deref()
+            .and_then(|s| s.get("GENTOO_MIRRORS"))
+            .unwrap_or_default()
+            .split_whitespace()
+            .map(str::to_string)
+            .collect()
     } else {
         Vec::new()
     };
@@ -283,19 +290,6 @@ fn default_repos_dir(cli: &cli::Cli) -> PathBuf {
     Path::new(&cli.repo_path())
         .parent()
         .map(Path::to_path_buf)
-        .unwrap_or_default()
-}
-
-/// Read `GENTOO_MIRRORS` from `make.conf` directly (no live `EbuildShell` —
-/// there is no ebuild being built here, unlike `ebuild.rs`'s
-/// `gentoo_mirrors_list`).
-fn gentoo_mirrors_list(cli: &cli::Cli) -> Vec<String> {
-    let path = crate::select::config_portage_dir(cli).join("make.conf");
-    let Ok(mc) = portage_repo::MakeConf::load(&path) else {
-        return Vec::new();
-    };
-    mc.get("GENTOO_MIRRORS")
-        .map(|v| v.split_whitespace().map(str::to_string).collect())
         .unwrap_or_default()
 }
 

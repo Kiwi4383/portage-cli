@@ -10,7 +10,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use portage_atom::Cpv;
 use portage_distfiles::{DistfileResolver, FetchConfig, FetchStatus, Fetcher, RestrictGate};
 use portage_metadata::{Eapi, RestrictExpr, SrcUriEntry};
-use portage_repo::{Ebuild, EbuildEnv, MakeConf, Manifest, ReposConf, Repository};
+use portage_repo::{Ebuild, EbuildEnv, Manifest, ReposConf, Repository};
 use portage_vdb::{ContentsEntry, ContentsKind, InstalledPackage, MergeSpec, OwnershipIndex, Vdb};
 use tracing::Instrument;
 
@@ -1348,6 +1348,10 @@ impl PackageSetup {
             crate::style::warn_line!(
                 "no usable profile at {cr}/etc/portage/make.profile — building without profile defaults"
             );
+        }
+        let key = crate::settings::Key::new(config_root, config_overlay.as_deref(), root, eprefix);
+        if let Some(settings) = crate::settings::cached(key, &repo).await? {
+            crate::settings::seed_build_shell(&mut shell, &settings).await?;
         }
 
         // Per-package build environment: `/etc/portage/package.env` maps this package
@@ -3591,67 +3595,31 @@ fn open_or_create_vdb(path: &Utf8Path) -> Result<Vdb> {
     Vdb::open(path).with_context(|| format!("opening VDB at {path}"))
 }
 
-/// `GENTOO_MIRRORS`: process env → the live ebuild shell (root-aware —
-/// `shell` already sourced whichever make.conf is correct for the active
-/// `--root`/`--config-root`/`--prefix`, unlike a hardcoded host path) →
-/// `make.globals` (never sourced into the shell itself, so still consulted
-/// directly here, same convention as `binpkg.rs::resolve_pkgdir_for_roots`).
-///
-/// Without the `make.globals` fallback the mirror list is empty and a
-/// distfile whose upstream URL fails has no fallback (the popt/tar fetch
-/// failures in the @system stage build) — `make.globals` is where the real
-/// `http://distfiles.gentoo.org` default lives.
+/// `GENTOO_MIRRORS`: the environment's, else the shell's, which holds make.conf's or the
+/// make.globals default seeded from the settings
 fn gentoo_mirrors_list(shell: &portage_repo::EbuildShell) -> Vec<String> {
     if let Ok(val) = std::env::var("GENTOO_MIRRORS")
         && !val.trim().is_empty()
     {
         return val.split_whitespace().map(str::to_owned).collect();
     }
-    if let Some(val) = shell.get_var("GENTOO_MIRRORS")
-        && !val.trim().is_empty()
-    {
-        return val.split_whitespace().map(str::to_owned).collect();
-    }
-    let mg = Utf8Path::new(MAKE_GLOBALS);
-    if mg.exists()
-        && let Ok(mc) = MakeConf::load(mg)
-        && let Some(val) = mc.get("GENTOO_MIRRORS")
-    {
-        return val.split_whitespace().map(str::to_owned).collect();
-    }
-    vec![]
+    shell
+        .get_var("GENTOO_MIRRORS")
+        .unwrap_or_default()
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect()
 }
 
-/// Portage's shipped defaults; the source of `GENTOO_MIRRORS` when neither the
-/// environment nor make.conf overrides it.
-pub(crate) const MAKE_GLOBALS: &str = "/usr/share/portage/config/make.globals";
-
-/// One `PORTAGE_ELOG_*` setting, along [`gentoo_mirrors_list`]'s
-/// environment → shell → `make.globals` chain — but stopping at the first layer
-/// that *sets* the variable, empty or not. `PORTAGE_ELOG_SYSTEM=""` in a
-/// make.conf is how elog gets turned off, so an empty value must not fall
-/// through to `make.globals`' non-empty default.
+/// One `PORTAGE_ELOG_*` setting: the environment's, else the shell's, which holds make.conf's
+/// or the make.globals default seeded from the settings
 ///
-/// `pub(crate)`, not elog-specific despite the name: also reused by `em
-/// --info` for DISTDIR/PKGDIR/PORTAGE_TMPDIR/GENTOO_MIRRORS, which are real
-/// `make.globals`-only defaults (`ProfileStack` never sources that file —
-/// see [`gentoo_mirrors_list`]'s doc) that a plain `shell.get_var` alone
-/// would wrongly report as unset.
-pub(crate) fn elog_setting(shell: &portage_repo::EbuildShell, name: &str) -> String {
-    if let Ok(val) = std::env::var(name) {
-        return val;
-    }
-    if let Some(val) = shell.get_var(name) {
-        return val;
-    }
-    let mg = Utf8Path::new(MAKE_GLOBALS);
-    if mg.exists()
-        && let Ok(mc) = MakeConf::load(mg)
-        && let Some(val) = mc.get(name)
-    {
-        return val.to_string();
-    }
-    String::new()
+/// The first layer that *sets* it wins, empty or not: `PORTAGE_ELOG_SYSTEM=""` turns elog off.
+fn elog_setting(shell: &portage_repo::EbuildShell, name: &str) -> String {
+    std::env::var(name)
+        .ok()
+        .or_else(|| shell.get_var(name))
+        .unwrap_or_default()
 }
 
 /// Run the configured elog modules over whatever this package's phases left in

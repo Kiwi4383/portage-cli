@@ -421,6 +421,17 @@ mod tests {
         }
 
         async fn settings(&self, globals: &str, conf: &str, env: &[(&str, &str)]) -> Settings {
+            self.settings_with_env_d("", globals, conf, env).await
+        }
+
+        async fn settings_with_env_d(
+            &self,
+            env_d: &str,
+            globals: &str,
+            conf: &str,
+            env: &[(&str, &str)],
+        ) -> Settings {
+            let env_d = self.write("profile.env", env_d);
             let globals = self.write("make.globals", globals);
             let conf = self.write("make.conf", conf);
             let stack = ProfileStack::build(self.dir.path().join("profiles/test")).unwrap();
@@ -430,7 +441,7 @@ mod tests {
                 &mut shell,
                 SettingsSources {
                     stack: &stack,
-                    env_d: None,
+                    env_d: Some(ConfSource::File(&env_d)),
                     globals: Some(ConfSource::File(&globals)),
                     confs: &[ConfSource::File(&conf)],
                     env: &env,
@@ -454,6 +465,24 @@ mod tests {
             .await;
         assert_eq!(s.get("FEATURES"), Some("ccache test userpriv"));
         assert_eq!(s.setting("FEATURES").unwrap().layer, Layer::Env);
+    }
+
+    #[tokio::test]
+    async fn env_d_is_the_lowest_layer_of_config_protection() {
+        let f = Fixture::new();
+        let s = f
+            .settings_with_env_d(
+                "export CONFIG_PROTECT='/usr/share/config'\nexport CONFIG_PROTECT_MASK='/etc/ca-certificates.conf /etc/x'\n",
+                "CONFIG_PROTECT=\"/etc\"\nCONFIG_PROTECT_MASK=\"/etc/env.d\"\n",
+                "CONFIG_PROTECT_MASK=\"-/etc/x\"\n",
+                &[],
+            )
+            .await;
+        assert_eq!(s.get("CONFIG_PROTECT"), Some("/etc /usr/share/config"));
+        assert_eq!(
+            s.get("CONFIG_PROTECT_MASK"),
+            Some("/etc/ca-certificates.conf /etc/env.d")
+        );
     }
 
     #[tokio::test]

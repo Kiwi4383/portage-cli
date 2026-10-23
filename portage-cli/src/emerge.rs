@@ -1277,6 +1277,9 @@ async fn execute_unmerge_batch(
             gerund.to_lowercase()
         );
     }
+    if let Some(settings) = crate::settings::load(cli).await? {
+        crate::settings::seed_build_shell(&mut shell, &settings).await?;
+    }
     // Each removal restores this, so one package's functions do not run for the next.
     shell.save_profile_session();
 

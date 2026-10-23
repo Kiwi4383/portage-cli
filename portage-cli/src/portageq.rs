@@ -146,7 +146,9 @@ pub(crate) fn mass_best_version(eroot: &str, atoms: &[String]) -> Result<u8> {
 /// `envvar [-v] NAME…`: the configuration of the config root `em`'s topology selects, as
 /// Portage resolves it, with the variables it derives from the roots and repositories
 pub(crate) async fn envvar(cli: &Cli, verbose: bool, names: &[String]) -> Result<u8> {
-    let settings = crate::settings::load(cli).await?.unwrap_or_default();
+    let loaded = crate::settings::load(cli).await?;
+    let empty = portage_repo::Settings::default();
+    let settings = loaded.as_deref().unwrap_or(&empty);
     let mut vars: std::collections::BTreeMap<String, String> = settings
         .iter()
         .map(|(name, setting)| (name.to_owned(), setting.value.clone()))

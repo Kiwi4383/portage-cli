@@ -1,9 +1,14 @@
 //! The [`Settings`] of the config root a command selects, and the variables Portage derives
 //! from the roots and repositories rather than from any config file
 
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, Mutex};
+
 use anyhow::{Context, Result};
-use camino::Utf8Path;
-use portage_repo::{ConfSource, Environment, ProfileStack, Settings, SettingsSources};
+use camino::{Utf8Path, Utf8PathBuf};
+use portage_repo::{
+    ConfSource, EbuildShell, Environment, ProfileStack, Repository, Settings, SettingsSources,
+};
 use portage_resolve::Roots;
 
 use crate::cli::Cli;
@@ -46,19 +51,72 @@ pub(crate) fn make_conf_files(config_root: &Utf8Path) -> Result<Vec<std::path::P
     .context("listing make.conf")
 }
 
-/// The settings of the config root `cli` selects; `None` when it has no profile
-pub(crate) async fn load(cli: &Cli) -> Result<Option<Settings>> {
-    let roots = cli.roots();
-    let config_root = roots.config().unwrap_or(Utf8Path::new("/"));
-    let Some(stack) = profile_stack(config_root, roots.config_overlay())? else {
+/// What decides one [`Settings`]: the files it reads and whether make.globals applies
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct Key {
+    config_root: Utf8PathBuf,
+    config_overlay: Option<Utf8PathBuf>,
+    /// Where `etc/profile.env` is read
+    eroot: Utf8PathBuf,
+    /// make.globals is the host install's; a prefix has none of its own yet
+    host_globals: bool,
+}
+
+impl Key {
+    /// The settings of a build or a query against `config_root`, merging into `eroot`
+    pub(crate) fn new(
+        config_root: Option<&Utf8Path>,
+        config_overlay: Option<&Utf8Path>,
+        eroot: &Utf8Path,
+        eprefix: Option<&Utf8Path>,
+    ) -> Self {
+        Self {
+            config_root: config_root.unwrap_or(Utf8Path::new("/")).to_owned(),
+            config_overlay: config_overlay.map(Utf8Path::to_owned),
+            eroot: eroot.to_owned(),
+            host_globals: eprefix.is_none(),
+        }
+    }
+
+    fn of(roots: &Roots) -> Self {
+        Self::new(
+            roots.config(),
+            roots.config_overlay(),
+            roots.merge_root(),
+            roots.eprefix(),
+        )
+    }
+}
+
+type Cache = Mutex<HashMap<Key, Option<Arc<Settings>>>>;
+
+/// Settings are evaluated once per [`Key`] per invocation
+static CACHE: LazyLock<Cache> = LazyLock::new(Cache::default);
+
+/// The settings `key` names; `None` when its config root has no profile
+///
+/// `repo` only provides the shell the files are evaluated in.
+pub(crate) async fn cached(key: Key, repo: &Repository) -> Result<Option<Arc<Settings>>> {
+    if let Some(hit) = CACHE.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
+        return Ok(hit.clone());
+    }
+    let settings = evaluate(&key, repo).await?.map(Arc::new);
+    CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(key, settings.clone());
+    Ok(settings)
+}
+
+async fn evaluate(key: &Key, repo: &Repository) -> Result<Option<Settings>> {
+    let Some(stack) = profile_stack(&key.config_root, key.config_overlay.as_deref())? else {
         return Ok(None);
     };
-    let confs = make_conf_files(config_root)?;
+    let confs = make_conf_files(&key.config_root)?;
     let confs: Vec<ConfSource> = confs.iter().map(|p| ConfSource::File(p)).collect();
-    let env_d = roots.merge_root().join("etc/profile.env");
+    let env_d = key.eroot.join("etc/profile.env");
     let globals = Utf8Path::new(MAKE_GLOBALS);
     let env = Environment::process();
-    let repo = crate::crossdev::main_repo(cli)?;
     let mut shell = repo.shell().await.context("creating shell")?;
     let settings = Settings::evaluate(
         &mut shell,
@@ -67,7 +125,7 @@ pub(crate) async fn load(cli: &Cli) -> Result<Option<Settings>> {
             env_d: env_d
                 .is_file()
                 .then(|| ConfSource::File(env_d.as_std_path())),
-            globals: (roots.eprefix().is_none() && globals.is_file())
+            globals: (key.host_globals && globals.is_file())
                 .then(|| ConfSource::File(globals.as_std_path())),
             confs: &confs,
             env: &env,
@@ -76,6 +134,43 @@ pub(crate) async fn load(cli: &Cli) -> Result<Option<Settings>> {
     .await
     .context("evaluating the configuration")?;
     Ok(Some(settings))
+}
+
+/// The settings of the config root `cli` selects; `None` when it has no profile
+pub(crate) async fn load(cli: &Cli) -> Result<Option<Arc<Settings>>> {
+    cached(Key::of(&cli.roots()), &crate::crossdev::main_repo(cli)?).await
+}
+
+/// Variables a build shell takes from the settings, because the profile and make.conf it
+/// sources do not hold Portage's whole value: make.globals', env.d's and the environment's parts
+///
+/// em's own merge, fetch and elog decisions read them, as Portage's do, so the environment
+/// counts here although it does not otherwise reach builds.
+const SEEDED: &[&str] = &[
+    "CONFIG_PROTECT",
+    "CONFIG_PROTECT_MASK",
+    "GENTOO_MIRRORS",
+    "PORTAGE_ELOG_CLASSES",
+    "PORTAGE_ELOG_SYSTEM",
+];
+
+/// Give a build shell the [`SEEDED`] values
+pub(crate) async fn seed_build_shell(shell: &mut EbuildShell, settings: &Settings) -> Result<()> {
+    let script: String = SEEDED
+        .iter()
+        .filter_map(|&name| {
+            let value = settings.get(name)?;
+            Some(format!("export {name}={}\n", shell_quote(value)))
+        })
+        .collect();
+    shell
+        .run_string(&script)
+        .await
+        .context("seeding the build configuration")
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 /// The variables Portage derives instead of reading: the roots, and the repositories as

@@ -8,7 +8,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::profile::{
-    ConfSource, Environment, Stage, merge_use_var, resolve_use_flags_observed, source_incremental,
+    ConfSource, Environment, ResolvedUse, Stage, merge_use_var, resolve_use_flags_observed,
+    source_incremental,
 };
 use super::shell::EbuildShell;
 use crate::error::Result;
@@ -143,6 +144,16 @@ fn words(value: &str) -> impl Iterator<Item = &str> {
 impl Settings {
     /// Evaluate every layer in `shell`, a fresh one, and keep the result
     pub async fn evaluate(shell: &mut EbuildShell, sources: SettingsSources<'_>) -> Result<Self> {
+        Ok(Self::evaluate_with_use(shell, sources, None).await?.0)
+    }
+
+    /// [`Self::evaluate`], also returning the layered USE fold a resolver starts from, with
+    /// `extra_use_override` folded in as one more make.conf
+    pub async fn evaluate_with_use(
+        shell: &mut EbuildShell,
+        sources: SettingsSources<'_>,
+        extra_use_override: Option<&str>,
+    ) -> Result<(Self, ResolvedUse)> {
         let initial = snapshot(shell);
         let mut stages: Vec<(Layer, Snapshot)> = Vec::new();
         for (layer, source) in [
@@ -159,7 +170,7 @@ impl Settings {
             shell,
             sources.stack,
             sources.confs,
-            None,
+            extra_use_override,
             sources.env,
             &mut |stage, shell| {
                 let layer = match stage {
@@ -358,7 +369,7 @@ impl Settings {
                 setting.value = sorted.into_iter().collect::<Vec<_>>().join(" ");
             }
         }
-        Ok(Self { vars })
+        Ok((Self { vars }, resolved))
     }
 
     /// The value of `name`, if any layer sets it

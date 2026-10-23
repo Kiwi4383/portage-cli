@@ -4,7 +4,10 @@ use camino::{Utf8Path, Utf8PathBuf};
 use portage_atom::Dep;
 use portage_atom::interner::Interned;
 use portage_atom_pubgrub::{ProfileUseNode, UseLayer, UseOverride};
-use portage_repo::{AcceptSet, LicenseGroupRegistry, MakeConf, ProfileStack, Repository};
+use portage_repo::{
+    AcceptSet, Environment, LicenseGroupRegistry, MakeConf, ProfileStack, Repository, Settings,
+    SettingsSources,
+};
 
 use crate::force_mask::{ForceMask, ForceMaskLayer, fold_signed, index_by_cpn};
 use crate::repo::AcceptToken;
@@ -201,20 +204,25 @@ async fn compute_use_env(
         confs.push(portage_repo::ConfSource::Str(make_conf));
     }
 
-    let resolved = match extra_use_override {
-        Some(content) => stack
-            .use_flags_with_override(&mut shell, &confs, content)
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to evaluate USE flags: {e}"))?,
-        None => stack
-            .use_flags(&mut shell, &confs)
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to evaluate USE flags: {e}"))?,
-    };
+    // env.d and make.globals set nothing a resolve reads (ACCEPT_* have Portage's defaults below).
+    let env = Environment::process();
+    let (settings, resolved) = Settings::evaluate_with_use(
+        &mut shell,
+        SettingsSources {
+            stack: &stack,
+            env_d: None,
+            globals: None,
+            confs: &confs,
+            env: &env,
+        },
+        extra_use_override,
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("failed to evaluate USE flags: {e}"))?;
 
     let split_var = |name: &str| -> Vec<String> {
-        shell
-            .get_var(name)
+        settings
+            .get(name)
             .unwrap_or_default()
             .split_whitespace()
             .map(str::to_string)
@@ -223,7 +231,8 @@ async fn compute_use_env(
 
     let expand = split_var("USE_EXPAND");
     let expand_hidden = split_var("USE_EXPAND_HIDDEN");
-    let accept_keywords = effective_accept_keywords(&split_var, &shell);
+    let accept_keywords =
+        effective_accept_keywords(&split_var, settings.get("ARCH").unwrap_or_default());
 
     // Per-package keyword acceptance, in portage's precedence order: the profile
     // stack first, then site `/etc/portage/package.accept_keywords` (and the
@@ -498,9 +507,9 @@ async fn compute_use_env(
 /// rebuild from `ARCH` once the profile stack has settled.
 fn effective_accept_keywords(
     split_var: &dyn Fn(&str) -> Vec<String>,
-    shell: &portage_repo::EbuildShell,
+    arch: &str,
 ) -> Vec<AcceptToken> {
-    let arch = shell.get_var("ARCH").unwrap_or_default();
+    let arch = arch.to_owned();
     let ak = split_var("ACCEPT_KEYWORDS");
     let parse = |toks: &[String]| toks.iter().filter_map(|t| AcceptToken::parse(t)).collect();
     if arch.is_empty() {

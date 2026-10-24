@@ -1,8 +1,7 @@
 <!-- @generated from em's command line; do not edit -->
 # em portageq
 
-`em portageq` — a subset of Portage's own query interface (byte-compatible
-where implemented: the installed-package queries and `envvar`)
+`em portageq` — a subset of Portage's own query interface (byte-compatible where implemented: the installed-package queries and `envvar`)
 
 **Effect:** read-only.
 
@@ -26,7 +25,10 @@ em portageq [OPTIONS] <COMMAND>
 
 ## Global options
 
-* `--color <WHEN>` — \[default: auto\] \[possible values: auto, always, never\]
+* `--color <WHEN>` — \[default: auto\]
+  * `auto`: Colour when stdout is a terminal.
+  * `always`: Always colour.
+  * `never`: Never colour.
 
 ## Exit status
 

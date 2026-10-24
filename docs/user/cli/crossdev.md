@@ -1,12 +1,9 @@
 <!-- @generated from em's command line; do not edit -->
 # em crossdev
 
-`em crossdev` — cross-target setup, mirroring crossdev's option surface (the
-no-build subset for now; building the toolchain is future work).
+`em crossdev` — cross-target setup, mirroring crossdev's option surface (the no-build subset for now; building the toolchain is future work).
 
-`--root` is not accepted by `crossdev` — the cross toolchain always
-installs into `/usr/<tuple>` (or the target sysroot under `--target`);
-there is no separate destination to redirect.
+`--root` is not accepted by `crossdev` — the cross toolchain always installs into `/usr/<tuple>` (or the target sysroot under `--target`); there is no separate destination to redirect.
 
 ## Usage
 
@@ -16,36 +13,26 @@ em crossdev [OPTIONS]
 
 ## Options
 
-* `-L, --llvm` — Use the LLVM/Clang model (`cross_llvm-*`: host clang cross-targets, no per-target
-  compiler)
+* `-L, --llvm` — Use the LLVM/Clang model (`cross_llvm-*`: host clang cross-targets, no per-target compiler)
 
   Rejects glibc — use musl or a bare-metal target.
 * `--init-target` — Lay down the overlay + sysroot config without building anything
-* `--setup` — Bootstrap the cross toolchain into the prefix (`/usr/<tuple>`): the full
-  intertwined sequence (binutils → headers → gcc-stage1 → libc →
-  gcc-stage2). Implies `--init-target`.
-* `-r, --resume` — With `--setup`, skip the bootstrap steps an earlier run completed: steps recorded with
-  the same spec whose packages are still installed. The first step that does not hold
-  runs again, and every step after it.
+* `--setup` — Bootstrap the cross toolchain into the prefix (`/usr/<tuple>`): the full intertwined sequence (binutils → headers → gcc-stage1 → libc → gcc-stage2). Implies `--init-target`.
+* `-r, --resume` — With `--setup`, skip the bootstrap steps an earlier run completed: steps recorded with the same spec whose packages are still installed. The first step that does not hold runs again, and every step after it.
 * `--show-target-cfg` — Print the derived target configuration and exit (no writes)
 * `--print-spec` — Print the target's built-in sysroot spec as TOML and exit (no writes)
 * `--ex-pkg <CATEGORY/PN>...` — Build an extra package onto the established cross target (may be given multiple times)
 
-  `CATEGORY/PN` — always runs on the host (like `binutils`/`gcc`), not the target sysroot,
-  matching real crossdev's `--ex-pkg`.
+  `CATEGORY/PN` — always runs on the host (like `binutils`/`gcc`), not the target sysroot, matching real crossdev's `--ex-pkg`.
 
-  Applies to `--init-target`/`--setup` only; named per invocation,
-  like real crossdev — not remembered across a later run that omits it.
-* `--ex-gdb` — Build a cross gdb (`dev-debug/gdb`) — shorthand for `--ex-pkg
-  dev-debug/gdb`, crossdev's own `--ex-gdb`.
-* `-v, --verbose...` — Increase verbosity: `-v` labels each build phase, `-vv`/`-vvv` add
-  `em`'s own debug/trace logs (see also `RUST_LOG`).
+  Applies to `--init-target`/`--setup` only; named per invocation, like real crossdev — not remembered across a later run that omits it.
+* `--ex-gdb` — Build a cross gdb (`dev-debug/gdb`) — shorthand for `--ex-pkg dev-debug/gdb`, crossdev's own `--ex-gdb`.
+* `-v, --verbose...` — Increase verbosity: `-v` labels each build phase, `-vv`/`-vvv` add `em`'s own debug/trace logs (see also `RUST_LOG`).
 * `-q, --quiet` — Suppress non-error output
 * `--arch <ARCH>` — Target architecture for operations \[default: current system architecture\]
 * `--repo <PATH>` — Pin search/query to a single repository
 
-  When unset, repositories are auto-discovered from `repos.conf` (the main repo wins for
-  single-repo applets; search walks all of them).
+  When unset, repositories are auto-discovered from `repos.conf` (the main repo wins for single-repo applets; search walks all of them).
 * `-p, --pretend` — Show what would be done without actually performing any actions
 * `-h, --help` — Print help (see a summary with '-h')
 
@@ -53,71 +40,49 @@ em crossdev [OPTIONS]
 
 How the solver and build scheduler behave.
 
-* `--privilege <PRIVILEGE>` — Privilege backend for this crossdev run \[default: auto\] \[possible values: auto, pseudoroot, hakoniwa, sudo, none\]
+* `--privilege <PRIVILEGE>` — Privilege backend for this crossdev run \[default: auto\]
+  * `auto`: Best compiled-in fake root (pseudoroot, else none) when unprivileged, real chowns when already root (default).
+  * `pseudoroot`: LD\_PRELOAD fake root (`pseudoroot`); ownership faked in-session, no per-syscall tax
+  * `hakoniwa`: User-namespace sandbox with build-user→0 map; real chowns in-box
+  * `sudo`: Re-exec under `sudo` for real root (root-owned tree, real setuid)
+  * `none`: No wrapping; run unprivileged (chowns best-effort, may not stick)
 * `-a, --ask` — Ask for confirmation before performing actions
 * `-u, --update` — Update installed packages to newest available versions
 * `--autounmask-write` — Write required USE changes to /etc/portage/package.use/
 * `-1, --oneshot` — Build and install packages but do not add them to the world file
 * `-f, --fetchonly` — Only fetch distfiles, do not build or install
-* `-F, --fetch-all-uri` — Instead of building, just fetch every SRC\_URI file (regardless of
-  USE setting) for the resolved packages.
+* `-F, --fetch-all-uri` — Instead of building, just fetch every SRC\_URI file (regardless of USE setting) for the resolved packages.
 * `-b, --buildpkg` — Build binary packages for all merged packages
 * `-B, --buildpkgonly` — Build binary packages without merging/installing them
 
-  All build-time dependencies must already be satisfied on the system -- this does not
-  resolve or install anything to make that true.
+  All build-time dependencies must already be satisfied on the system -- this does not resolve or install anything to make that true.
 * `-k, --usepkg` — Use binary packages if available, otherwise fall back to source
 * `-K, --usepkgonly` — Only use binary packages, fail if none available
 * `-g, --getbinpkg` — Fetch binary packages for all requested packages
 * `-G, --getbinpkgonly` — Only fetch binary packages, do not install
-* `-e, --emptytree` — Treat every atom as not-yet-installed, rebuilding the whole dependency
-  tree from scratch rather than only what is missing or outdated.
-* `-t, --tree` — Show the dependency tree, indenting each package under the one that
-  pulled it in, before merging.
+* `-e, --emptytree` — Treat every atom as not-yet-installed, rebuilding the whole dependency tree from scratch rather than only what is missing or outdated.
+* `-t, --tree` — Show the dependency tree, indenting each package under the one that pulled it in, before merging.
 * `--json` — Emit the depgraph as machine-parsable JSON instead of pretend text
 
   Takes precedence over `--tree`. Works with `-p` (including `-e`).
 * `-o, --onlydeps` — Only merge dependencies, not the specified packages themselves
 * `-n, --noreplace` — Do not replace installed packages that are already the same version
-* `-j, --jobs <N>` — Build up to N packages in parallel, respecting build-dependency order (merges are still
-  serialised)
+* `-j, --jobs <N>` — Build up to N packages in parallel, respecting build-dependency order (merges are still serialised)
 
   Default 1 (sequential).
-* `-l, --load-average <LOAD>` — Maximum 1-minute load average allowed when starting additional parallel builds (`--jobs`
-  \> 1)
+* `-l, --load-average <LOAD>` — Maximum 1-minute load average allowed when starting additional parallel builds (`--jobs` \> 1)
 
-  Once at least one job is running, further starts wait until load drops below LOAD
-  (matches real Portage's own load-average throttling). The first concurrent job is
-  always allowed. Displayed on the `Jobs:` status line regardless.
+  Once at least one job is running, further starts wait until load drops below LOAD (matches real Portage's own load-average throttling). The first concurrent job is always allowed. Displayed on the `Jobs:` status line regardless.
 * `--keep-going` — Continue merging as much as possible even if some packages fail. Warning: Exists for portage parity; do not use it. A failed package must stop the run.
-* `--autounmask` — Accepted so existing command lines keep parsing. Config writes follow
-  `--autounmask-write` and whether this run is pretend or `--ask`; this
-  flag is not consulted.
-* `--autosolve-use` — Let the solver choose USE flags to satisfy REQUIRED\_USE (Level C) rather than only
-  reporting violations
+* `--autounmask` — Accepted so existing command lines keep parsing. Config writes follow `--autounmask-write` and whether this run is pretend or `--ask`; this flag is not consulted.
+* `--autosolve-use` — Let the solver choose USE flags to satisfy REQUIRED\_USE (Level C) rather than only reporting violations
 
   Off by default; flips are reported.
-* `--eta` — With `-p`/`--pretend` or `-a`/`--ask`, print an "Expected time of
-  completion" for the plan alongside the merge list, estimated from
-  activity history (median of recent successful merges per package;
-  wall uses the build graph + `--jobs` when blockers are available).
-  Shown even when the plan needs USE/mask changes to proceed.
-* `--complete-graph` — With `-u`/`--update` `-D`/`--deep`: when moving a version-pinned
-  family (e.g. upgrading `llvm` pulls `clang` along) would leave a
-  retained package's pin broken (e.g. `lldb` still pinned to the old
-  `llvm`), pull that package into the plan too instead of stopping
-  halfway. Off by default: this can revert the upgrade instead if the
-  retained package has no version satisfying the new pin.
-* `--with-bdeps` — Include build-time dependencies (BDEPEND) in the resolution.
-  Default is false (exclude BDEPEND), matching emerge's default.
-  When enabled, BDEPEND are included but filtered by what's already
-  installed on the build host (BROOT).
+* `--eta` — With `-p`/`--pretend` or `-a`/`--ask`, print an "Expected time of completion" for the plan alongside the merge list, estimated from activity history (median of recent successful merges per package; wall uses the build graph + `--jobs` when blockers are available). Shown even when the plan needs USE/mask changes to proceed.
+* `--complete-graph` — With `-u`/`--update` `-D`/`--deep`: when moving a version-pinned family (e.g. upgrading `llvm` pulls `clang` along) would leave a retained package's pin broken (e.g. `lldb` still pinned to the old `llvm`), pull that package into the plan too instead of stopping halfway. Off by default: this can revert the upgrade instead if the retained package has no version satisfying the new pin.
+* `--with-bdeps` — Include build-time dependencies (BDEPEND) in the resolution. Default is false (exclude BDEPEND), matching emerge's default. When enabled, BDEPEND are included but filtered by what's already installed on the build host (BROOT).
 * `-X, --exclude <ATOM>...` — Exclude the specified atom from being merged
-* `--root-deps` — Only require RDEPEND (not DEPEND) to be satisfied in the merge target.
-  Work-around for cross-compilation bootstrap: a still-empty target sysroot
-  cannot yet satisfy plain DEPEND (e.g. virtual/os-headers, acct-group/root)
-  while its own toolchain is being built. `em crossdev --setup` always applies
-  this unconditionally; elsewhere it defaults off.
+* `--root-deps` — Only require RDEPEND (not DEPEND) to be satisfied in the merge target. Work-around for cross-compilation bootstrap: a still-empty target sysroot cannot yet satisfy plain DEPEND (e.g. virtual/os-headers, acct-group/root) while its own toolchain is being built. `em crossdev --setup` always applies this unconditionally; elsewhere it defaults off.
 
 ## Depgraph
 
@@ -125,17 +90,11 @@ How far to re-examine installed dependencies.
 
 * `-D, --deep` — Re-examine transitive dependencies
 
-  With `--update` (`-uD`), upgrades installed packages in the depgraph to the newest
-  accepted in-slot version (emerge `-uD`). Alone, still bumps `:*` any-slot deps to the
-  newest slot rather than keeping a satisfying installed slot.
-* `-N, --newuse` — Reinstall installed packages when their planned USE or IUSE differs from the VDB (emerge
-  `--newuse`)
+  With `--update` (`-uD`), upgrades installed packages in the depgraph to the newest accepted in-slot version (emerge `-uD`). Alone, still bumps `:*` any-slot deps to the newest slot rather than keeping a satisfying installed slot.
+* `-N, --newuse` — Reinstall installed packages when their planned USE or IUSE differs from the VDB (emerge `--newuse`)
 
-  Applies to packages that appear in the depgraph; pairs with `--deep` for a full-tree USE
-  recheck.
-* `-U, --changed-use` — Like `--newuse`, but only rebuild when an *enabled* USE flag changed
-  among flags present in both installed and current IUSE (ignore pure
-  IUSE add/drop). Emerge's `--changed-use` / `-U`.
+  Applies to packages that appear in the depgraph; pairs with `--deep` for a full-tree USE recheck.
+* `-U, --changed-use` — Like `--newuse`, but only rebuild when an *enabled* USE flag changed among flags present in both installed and current IUSE (ignore pure IUSE add/drop). Emerge's `--changed-use` / `-U`.
 
 ## Activity
 
@@ -145,36 +104,28 @@ Where live progress is written.
 
   Takes ownership of the FD.
 * `--activity-jsonl <PATH>` — Append activity events as JSONL to PATH (not `-`; use `--activity-fd`)
-* `--emergelog` — Dual-write Portage-compatible emerge.log lines (opt-in; qlop/genlop)
-  Path defaults to `<merge-root>/var/log/emerge.log` (or
-  `/var/log/emerge.log`).
+* `--emergelog` — Dual-write Portage-compatible emerge.log lines (opt-in; qlop/genlop) Path defaults to `<merge-root>/var/log/emerge.log` (or `/var/log/emerge.log`).
 
 ## Roots
 
 Which tree this invocation reads and writes.
 
-* `--prefix <DIR>` — Unprivileged offset: ROOT/VDB/distfiles/build trees under DIR; config
-  still from the host (use --root for a config offset).
-* `--local [<DIR>]` — Unprivileged, standalone Gentoo-Prefix: own VDB/BROOT/config, not
-  overlaid on the host (see --prefix for the overlay). Defaults to
-  ~/.gentoo (EPREFIX=~/.gentoo) when no DIR is given (`--local=`).
+* `--prefix <DIR>` — Unprivileged offset: ROOT/VDB/distfiles/build trees under DIR; config still from the host (use --root for a config offset).
+* `--local [<DIR>]` — Unprivileged, standalone Gentoo-Prefix: own VDB/BROOT/config, not overlaid on the host (see --prefix for the overlay). Defaults to ~/.gentoo (EPREFIX=~/.gentoo) when no DIR is given (`--local=`).
 
   A bare `--local` takes the next word as DIR.
 * `--config-root <PATH>` — Read config (profile, make.conf) from this root instead of `--root`
 * `-T, --target <TARGET>` — Cross-build/setup for a crossdev target tuple, or a spec file describing one
 
-  A value containing `/` or ending in `.toml` is a spec file, in the form
-  `em crossdev --print-spec` prints; its `tuple` is the target.
+  A value containing `/` or ending in `.toml` is a spec file, in the form `em crossdev --print-spec` prints; its `tuple` is the target.
 
-  The single source for "which tuple" everywhere: `em crossdev --target T --init-target`
-  sets T up; `em stages --target T --stage1` (or any plain atom build) resolves/installs
-  into the target sysroot `<EROOT>/usr/<TUPLE>` — sugar for
-  `--config-root <sysroot> --root <sysroot>`.
+  The single source for "which tuple" everywhere: `em crossdev --target T --init-target` sets T up; `em stages --target T --stage1` (or any plain atom build) resolves/installs into the target sysroot `<EROOT>/usr/<TUPLE>` — sugar for `--config-root <sysroot> --root <sysroot>`.
 
-  Cross context (CHOST/CBUILD, `--root-deps=rdeps`) is read from the
-  sysroot make.conf. One flag for both roles — `crossdev` no longer
-  has its own `-t`/`--target`.
+  Cross context (CHOST/CBUILD, `--root-deps=rdeps`) is read from the sysroot make.conf. One flag for both roles — `crossdev` no longer has its own `-t`/`--target`.
 
 ## Global options
 
-* `--color <WHEN>` — \[default: auto\] \[possible values: auto, always, never\]
+* `--color <WHEN>` — \[default: auto\]
+  * `auto`: Colour when stdout is a terminal.
+  * `always`: Always colour.
+  * `never`: Never colour.

@@ -20,4 +20,7 @@ em portageq has_version [OPTIONS] <EROOT> <ATOM>
 
 ## Global options
 
-* `--color <WHEN>` — \[default: auto\] \[possible values: auto, always, never\]
+* `--color <WHEN>` — \[default: auto\]
+  * `auto`: Colour when stdout is a terminal.
+  * `always`: Always colour.
+  * `never`: Never colour.

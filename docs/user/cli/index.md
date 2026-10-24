@@ -42,7 +42,10 @@ em [OPTIONS] [COMMAND]
 
 ## Options
 
-* `--color <WHEN>` — \[default: auto\] \[possible values: auto, always, never\]
+* `--color <WHEN>` — \[default: auto\]
+  * `auto`: Colour when stdout is a terminal.
+  * `always`: Always colour.
+  * `never`: Never colour.
 * `-h, --help` — Print help (see a summary with '-h')
 * `-V, --version` — Print version
 

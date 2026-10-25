@@ -132,12 +132,16 @@ pub async fn repo_entries(repo: &Repository) -> Vec<(Cpv, CacheEntry)> {
             .collect();
         let mut md5_covered: HashSet<Cpv> = HashSet::new();
         let mut recovered = 0usize;
-        // A linear scan, not an index: the gap list is small in practice, and
-        // `Cpv` equality fails on an interned pointer almost immediately, so a
-        // scan beats building a hash map over every primary entry up front.
+        // A linear scan over the primary rows only, not an index: the gap list is small when there
+        // is an in-tree cache, and `Cpv` equality fails on an interned pointer almost immediately.
+        // Without one there are no primary rows, however long the list.
+        let primary_rows = out.len();
         let mut drop_primary: Vec<usize> = Vec::new();
         for cpv in &cpvs {
-            if let Some(pos) = out.iter().position(|(candidate, _)| candidate == cpv) {
+            if let Some(pos) = out[..primary_rows]
+                .iter()
+                .position(|(candidate, _)| candidate == cpv)
+            {
                 // Eclass freshness is not enough: a gap line exists because the
                 // primary `_md5_` did not match the ebuild. Drop the line only
                 // when that file now matches. Otherwise serve secondary.
@@ -257,9 +261,14 @@ pub async fn repo_entries(repo: &Repository) -> Vec<(Cpv, CacheEntry)> {
         HashMap::with_capacity(bulk.len() + secondary_bulk.len());
     let mut covered: std::collections::HashSet<Cpv> =
         std::collections::HashSet::with_capacity(bulk.len() + secondary_bulk.len());
+    // Served by the secondary store, so the in-tree cache does not serve them: they belong in the
+    // gap index, which is all the fast path reads besides the in-tree cache.
+    let mut from_secondary: HashSet<Cpv> = HashSet::new();
     // Primary first, so it wins a cpv present in both — same precedence
     // `Repository::cache_entry` already gives primary over secondary.
-    for (cpv, mtime, entry) in bulk.into_iter().chain(secondary_bulk) {
+    let rows = bulk.into_iter().map(|row| (row, false));
+    let secondary_rows = secondary_bulk.into_iter().map(|row| (row, true));
+    for ((cpv, mtime, entry), secondary) in rows.chain(secondary_rows) {
         if covered.contains(&cpv) {
             continue;
         }
@@ -270,6 +279,9 @@ pub async fn repo_entries(repo: &Repository) -> Vec<(Cpv, CacheEntry)> {
             && repo.is_fresh_cached(&entry, &mut eclass_digests.by_name)
         {
             covered.insert(cpv.clone());
+            if secondary {
+                from_secondary.insert(cpv.clone());
+            }
             out.push((cpv, entry));
         }
     }
@@ -293,12 +305,12 @@ pub async fn repo_entries(repo: &Repository) -> Vec<(Cpv, CacheEntry)> {
         .map(|(e, _)| e)
         .collect();
 
-    // What the bulk read currently says about each suspect, to tell "the cache
-    // served this correctly" from "the cache could not serve it".
+    // What the in-tree cache currently says about each suspect, to tell "it
+    // served this correctly" from "it could not serve it".
     let suspect_set: std::collections::HashSet<&Cpv> = suspects.iter().map(|e| e.cpv()).collect();
     let before: HashMap<Cpv, Option<String>> = out
         .iter()
-        .filter(|(cpv, _)| suspect_set.contains(cpv))
+        .filter(|(cpv, _)| suspect_set.contains(cpv) && !from_secondary.contains(cpv))
         .map(|(cpv, e)| (cpv.clone(), e.md5.clone()))
         .collect();
 
@@ -319,14 +331,19 @@ pub async fn repo_entries(repo: &Repository) -> Vec<(Cpv, CacheEntry)> {
     if repo.has_sync_marker()
         && let (Some(stamp), Some(index)) = (&stamp, &index)
     {
-        let unserved = gap
+        let resourced: HashSet<&Cpv> = gap.iter().map(|(cpv, _)| cpv).collect();
+        let unserved_gap = gap.iter().filter(|(cpv, e)| match before.get(cpv) {
+            None => true,
+            Some(old) => old.as_deref() != e.md5.as_deref(),
+        });
+        let secondary_only = out
             .iter()
-            .filter(|(cpv, e)| match before.get(cpv) {
-                None => true,
-                Some(old) => old.as_deref() != e.md5.as_deref(),
-            })
-            .map(|(cpv, _)| cpv);
-        write_gap_index(index, stamp, unserved);
+            .filter(|(cpv, _)| from_secondary.contains(cpv) && !resourced.contains(cpv));
+        write_gap_index(
+            index,
+            stamp,
+            unserved_gap.chain(secondary_only).map(|(cpv, _)| cpv),
+        );
     }
     // A re-sourced entry supersedes whatever the bulk read produced.
     let replaced: std::collections::HashSet<&Cpv> = gap.iter().map(|(cpv, _)| cpv).collect();
@@ -853,6 +870,41 @@ mod tests {
             std::fs::read_to_string(sidecar).unwrap(),
             format!("{stamp}\n")
         );
+    }
+
+    // A synced repo with no in-tree cache: the second run served everything from the secondary
+    // store and wrote an empty gap index, so the third trusted it and saw no packages.
+    #[tokio::test]
+    async fn a_repo_without_an_in_tree_cache_keeps_its_packages_on_every_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache_root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("metadata")).unwrap();
+        std::fs::write(dir.path().join("metadata/layout.conf"), "").unwrap();
+        std::fs::create_dir_all(dir.path().join("profiles")).unwrap();
+        std::fs::write(dir.path().join("profiles/categories"), "sys-apps\n").unwrap();
+        std::fs::write(dir.path().join("metadata/timestamp.chk"), "1\n").unwrap();
+        let repo = Repository::builder()
+            .user_cache_root(
+                camino::Utf8PathBuf::from_path_buf(cache_root.path().to_owned()).unwrap(),
+            )
+            .open(dir.path())
+            .unwrap();
+        let pkg_dir = dir.path().join("sys-apps/foo");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        std::fs::write(
+            pkg_dir.join("foo-1.0.ebuild"),
+            "EAPI=8\nDESCRIPTION=\"foo\"\nSLOT=0\n",
+        )
+        .unwrap();
+        let sidecar = repo.sidecar_path(GAP_INDEX).unwrap();
+
+        for run in 1..=3 {
+            let entries = repo_entries(&repo).await;
+            assert_eq!(entries.len(), 1, "run {run}");
+            if run == 1 {
+                std::fs::remove_file(sidecar.as_std_path()).unwrap();
+            }
+        }
     }
 
     #[tokio::test]

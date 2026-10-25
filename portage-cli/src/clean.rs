@@ -457,7 +457,17 @@ async fn clean_pkgs(globals: &Cli, opts: &CleanOpts, filters: &Filters) -> Resul
         .then(|| crate::binpkg::lock_pkgdir(&pkgdir))
         .transpose()?;
     let c = pkg_candidates(globals, opts, filters).await?;
-    report_and_remove(globals, &c, "binary package")
+    report_and_remove(globals, &c, "binary package")?;
+    if globals.pretend() || c.is_empty() {
+        return Ok(());
+    }
+    // The index must stop offering what was just removed to `-k`/`-g`.
+    let chost = crate::binpkg::read_make_conf_var(globals, "CHOST")
+        .await
+        .unwrap_or_default();
+    portage_binpkg::index_pkgdir(&pkgdir, &chost)
+        .with_context(|| format!("refreshing the Packages index in {pkgdir}"))?;
+    Ok(())
 }
 
 async fn pkg_candidates(
@@ -528,13 +538,18 @@ async fn pkg_candidates(
 pub(crate) fn cpv_from_container(rel: &str) -> Option<String> {
     let rel = rel.strip_suffix(".gpkg.tar")?;
     let (cat, file) = rel.rsplit_once('/')?;
-    if portage_atom::Pf::parse(file).is_ok() {
-        return Some(format!("{cat}/{file}"));
+    // `awk-1-3` is `awk-1` with build id 3: PMS forbids a package name ending in `-<version>`,
+    // so `awk-1` cannot be a name with version 3, whatever `Pf::parse` accepts.
+    if let Some((base, build_id)) = file.rsplit_once('-')
+        && !build_id.is_empty()
+        && build_id.bytes().all(|b| b.is_ascii_digit())
+        && portage_atom::Pf::parse(base).is_ok()
+    {
+        return Some(format!("{cat}/{base}"));
     }
-    let (base, _build_id) = file.rsplit_once('-')?;
-    portage_atom::Pf::parse(base)
+    portage_atom::Pf::parse(file)
         .ok()
-        .map(|_| format!("{cat}/{base}"))
+        .map(|_| format!("{cat}/{file}"))
 }
 
 fn installed_cpvs(globals: &Cli) -> Result<std::collections::HashSet<String>> {
@@ -702,6 +717,14 @@ mod tests {
 
         // Ordinary versions are untouched.
         assert_eq!(cpv("sys-libs/zlib-1.3.1.gpkg.tar"), "sys-libs/zlib-1.3.1");
+
+        // em always writes a build id: a bare-integer version keeps its own number.
+        assert_eq!(cpv("virtual/awk-1-3.gpkg.tar"), "virtual/awk-1");
+        assert_eq!(cpv("acct-group/audio-0-1.gpkg.tar"), "acct-group/audio-0");
+        assert_eq!(
+            cpv("sys-kernel/linux-firmware-20250101-2.gpkg.tar"),
+            "sys-kernel/linux-firmware-20250101"
+        );
 
         assert_eq!(cpv_from_container("not-a-container"), None);
     }

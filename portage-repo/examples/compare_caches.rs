@@ -224,7 +224,7 @@ fn normalize_license_entry(e: &LicenseExpr) -> String {
             };
             format!("{prefix} ( {} )", normalize_license_entries(entries))
         }
-        LicenseExpr::All(entries) => normalize_license_entries(entries),
+        LicenseExpr::All(entries) => format!("( {} )", normalize_license_entries(entries)),
     }
 }
 

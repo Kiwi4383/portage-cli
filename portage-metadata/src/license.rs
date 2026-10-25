@@ -30,7 +30,7 @@ pub enum LicenseExpr {
         /// License entries guarded by this flag
         entries: Vec<LicenseExpr>,
     },
-    /// Top-level grouping: all listed licenses apply
+    /// All listed licenses apply: the top level, or a `( licenses... )` group
     All(Vec<LicenseExpr>),
 }
 
@@ -91,18 +91,31 @@ fn dedup_license_children(children: &[LicenseExpr]) -> Vec<LicenseExpr> {
     result
 }
 
+/// `entries` space-separated; a nested all-of group keeps its parentheses
+fn fmt_entries(f: &mut fmt::Formatter, entries: &[LicenseExpr]) -> fmt::Result {
+    for (i, entry) in entries.iter().enumerate() {
+        if i > 0 {
+            write!(f, " ")?;
+        }
+        match entry {
+            LicenseExpr::All(group) => {
+                write!(f, "( ")?;
+                fmt_entries(f, group)?;
+                write!(f, " )")?;
+            }
+            _ => write!(f, "{entry}")?,
+        }
+    }
+    Ok(())
+}
+
 impl fmt::Display for LicenseExpr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             LicenseExpr::License(name) => write!(f, "{name}"),
             LicenseExpr::AnyOf(entries) => {
                 write!(f, "|| ( ")?;
-                for (i, entry) in entries.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, " ")?;
-                    }
-                    write!(f, "{entry}")?;
-                }
+                fmt_entries(f, entries)?;
                 write!(f, " )")
             }
             LicenseExpr::UseConditional {
@@ -114,23 +127,10 @@ impl fmt::Display for LicenseExpr {
                     write!(f, "!")?;
                 }
                 write!(f, "{flag}? ( ")?;
-                for (i, entry) in entries.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, " ")?;
-                    }
-                    write!(f, "{entry}")?;
-                }
+                fmt_entries(f, entries)?;
                 write!(f, " )")
             }
-            LicenseExpr::All(entries) => {
-                for (i, entry) in entries.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, " ")?;
-                    }
-                    write!(f, "{entry}")?;
-                }
-                Ok(())
-            }
+            LicenseExpr::All(entries) => fmt_entries(f, entries),
         }
     }
 }
@@ -190,19 +190,20 @@ fn parse_use_conditional(input: &mut &str) -> ModalResult<LicenseExpr> {
     })
 }
 
-fn parse_paren_group(input: &mut &str) -> ModalResult<Vec<LicenseExpr>> {
+fn parse_paren_group(input: &mut &str) -> ModalResult<LicenseExpr> {
     delimited(
         '(',
         parse_license_entries,
         cut_err((multispace0, ')')).context(StrContext::Label("closing ')'")),
     )
+    .map(LicenseExpr::All)
     .parse_next(input)
 }
 
 fn parse_license_entry(input: &mut &str) -> ModalResult<Vec<LicenseExpr>> {
     dispatch! {peek(any);
         '|' => parse_any_of.map(|e| vec![e]),
-        '(' => parse_paren_group,
+        '(' => parse_paren_group.map(|e| vec![e]),
         _ => alt((
             parse_use_conditional.map(|e| vec![e]),
             parse_license_name.map(|e| vec![e]),
@@ -323,6 +324,21 @@ mod tests {
         let expr = LicenseExpr::parse(input).unwrap();
         let reparsed = LicenseExpr::parse(&expr.to_string()).unwrap();
         assert_eq!(expr, reparsed);
+    }
+
+    #[test]
+    fn an_all_of_group_inside_any_of_keeps_its_meaning() {
+        let input = "|| ( MIT ( GPL-1 GPL-2 ) )";
+        let expr = LicenseExpr::parse(input).unwrap();
+        let gpl = |v: &str| LicenseExpr::License(format!("GPL-{v}"));
+        assert_eq!(
+            expr,
+            LicenseExpr::AnyOf(vec![
+                LicenseExpr::License("MIT".to_string()),
+                LicenseExpr::All(vec![gpl("1"), gpl("2")]),
+            ])
+        );
+        assert_eq!(expr.to_string(), input);
     }
 
     #[test]

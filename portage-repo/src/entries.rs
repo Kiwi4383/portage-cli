@@ -97,8 +97,10 @@ pub async fn repo_entries(repo: &Repository) -> Vec<(Cpv, CacheEntry)> {
     // `has_sync_marker`: without a rewritten-on-sync timestamp.chk, `stamp`
     // degrades to the repo root directory's mtime, which is invariant under
     // exactly the in-place edits a hand-maintained overlay gets — trusting
-    // the memo there would pin it on a stale answer forever.
-    if repo.has_sync_marker()
+    // the memo there would pin it on a stale answer forever. Without an in-tree cache every
+    // ebuild is a gap entry, digested one at a time here: the walk below is faster.
+    let use_index = repo.has_sync_marker() && repo.primary_cache_dir().is_dir();
+    if use_index
         && let (Some(stamp), Some(index)) = (&stamp, &index)
         && let Some(cpvs) = read_gap_index(index, stamp)
     {
@@ -196,6 +198,7 @@ pub async fn repo_entries(repo: &Repository) -> Vec<(Cpv, CacheEntry)> {
     }
 
     let scan = repo.ebuilds().ok();
+    let walked = scan.is_some();
     let (bulk_res, secondary_res, ebuilds) = tokio::join!(
         cache_entries_parallel_with_mtime(std::slice::from_ref(repo), &cache_opts, |text| {
             CacheEntry::parse(text).map_err(crate::Error::from)
@@ -253,6 +256,10 @@ pub async fn repo_entries(repo: &Repository) -> Vec<(Cpv, CacheEntry)> {
         Vec::new()
     });
 
+    // em's own store is never pruned: an entry whose ebuild is gone would keep a deleted version
+    // installable. The in-tree cache is maintained with the tree.
+    let on_disk: Option<HashSet<&Cpv>> =
+        walked.then(|| ebuilds.iter().map(|(e, _)| e.cpv()).collect());
     let mut out: Vec<(Cpv, CacheEntry)> = Vec::with_capacity(bulk.len() + secondary_bulk.len());
     // The cache file's own mtime, per cpv — the "cache file serving e.cpv"
     // half of the per-entry suspect rule, gathered in the same pass as the
@@ -269,7 +276,8 @@ pub async fn repo_entries(repo: &Repository) -> Vec<(Cpv, CacheEntry)> {
     let rows = bulk.into_iter().map(|row| (row, false));
     let secondary_rows = secondary_bulk.into_iter().map(|row| (row, true));
     for ((cpv, mtime, entry), secondary) in rows.chain(secondary_rows) {
-        if covered.contains(&cpv) {
+        let deleted = secondary && on_disk.as_ref().is_some_and(|d| !d.contains(&cpv));
+        if covered.contains(&cpv) || deleted {
             continue;
         }
         if let Some(m) = mtime {
@@ -328,9 +336,7 @@ pub async fn repo_entries(repo: &Repository) -> Vec<(Cpv, CacheEntry)> {
     // fetch it from the secondary store for nothing. Same `has_sync_marker`
     // gate as the read above — no point writing a sidecar this repo can
     // never safely consult.
-    if repo.has_sync_marker()
-        && let (Some(stamp), Some(index)) = (&stamp, &index)
-    {
+    if use_index && let (Some(stamp), Some(index)) = (&stamp, &index) {
         let resourced: HashSet<&Cpv> = gap.iter().map(|(cpv, _)| cpv).collect();
         let unserved_gap = gap.iter().filter(|(cpv, e)| match before.get(cpv) {
             None => true,
@@ -872,8 +878,9 @@ mod tests {
         );
     }
 
-    // A synced repo with no in-tree cache: the second run served everything from the secondary
-    // store and wrote an empty gap index, so the third trusted it and saw no packages.
+    // A synced repo with no in-tree cache: the second run used to serve everything from the
+    // secondary store and write an empty gap index, so the third trusted it and saw no packages.
+    // Such a repo now keeps no gap index; an ebuild deleted from it disappears.
     #[tokio::test]
     async fn a_repo_without_an_in_tree_cache_keeps_its_packages_on_every_run() {
         let dir = tempfile::tempdir().unwrap();
@@ -896,15 +903,20 @@ mod tests {
             "EAPI=8\nDESCRIPTION=\"foo\"\nSLOT=0\n",
         )
         .unwrap();
-        let sidecar = repo.sidecar_path(GAP_INDEX).unwrap();
+        std::fs::write(
+            pkg_dir.join("foo-2.0.ebuild"),
+            "EAPI=8\nDESCRIPTION=\"foo\"\nSLOT=0\n",
+        )
+        .unwrap();
 
         for run in 1..=3 {
-            let entries = repo_entries(&repo).await;
-            assert_eq!(entries.len(), 1, "run {run}");
-            if run == 1 {
-                std::fs::remove_file(sidecar.as_std_path()).unwrap();
-            }
+            assert_eq!(repo_entries(&repo).await.len(), 2, "run {run}");
         }
+        assert!(!repo.sidecar_path(GAP_INDEX).unwrap().exists());
+        std::fs::remove_file(pkg_dir.join("foo-2.0.ebuild")).unwrap();
+        let entries = repo_entries(&repo).await;
+        let versions: Vec<String> = entries.iter().map(|(cpv, _)| cpv.to_string()).collect();
+        assert_eq!(versions, ["sys-apps/foo-1.0"]);
     }
 
     #[tokio::test]

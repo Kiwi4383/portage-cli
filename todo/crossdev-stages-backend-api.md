@@ -16,7 +16,12 @@ re-executing its binary, as its hakoniwa backend already does on `/`; exec is sa
 - Linked into crossdev-stages, `current_exe()` is crossdev-stages: its `main` calls em's privilege hook before
   starting tokio, as em's `main` calls `maybe_supervise`.
 - Steps: (1) a stage mode for em's hakoniwa backend (rootdir, binds, log dir; inside, `ROOT=/`); (2) the shared
-  container crate (phase 8); (3) crossdev-stages operations on em's typed surface (phase 10/11). Written 2026-10-06 from a review of
+  container crate (phase 8); (3) crossdev-stages operations on em's typed surface (phase 10/11).
+
+**Middle step first (Luca, 2026-10-25):** crossdev-stages runs the em binary inside its own hakoniwa box (bound
+read-only via `extra_ro`), one em command per backend operation, results from the exit status and
+`--activity-jsonl /var/log/em/…` under the already-bound `/var/log`. The steps above come after, on a working
+backend. em-side gaps for it: distinct exit codes (R5), PKGDIR/log placement (R7), reading back the gcc version (R2). Written 2026-10-06 from a review of
 `~/Sources/crossdev-stages` (`src/portage.rs`, `sandbox.rs`, `target.rs`,
 `image.rs`) against `em 0.1.0`'s `--help` surface and the notes linked
 below. Nothing here has been run end to end; items marked **unverified**
@@ -360,8 +365,8 @@ root, `/target`. `--target T` is documented as sugar for
 crossdev-stages does `packages.build` with normal USE, then portage with
 `USE=build`, and for update an emptytree `@world` with `KERNEL_DIR` set.
 
-- Open decision (Luca): accept `em`'s semantics for the `em` backend, or
-  require parity. If parity: needs per-invocation USE override and a
+- **Decided (Luca, 2026-10-25): the em backend uses `em stages`**, the more robust of the two.
+- Was open: accept `em`'s semantics for the `em` backend, or require parity. If parity: needs per-invocation USE override and a
   `@world` emptytree with an extra env var passed to builds.
 - Either way: `em stages` must accept R1's root combination, and must be
   resumable after a failed package without redoing completed merges.
@@ -475,8 +480,7 @@ semantics decision.
 
 ## Open decisions (Luca)
 
-1. Stage semantics for the `em` backend: `em stages` as-is, or parity
-   with today's sequence (R3).
+1. ~~Stage semantics~~ — **`em stages`** (decided 2026-10-25, R3).
 2. ~~Subprocess or library~~ — **library** (decided 2026-10-06). Follow-up
    decision: execution shape 1 (caller-supplied executor), 2 (re-exec
    inside the sandbox over the existing activity re-emit socket) or 3

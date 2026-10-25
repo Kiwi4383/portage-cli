@@ -2,25 +2,24 @@
 
 use std::fs::File;
 use std::io::Write;
-use std::os::fd::{FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{BorrowedFd, OwnedFd, RawFd};
 use std::sync::Mutex;
 
 use super::bus::ActivitySink;
 use super::event::ActivityEvent;
 
-/// Writes one JSON object per line to a raw FD (not closed on drop by us if
-/// dup'd — we take ownership of the FD number the user passed).
+/// Writes one JSON object per line to a file descriptor
 pub struct JsonlFdSink {
     file: Mutex<File>,
 }
 
 impl JsonlFdSink {
-    /// # Safety
-    /// `fd` must be a valid open file descriptor; this takes ownership.
+    /// A sink on a duplicate of `fd`, which stays open: every merge of a multi-step run attaches one
     pub fn from_raw_fd(fd: RawFd) -> std::io::Result<Self> {
-        // SAFETY: caller guarantees `fd` is open and exclusively ours.
-        let owned = unsafe { OwnedFd::from_raw_fd(fd) };
-        let file = File::from(owned);
+        // SAFETY: the caller handed `fd` to this process to write to and does not close it; dup fails
+        // with EBADF if it is not open.
+        let borrowed = unsafe { BorrowedFd::borrow_raw(fd) };
+        let file = File::from(borrowed.try_clone_to_owned()?);
         Ok(Self {
             file: Mutex::new(file),
         })
@@ -73,5 +72,25 @@ impl ActivitySink for JsonlFdSink {
         let mut f = self.file.lock().unwrap_or_else(|e| e.into_inner());
         let _ = writeln!(f, "{line}");
         let _ = f.flush();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Read;
+    use std::os::fd::AsRawFd;
+
+    use super::*;
+
+    #[test]
+    fn dropping_a_sink_leaves_the_callers_fd_open() {
+        let (mut reader, writer) = std::io::pipe().unwrap();
+        drop(JsonlFdSink::from_raw_fd(writer.as_raw_fd()).unwrap());
+        let mut second = JsonlFdSink::from_raw_fd(writer.as_raw_fd()).unwrap();
+        second.file.get_mut().unwrap().write_all(b"x").unwrap();
+        drop((second, writer));
+        let mut text = String::new();
+        reader.read_to_string(&mut text).unwrap();
+        assert_eq!(text, "x");
     }
 }

@@ -129,6 +129,11 @@ pub fn write_gpkg(input: &GpkgInput, out_path: &Path) -> Result<()> {
     if let Some(parent) = out_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
+    // Written beside its final name and renamed into place, so an index scan or a reader never
+    // sees part of a container; the `.part-` name is not a `.gpkg.tar`.
+    let mut partial = out_path.as_os_str().to_owned();
+    partial.push(format!(".part-{}", std::process::id()));
+    let partial = std::path::PathBuf::from(partial);
     let mut cmd = Command::new("tar");
     cmd.arg("--numeric-owner")
         .arg("--owner=0")
@@ -137,9 +142,13 @@ pub fn write_gpkg(input: &GpkgInput, out_path: &Path) -> Result<()> {
         .arg("-C")
         .arg(staging.path())
         .arg("-cf")
-        .arg(out_path);
+        .arg(&partial);
     cmd.args(&container_members);
-    run("tar", &mut cmd)
+    let written = run("tar", &mut cmd).and_then(|()| Ok(std::fs::rename(&partial, out_path)?));
+    if written.is_err() {
+        let _ = std::fs::remove_file(&partial);
+    }
+    written
 }
 
 /// `tar --zstd` the whole *tree* under `dir` into `out`, renaming the root

@@ -174,7 +174,10 @@ fn write_index(
         text.push('\n');
     }
 
-    std::fs::write(pkgdir.join("Packages"), text)?;
+    // Renamed into place, so a reader never sees a half-written index.
+    let partial = pkgdir.join(format!("Packages.part-{}", std::process::id()));
+    std::fs::write(&partial, text)?;
+    std::fs::rename(&partial, pkgdir.join("Packages"))?;
     Ok(())
 }
 

@@ -143,6 +143,9 @@ fn write_binpkg(
         })
         .map(Utf8PathBuf::from)
         .unwrap_or_else(|| root.join("var/cache/binpkgs"));
+    // Held through the index refresh below: a parallel run must not take the same build id or
+    // rewrite the index without this container.
+    let _lock = crate::binpkg::lock_pkgdir(&pkgdir)?;
     let build_id = crate::binpkg::next_build_id(&pkgdir, cat, &pf);
     let out = pkgdir.join(cat).join(format!("{pf}-{build_id}.gpkg.tar"));
 

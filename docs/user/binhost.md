@@ -69,6 +69,12 @@ A single `PKGDIR` can hold multiple boards' binpkgs at once — the index is
 multi-instance (`cpv → Vec<entry>`), and `find_reusable` picks the newest
 `BUILD_ID` among the entries matching CHOST + key.
 
+Boards may build into it at the same time: em locks `PKGDIR/.em-pkgdir.lock`
+while it allocates a `BUILD_ID`, writes a container and rewrites `Packages`,
+and writes both under a temporary name before renaming them into place.
+Portage's own index lock is a different one, so do not mix in a concurrent
+`emerge -b`.
+
 ```bash
 export PKGDIR=/var/cache/em-binpkgs/shared
 

@@ -17,6 +17,7 @@ pub async fn run(globals: &Cli) -> Result<()> {
     let chost = read_make_conf_var(globals, "CHOST")
         .await
         .unwrap_or_default();
+    let _lock = crate::binpkg::lock_pkgdir(&pkgdir)?;
     let (count, skipped) = portage_binpkg::index_pkgdir(&pkgdir, &chost)?;
     println!(
         "emaint binhost: indexed {} package(s){} -> {}/Packages",

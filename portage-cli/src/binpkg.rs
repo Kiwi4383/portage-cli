@@ -448,6 +448,25 @@ fn parse_binrepo_bool(v: Option<&String>) -> bool {
     matches!(v.map(|s| s.to_lowercase()), Some(s) if s == "true" || s == "yes")
 }
 
+/// Exclusive lock on `pkgdir`, held while em allocates a build id, writes or removes containers,
+/// or rewrites the index; another em run on the same `PKGDIR` waits
+///
+/// Portage locks its index with fcntl locks on another file, which this does not exclude.
+pub(crate) fn lock_pkgdir(pkgdir: &Utf8Path) -> anyhow::Result<std::fs::File> {
+    use anyhow::Context;
+    std::fs::create_dir_all(pkgdir.as_std_path()).with_context(|| format!("creating {pkgdir}"))?;
+    let path = pkgdir.join(".em-pkgdir.lock");
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(path.as_std_path())
+        .with_context(|| format!("opening {path}"))?;
+    rustix::fs::flock(&file, rustix::fs::FlockOperation::LockExclusive)
+        .with_context(|| format!("locking {path}"))?;
+    Ok(file)
+}
+
 /// The next free GPKG build-id for `<cat>/<pf>` in `pkgdir` (portage numbers
 /// rebuilds `<pf>-1`, `<pf>-2`, …); 1 when none exist.
 pub(crate) fn next_build_id(pkgdir: &Utf8Path, cat: &str, pf: &str) -> u32 {
@@ -470,6 +489,29 @@ pub(crate) fn next_build_id(pkgdir: &Utf8Path, cat: &str, pf: &str) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parallel_writers_under_the_pkgdir_lock_take_distinct_build_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let pkgdir = Utf8PathBuf::from_path_buf(dir.path().to_owned()).unwrap();
+        std::fs::create_dir_all(pkgdir.join("sys-libs").as_std_path()).unwrap();
+        let writers: Vec<_> = (0..8)
+            .map(|_| {
+                let pkgdir = pkgdir.clone();
+                std::thread::spawn(move || {
+                    let _lock = lock_pkgdir(&pkgdir).unwrap();
+                    let id = next_build_id(&pkgdir, "sys-libs", "glibc-2.42");
+                    let out = pkgdir.join(format!("sys-libs/glibc-2.42-{id}.gpkg.tar"));
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                    std::fs::write(out.as_std_path(), b"").unwrap();
+                    id
+                })
+            })
+            .collect();
+        let mut ids: Vec<u32> = writers.into_iter().map(|w| w.join().unwrap()).collect();
+        ids.sort_unstable();
+        assert_eq!(ids, (1..=8).collect::<Vec<_>>());
+    }
 
     // Regression test for the stage3 --buildpkg failure: a non-host root
     // must never default PKGDIR to the real system's `/var/cache/binpkgs`

@@ -59,6 +59,9 @@ async fn verify(
         );
     }
 
+    let _lock = fix
+        .then(|| crate::binpkg::lock_pkgdir(pkgdir))
+        .transpose()?;
     let report: VerifyReport =
         portage_binpkg::maint::verify(pkgdir, chost, fix, require_signature, keyring.as_ref())?;
 
@@ -227,6 +230,9 @@ async fn fingerprint(globals: &Cli, full: bool, host: bool) -> Result<()> {
 }
 
 fn prune(pkgdir: &camino::Utf8Path, chost: &str, dry_run: bool) -> Result<()> {
+    let _lock = (!dry_run)
+        .then(|| crate::binpkg::lock_pkgdir(pkgdir))
+        .transpose()?;
     let report: PruneReport = portage_binpkg::maint::prune(pkgdir, chost, dry_run)?;
 
     for kept in &report.kept {

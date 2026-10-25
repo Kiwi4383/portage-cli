@@ -44,8 +44,7 @@ async fn run_inner(globals: &Cli, opts: &QuickpkgOpts) -> Result<()> {
     let merge_root = roots.merge_root();
     let vdb = open_cli_vdb(globals)?;
     let pkgdir = resolve_pkgdir(globals).await;
-    std::fs::create_dir_all(pkgdir.as_std_path())
-        .with_context(|| format!("creating PKGDIR {pkgdir}"))?;
+    let _lock = crate::binpkg::lock_pkgdir(&pkgdir)?;
 
     // quickpkg operates on the installed set only — set provenance carries no
     // meaning here, so the expansion is flattened straight back to atoms.

@@ -115,10 +115,7 @@ pub async fn run(globals: &Cli, target: &CleanTarget) -> Result<()> {
             let c = dist_candidates(globals, opts, &filters)?;
             report_and_remove(globals, &c, "distfile")
         }
-        CleanTarget::Pkg { .. } => {
-            let c = pkg_candidates(globals, opts, &filters).await?;
-            report_and_remove(globals, &c, "binary package")
-        }
+        CleanTarget::Pkg { .. } => clean_pkgs(globals, opts, &filters).await,
         CleanTarget::All { .. } => run_all(globals, opts, &filters).await,
     }
 }
@@ -144,9 +141,8 @@ async fn run_all(globals: &Cli, opts: &CleanOpts, filters: &Filters) -> Result<(
     }
 
     println!(">>> binary packages");
-    match pkg_candidates(globals, opts, filters).await {
-        Ok(c) => report_and_remove(globals, &c, "binary package")?,
-        Err(e) => note(e, &mut failed),
+    if let Err(e) = clean_pkgs(globals, opts, filters).await {
+        note(e, &mut failed);
     }
 
     println!(">>> build logs");
@@ -452,6 +448,16 @@ fn dist_candidates(globals: &Cli, opts: &CleanOpts, filters: &Filters) -> Result
     }
     out.sort_by_key(|c| std::cmp::Reverse(c.bytes));
     Ok(out)
+}
+
+/// Remove the binary packages `opts` selects, holding the `PKGDIR` lock unless only reporting
+async fn clean_pkgs(globals: &Cli, opts: &CleanOpts, filters: &Filters) -> Result<()> {
+    let pkgdir = crate::binpkg::resolve_pkgdir(globals).await;
+    let _lock = (!globals.pretend() && pkgdir.is_dir())
+        .then(|| crate::binpkg::lock_pkgdir(&pkgdir))
+        .transpose()?;
+    let c = pkg_candidates(globals, opts, filters).await?;
+    report_and_remove(globals, &c, "binary package")
 }
 
 async fn pkg_candidates(

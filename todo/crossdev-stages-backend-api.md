@@ -1,7 +1,22 @@
 # API requirements for an `em` backend in crossdev-stages
 
-Status: 🟡 phases 1–4 done; execution shape decided (Luca, 2026-10-25): hakoniwa closures (shape 3). The
-spike (phase 9) ran 2026-10-25, see "Closure spike" below; 5–8 and 10–12 open. Written 2026-10-06 from a review of
+Status: 🟡 phases 1–4 done; spike (phase 9) done 2026-10-25. **Decided (Luca, 2026-10-25): crossdev-stages is
+rebuilt on em's libraries, and em targets the prepared stage like `--local` does a prefix, starting from a stage3**
+(see "Direction" below). 5–8 and 10–12 open.
+
+## Direction (Luca, 2026-10-25)
+
+crossdev-stages links em's libraries and runs on the host. em treats the prepared stage3 as a self-contained root,
+as `--local` treats a prefix: its config, VDB and toolchain (BROOT) are the stage's. Unlike a prefix, a stage3's
+binaries expect to sit at `/`, so em enters a hakoniwa container rooted at the stage (crossdev-stages' box) by
+re-executing its binary, as its hakoniwa backend already does on `/`; exec is safe after a fork from a threaded caller.
+
+- The re-executed binary is built against the host's libc and runs against the stage's: checked 2026-10-25, the
+  host em (newest symbol GLIBC_2.39) runs in an arm64 stage3 (glibc 2.43) and resolves there.
+- Linked into crossdev-stages, `current_exe()` is crossdev-stages: its `main` calls em's privilege hook before
+  starting tokio, as em's `main` calls `maybe_supervise`.
+- Steps: (1) a stage mode for em's hakoniwa backend (rootdir, binds, log dir; inside, `ROOT=/`); (2) the shared
+  container crate (phase 8); (3) crossdev-stages operations on em's typed surface (phase 10/11). Written 2026-10-06 from a review of
 `~/Sources/crossdev-stages` (`src/portage.rs`, `sandbox.rs`, `target.rs`,
 `image.rs`) against `em 0.1.0`'s `--help` surface and the notes linked
 below. Nothing here has been run end to end; items marked **unverified**
@@ -169,7 +184,7 @@ to build a `Cli` value, and output/exit behaviour is the binary's.
 
 ### Closure spike (2026-10-25)
 
-`portage-cli/examples/closure_spike.rs` (uncommitted): a crossdev-stages-shaped container (`rootdir(<stage3>)`,
+A throwaway example (not kept): a crossdev-stages-shaped container (`rootdir(<stage3>)`,
 `RootdirRW`, the same id maps) runs `command_from_closure`, and the closure parses a typed `Cli`, builds its own
 runtime and calls `portage_cli::run`. Fresh sandbox `em-closure-spike` (setup + `prepare --bare`), arm64.
 

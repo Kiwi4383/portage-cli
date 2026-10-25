@@ -22,6 +22,22 @@ pub enum ActivityMode {
     Regen,
 }
 
+/// Why a merge stopped before its session started
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanFailure {
+    /// No installable plan exists
+    Unresolvable,
+    /// A requested atom has nothing installable: no ebuild, or every version masked
+    UnsatisfiableTarget,
+    /// A plan exists but needs USE, keyword, mask or license changes, or has a hard blocker
+    ConfigChangesNeeded,
+    /// No requested atom matched anything
+    NoValidAtoms,
+    /// Any other error before the merge started
+    Other,
+}
+
 /// How a package is being acted on
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -204,6 +220,23 @@ pub enum ActivityEvent {
         phases: Vec<PhaseTiming>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<Arc<str>>,
+        /// The phase that failed, for a failed source build
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        failed_phase: Option<Arc<str>>,
+        /// The build log of a failed source build
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        log: Option<Arc<str>>,
+    },
+    /// A merge that stopped before its session started: nothing was built
+    PlanFailed {
+        v: u32,
+        job_id: Arc<str>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent_job_id: Option<Arc<str>>,
+        reason: PlanFailure,
+        /// What em printed as the error; a change block or per-atom warnings went to the terminal
+        message: Arc<str>,
+        at: f64,
     },
     /// A free-form diagnostic surfaced onto the bus
     ///
@@ -245,6 +278,7 @@ impl ActivityEvent {
             | Self::PhaseEnter { job_id, .. }
             | Self::PhaseLeave { job_id, .. }
             | Self::PkgEnd { job_id, .. }
+            | Self::PlanFailed { job_id, .. }
             | Self::Diagnostic { job_id, .. } => job_id,
         }
     }

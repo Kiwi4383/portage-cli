@@ -889,9 +889,8 @@ fn classify_root_targets(
                     continue;
                 }
                 targets::RootTargetDecision::Fatal => {
-                    anyhow::bail!(output::unsatisfiable_target_message(
-                        &unsat, data, multi_repo
-                    ));
+                    let message = output::unsatisfiable_target_message(&unsat, data, multi_repo);
+                    return Err(crate::error::UnsatisfiableTarget(message).into());
                 }
             }
         }

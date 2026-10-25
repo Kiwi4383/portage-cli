@@ -143,8 +143,27 @@ One JSON object per line, versioned for forward compatibility:
 {"v":1,"event":"session_end","job_id":"…","ok":true,…}
 ```
 
-`--activity-fd=-` (stdout) is rejected — it collides with human output; use an
-FD. Unknown event types must be skipped by readers (forward compat). The
+A failed source build's `pkg_end` has `"ok":false`, the rendered `error`, and
+`failed_phase` and `log` (the build log's path). A merge that stops before its
+session starts sends one `plan_failed` event instead, with a `reason` and the
+`message` em printed:
+
+```json
+{"v":1,"event":"pkg_end","cpv":"cat/pkg-1","ok":false,"failed_phase":"compile","log":"/var/tmp/portage/…/build.log",…}
+{"v":1,"event":"plan_failed","job_id":"…","reason":"unresolvable","message":"resolution failed:\n…","at":…}
+```
+
+| `reason` | Meaning |
+|---|---|
+| `unresolvable` | the solver found no installable plan |
+| `unsatisfiable_target` | a requested atom has no ebuild, or every version is masked |
+| `config_changes_needed` | the plan needs USE, keyword, mask or license changes, or has a hard blocker |
+| `no_valid_atoms` | no requested atom parsed or named a package |
+| `other` | any other error before the merge started |
+
+The fd is duplicated, not taken over: every merge of a multi-step run (`crossdev
+--setup`, `stages`) writes to it. `--activity-fd=-` (stdout) is rejected — it
+collides with human output; use an FD. Unknown event types must be skipped by readers (forward compat). The
 `job_id` is the same key resume markers use, so completion, live status,
 history, and the bus all correlate.
 

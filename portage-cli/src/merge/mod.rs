@@ -146,18 +146,28 @@ fn emit_pkg_start(
     at
 }
 
+/// The failed phase and the build log a source build's error carries
+fn build_failure(e: &anyhow::Error) -> (Option<&str>, Option<&camino::Utf8PathBuf>) {
+    let phase = e.downcast_ref::<crate::ebuild::PhaseFailed>();
+    let log = e.downcast_ref::<crate::ebuild::BuildLog>();
+    (phase.map(|p| p.0.as_str()), log.map(|l| &l.0))
+}
+
+/// `failure` is the error as rendered for the user, and the error it was rendered from
 fn emit_pkg_end(
     activity: &Option<ActivityTrack>,
     planned: &query::depgraph::PlannedMerge,
     kind: crate::activity::PkgKind,
     started: f64,
-    ok: bool,
-    error: Option<String>,
+    failure: Option<(&str, &anyhow::Error)>,
     phases: Vec<crate::activity::PhaseTiming>,
 ) {
     let Some(act) = activity else {
         return;
     };
+    let ok = failure.is_none();
+    let error = failure.map(|(rendered, _)| rendered);
+    let (failed_phase, log) = failure.map_or((None, None), |(_, e)| build_failure(e));
     let at = crate::activity::ActivityEvent::now();
     act.bus.emit(crate::activity::ActivityEvent::PkgEnd {
         v: crate::activity::ACTIVITY_EVENT_VERSION,
@@ -172,6 +182,8 @@ fn emit_pkg_end(
         seconds: (at - started).max(0.0),
         phases,
         error: error.map(Into::into),
+        failed_phase: failed_phase.map(Into::into),
+        log: log.map(|l| l.as_str().into()),
     });
 }
 
@@ -881,15 +893,7 @@ fn record_package_outcome(
     match result {
         Ok(()) => {
             *merged += 1;
-            emit_pkg_end(
-                &run.activity,
-                planned,
-                kind,
-                pkg_started,
-                true,
-                None,
-                phases,
-            );
+            emit_pkg_end(&run.activity, planned, kind, pkg_started, None, phases);
             if let Some(job) = run.resume_job
                 && let Err(e) = crate::maint::resume::mark_completed(
                     job.root,
@@ -937,8 +941,7 @@ fn record_package_outcome(
                 planned,
                 kind,
                 pkg_started,
-                false,
-                Some(rendered.clone()),
+                Some((&rendered, &e)),
                 phases,
             );
             failures.push(MergeFailure {
@@ -1596,6 +1599,25 @@ async fn merge_parallel(
         });
     }
     (merged, skipped, failures)
+}
+
+#[cfg(test)]
+mod build_failure_tests {
+    use super::*;
+
+    #[test]
+    fn a_source_build_error_yields_its_phase_and_log() {
+        let log = camino::Utf8PathBuf::from("/var/tmp/portage/cat/pkg-1/build.log");
+        let e = Err::<(), _>(anyhow::anyhow!("die: deliberate failure"))
+            .context(crate::ebuild::PhaseFailed("compile".into()))
+            .context(crate::ebuild::BuildLog(log.clone()))
+            .unwrap_err();
+        assert_eq!(build_failure(&e), (Some("compile"), Some(&log)));
+        assert_eq!(
+            build_failure(&anyhow::anyhow!("fetch failed")),
+            (None, None)
+        );
+    }
 }
 
 #[cfg(test)]

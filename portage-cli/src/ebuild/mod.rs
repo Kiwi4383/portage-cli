@@ -691,7 +691,7 @@ pub async fn build_and_merge(opts: BuildAndMerge<'_>) -> Result<()> {
             activity,
         })
         .await
-        .with_context(|| format!("build log: {log}"))
+        .context(BuildLog(log.clone()))
     } else if let Some(backend) = crate::privilege::install_wrap_backend() {
         // Scoped privilege (Q6): compile runs un-wrapped in this process;
         // install+qmerge(+binpkg) delegates to a wrapped __worker child so the
@@ -716,7 +716,7 @@ pub async fn build_and_merge(opts: BuildAndMerge<'_>) -> Result<()> {
             activity: activity.clone(),
         })
         .await
-        .with_context(|| format!("build log: {log}"))?;
+        .context(BuildLog(log.clone()))?;
 
         spawn_install_worker_step(
             backend,
@@ -757,7 +757,7 @@ pub async fn build_and_merge(opts: BuildAndMerge<'_>) -> Result<()> {
             activity,
         })
         .await
-        .with_context(|| format!("build log: {log}"))
+        .context(BuildLog(log.clone()))
     };
 
     // Whatever the merge chain left for the `echo` module — this process for a
@@ -1942,12 +1942,32 @@ async fn run_one_phase(
                     root.as_std_path(),
                 )
                 .await
-                .with_context(|| format!("phase {phase} failed"));
+                .context(PhaseFailed(phase.to_string()));
             if let Some(session) = session {
                 shell.restore_session(session);
             }
             result
         }
+    }
+}
+
+/// A failed ebuild phase, as context on its error, so a caller can tell which phase it was
+#[derive(Debug)]
+pub(crate) struct PhaseFailed(pub(crate) String);
+
+impl std::fmt::Display for PhaseFailed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "phase {} failed", self.0)
+    }
+}
+
+/// The build log of a failed build, as context on its error
+#[derive(Debug)]
+pub(crate) struct BuildLog(pub(crate) Utf8PathBuf);
+
+impl std::fmt::Display for BuildLog {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "build log: {}", self.0)
     }
 }
 

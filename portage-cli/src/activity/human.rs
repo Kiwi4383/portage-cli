@@ -656,6 +656,8 @@ mod tests {
             seconds: 1.0,
             phases: vec![],
             error: if ok { None } else { Some("boom".into()) },
+            failed_phase: None,
+            log: None,
         }
     }
 

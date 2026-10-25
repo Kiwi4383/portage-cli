@@ -277,7 +277,7 @@ impl ActivitySink for LiveFsSink {
                 self.write_progress_file(job_id);
             }
             // Diagnostics are transient; not part of the on-disk snapshot.
-            ActivityEvent::Diagnostic { .. } => {}
+            ActivityEvent::PlanFailed { .. } | ActivityEvent::Diagnostic { .. } => {}
         }
     }
 }

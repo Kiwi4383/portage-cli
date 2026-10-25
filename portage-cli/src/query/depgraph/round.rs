@@ -413,18 +413,19 @@ pub(super) fn solve_round(
                         );
                         let (provider, result) = build_and_solve(false, &pu);
                         let sol = result.map_err(|e2| {
-                            anyhow::anyhow!(
+                            crate::error::ResolveFailed(format!(
                                 "resolution failed:\n{}",
                                 portage_atom_pubgrub::format_solve_error(e2)
-                            )
+                            ))
                         })?;
                         (provider, sol)
                     }
                     Err(e) => {
-                        return Err(anyhow::anyhow!(
+                        return Err(crate::error::ResolveFailed(format!(
                             "resolution failed:\n{}",
                             portage_atom_pubgrub::format_solve_error(e)
-                        ));
+                        ))
+                        .into());
                     }
                 }
             }

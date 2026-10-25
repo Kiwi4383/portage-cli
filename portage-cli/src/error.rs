@@ -24,6 +24,16 @@ pub struct ConfigChangesNeeded;
 #[error("no valid atoms (see warnings above)")]
 pub struct NoValidAtoms;
 
+/// The resolver found no installable plan; the message is the explanation shown to the user
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub struct ResolveFailed(pub String);
+
+/// A requested atom has nothing installable: no ebuild, or every version masked
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub struct UnsatisfiableTarget(pub String);
+
 /// `em grep` found no matches — same pattern as [`NoValidAtoms`]: drives a
 /// quiet, non-zero exit (grep convention) without an extra "no matches"
 /// line on top of the (empty) search output.

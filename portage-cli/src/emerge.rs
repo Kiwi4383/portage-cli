@@ -216,6 +216,9 @@ struct ResolvedEmergeOpts<'a> {
     autounmask_widen: bool,
     extra_package_use: &'a [(portage_atom::Dep, Vec<portage_atom_pubgrub::UseOverride>)],
     pending_config: Option<&'a portage_resolve::use_env::PendingConfig>,
+    /// Set once the merge's own activity bus exists; until then a failure is reported as
+    /// [`crate::activity::ActivityEvent::PlanFailed`]
+    bus_attached: &'a std::sync::atomic::AtomicBool,
 }
 
 pub(crate) async fn emerge_atoms(
@@ -229,7 +232,10 @@ pub(crate) async fn emerge_atoms(
     // `package.use` (layer 5) instead of wiping it.
     let extra_use_override = (!opts.use_override.is_empty())
         .then(|| format!("USE=\"{}\"\n", opts.use_override.join(" ")));
-    emerge_atoms_inner(
+    let bus_attached = std::sync::atomic::AtomicBool::new(false);
+    let failure_bus = opts.activity.clone();
+    let session = opts.activity_session.clone();
+    let result = emerge_atoms_inner(
         cli,
         raw_atoms,
         ResolvedEmergeOpts {
@@ -248,9 +254,66 @@ pub(crate) async fn emerge_atoms(
             autounmask_widen: opts.autounmask_widen,
             extra_package_use: opts.extra_package_use,
             pending_config: opts.pending_config,
+            bus_attached: &bus_attached,
         },
     )
-    .await
+    .await;
+    if let Err(e) = &result
+        && !bus_attached.load(std::sync::atomic::Ordering::Relaxed)
+    {
+        report_plan_failure(cli, failure_bus, &session, e);
+    }
+    result
+}
+
+fn plan_failure(e: &anyhow::Error) -> crate::activity::PlanFailure {
+    use crate::activity::PlanFailure;
+    if e.downcast_ref::<error::ResolveFailed>().is_some() {
+        PlanFailure::Unresolvable
+    } else if e.downcast_ref::<error::UnsatisfiableTarget>().is_some() {
+        PlanFailure::UnsatisfiableTarget
+    } else if e.downcast_ref::<error::ConfigChangesNeeded>().is_some() {
+        PlanFailure::ConfigChangesNeeded
+    } else if e.downcast_ref::<error::NoValidAtoms>().is_some() {
+        PlanFailure::NoValidAtoms
+    } else {
+        PlanFailure::Other
+    }
+}
+
+/// Tell the activity outputs why a merge stopped before its session: the terminal already has it
+fn report_plan_failure(
+    cli: &cli::Cli,
+    bus: Option<crate::activity::ActivityBus>,
+    session: &crate::activity::ActivitySessionOpts,
+    e: &anyhow::Error,
+) {
+    let reason = plan_failure(e);
+    let bus = match bus {
+        Some(bus) => bus,
+        None => {
+            let bus = crate::activity::ActivityBus::new();
+            let outputs = cli.effective_activity();
+            let attached = crate::activity::attach_jsonl_outputs(
+                &bus,
+                outputs.activity_fd,
+                outputs.activity_jsonl.as_deref(),
+            );
+            if let Err(e) = attached {
+                crate::style::warn_line!("{e:#}");
+                return;
+            }
+            bus
+        }
+    };
+    bus.emit(crate::activity::ActivityEvent::PlanFailed {
+        v: crate::activity::ACTIVITY_EVENT_VERSION,
+        job_id: crate::activity::resolve_job_id(session, None).into(),
+        parent_job_id: session.parent_job_id.as_deref().map(Into::into),
+        reason,
+        message: crate::style::render_error_chain(e).into(),
+        at: crate::activity::ActivityEvent::now(),
+    });
 }
 
 /// `--eta` estimate for `outcome.plan`, formatted for terminal display
@@ -336,6 +399,7 @@ async fn emerge_atoms_inner(
         autounmask_widen,
         extra_package_use,
         pending_config,
+        bus_attached,
     } = opts;
     let extra_use_override = extra_use_override.as_deref();
     let merge_flags = merge_flags_override.unwrap_or_else(|| cli.merge_flags());
@@ -722,6 +786,7 @@ async fn emerge_atoms_inner(
     // Activity bus: caller-supplied or default live-FS + history under this root.
     let activity =
         activity_override.unwrap_or_else(|| crate::activity::default_cli_bus(roots.merge_root()));
+    bus_attached.store(true, std::sync::atomic::Ordering::Relaxed);
     // Terminal banners render from the bus (one verbosity decision point); the
     // `quiet` here is the user's `-q`, NOT the jobs-derived phase-log quiet —
     // `-j>1` keeps banners while still sending build output to build.log.
@@ -1426,6 +1491,34 @@ fn packages_for_unmerge(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_plan_failure_is_classified_through_a_step_context() {
+        use crate::activity::PlanFailure;
+        let wrapped = |e: anyhow::Error| e.context("crossdev --setup step 3 (gcc)");
+        let cases = [
+            (
+                anyhow::Error::from(error::ResolveFailed("x".into())),
+                PlanFailure::Unresolvable,
+            ),
+            (
+                error::UnsatisfiableTarget("x".into()).into(),
+                PlanFailure::UnsatisfiableTarget,
+            ),
+            (
+                error::ConfigChangesNeeded.into(),
+                PlanFailure::ConfigChangesNeeded,
+            ),
+            (error::NoValidAtoms.into(), PlanFailure::NoValidAtoms),
+            (
+                anyhow::anyhow!("cannot resolve make.profile"),
+                PlanFailure::Other,
+            ),
+        ];
+        for (e, reason) in cases {
+            assert_eq!(plan_failure(&wrapped(e)), reason);
+        }
+    }
 
     fn write_pkg(vdb_root: &std::path::Path, cat: &str, pf: &str) {
         let dir = vdb_root.join(cat).join(pf);

@@ -19,7 +19,7 @@ pub use bus_layer::{BusLayer, clear_session, set_session};
 pub use emergelog::EmergeLogSink;
 pub use event::{
     ACTIVITY_EVENT_VERSION, ActivityEvent, ActivityMergeRoot, ActivityMode, ActivityPlanPkg,
-    ActivitySessionOpts, DiagnosticLevel, PhaseTiming, PkgKind, SessionFlags,
+    ActivitySessionOpts, DiagnosticLevel, PhaseTiming, PkgKind, PlanFailure, SessionFlags,
 };
 pub use history::{
     DurationStore, Eta, EtaPkg, HistoryRecord, HistorySink, estimate_remaining,
@@ -443,6 +443,8 @@ mod tests {
             seconds: 99.0,
             phases: vec![],
             error: None,
+            failed_phase: None,
+            log: None,
         });
         assert!(p.active()[0].inflight.is_empty());
         assert_eq!(p.active()[0].completed, 1);
@@ -593,6 +595,8 @@ mod tests {
             seconds: 1.0,
             phases: vec![],
             error: None,
+            failed_phase: None,
+            log: None,
         });
         let store = DurationStore::from_records(vec![HistoryRecord {
             ts_end: 2.0,
@@ -735,6 +739,8 @@ mod tests {
                 seconds: 1.0,
                 phases: vec![],
                 error: None,
+                failed_phase: None,
+                log: None,
             });
         }
 
@@ -844,6 +850,8 @@ mod tests {
                 seconds: 0.5,
             }],
             error: Some("boom".into()),
+            failed_phase: None,
+            log: None,
         };
         let line = ev.to_jsonl_line().unwrap();
         assert!(line.contains("\"event\":\"pkg_end\""));

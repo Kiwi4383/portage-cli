@@ -259,6 +259,8 @@ fn emit_item(bus: &ActivityBus, job_id: &str, item: RegenItem) {
         seconds: 0.0,
         phases: vec![],
         error: error.map(Into::into),
+        failed_phase: None,
+        log: None,
     });
 
     // Rich code frame stays off the wire (JSONL only has the short `error`

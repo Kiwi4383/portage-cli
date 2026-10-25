@@ -621,6 +621,8 @@ mod tests {
                 seconds: secs,
                 phases: vec![],
                 error: None,
+                failed_phase: None,
+                log: None,
             });
         }
         let store = DurationStore::load(&root);

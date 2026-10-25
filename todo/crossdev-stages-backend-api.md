@@ -1,7 +1,7 @@
 # API requirements for an `em` backend in crossdev-stages
 
-Status: 🟡 em phase 1 landed as the spec type (2026-10-08/09, [[cross-sysroot-spec]] steps 1–2);
-phase 2 partly modelled, 3–12 open, the execution shape still undecided. Written 2026-10-06 from a review of
+Status: 🟡 phases 1–4 done; execution shape decided (Luca, 2026-10-25): hakoniwa closures (shape 3). The
+spike (phase 9) ran 2026-10-25, see "Closure spike" below; 5–8 and 10–12 open. Written 2026-10-06 from a review of
 `~/Sources/crossdev-stages` (`src/portage.rs`, `sandbox.rs`, `target.rs`,
 `image.rs`) against `em 0.1.0`'s `--help` surface and the notes linked
 below. Nothing here has been run end to end; items marked **unverified**
@@ -166,6 +166,30 @@ to build a `Cli` value, and output/exit behaviour is the binary's.
   to be published and semver-managed — either `portage-cli` itself or a
   slimmer facade crate without the clap/CLI dependency tree. Same
   coordination caveat as [[gentoo-stages-workspace-types]].
+
+### Closure spike (2026-10-25)
+
+`portage-cli/examples/closure_spike.rs` (uncommitted): a crossdev-stages-shaped container (`rootdir(<stage3>)`,
+`RootdirRW`, the same id maps) runs `command_from_closure`, and the closure parses a typed `Cli`, builds its own
+runtime and calls `portage_cli::run`. Fresh sandbox `em-closure-spike` (setup + `prepare --bare`), arm64.
+
+- **Single-threaded caller: works.** `-p sys-apps/file` resolves against the sandbox's tree and VDB; a real
+  `--oneshot app-text/tree` fetched, built and merged it with 11 build deps (docbook chain, opensp, po4a, scdoc),
+  no em binary in the box. No NSS, allocator (mimalloc) or tracing trouble seen.
+- **Channel: not an inherited fd.** hakoniwa closes every fd above stderr in the child except its own status pipe
+  (`runc/sys.rs` `close_extra_fds_exclude`). A pipe's number then names whatever the child opens next: em's
+  `--activity-fd` took ownership of tokio's waker fd and the child panicked ("failed to wake I/O driver: EBADF").
+  A FIFO in a host dir bound into the box, passed as `--activity-jsonl`, carries the full typed stream
+  (session/pkg start-end, 9 phase enter/leave, a diagnostic), decoded with `ActivityEvent::from_jsonl_line`.
+  `-p` emits no events: the bus is attached after the pretend return.
+- **Threaded tokio caller: fails.** Building any tokio runtime with I/O in the child returns EBADF; time-only
+  runtimes and raw epoll/eventfd work. With tokio's `signal` feature (em has it) the I/O stack always includes
+  the signal driver, which dups a process-global socketpair; the caller's runtime created it, the child inherits
+  the static, hakoniwa closed its fds. crossdev-stages is `#[tokio::main]`, so this is the case that matters.
+- Ways out: (a) hakoniwa keeps a caller-named list of fds in closure mode (the socketpair's fds are tokio-private,
+  so in practice "keep all"; also brings back the inherited-fd channel) — a change to the lu-zero fork; (b) a
+  single-threaded spawner forked before the caller's runtime, taking serialised typed requests; (c) the closure
+  child avoids tokio I/O, i.e. em gains a synchronous entry, a large change.
 
 ### R0a — How both sides use hakoniwa today (read 2026-10-07)
 
@@ -425,7 +449,7 @@ phases are in this repo; `cs` phases are in crossdev-stages.
 | 6 | cs | **One config writer** — host-side writer for all `/etc/portage` trees; real-backend gcc pin as a version window; baselayout-first prefix fix | the two open cs bugs | open |
 | 7 | cs | **Operation-level backend trait** with only the real backend behind it; `sandbox.rs`/`target.rs` keep markers, know no commands | the seam | open |
 | 8 | both | **Shared container crate** — id maps, namespace set, rootdir container, `resolv.conf`, unpack/destroy (R0b level 1); one hakoniwa source | linking the two | open |
-| 9 | em | **Execution spike** — `rootdir` variant of the hakoniwa backend; closure vs re-exec in a bare sandbox (R0, R0b) | the library shape | open |
+| 9 | em | **Execution spike** — `rootdir` variant of the hakoniwa backend; closure vs re-exec in a bare sandbox (R0, R0b) | the library shape | 2026-10-25: closures work from a single-threaded caller; a tokio caller breaks tokio's signal driver in the child (see "Closure spike") |
 | 10 | em | **Typed surface** — peel `&Cli` off `crossdev::run`/`toolchain`/`stage1`/`emerge_atoms` starting from `Roots` + `EmergeOpts`; blocking entry that owns its runtime; results on the activity stream | R0 | open |
 | 11 | cs | **`em` backend** behind the trait, `setup_toolchain` first, one board | the goal | open |
 | 12 | both | **Compare** a full board build across both backends by installed package set | confidence | open |

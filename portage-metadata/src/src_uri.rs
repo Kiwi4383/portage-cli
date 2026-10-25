@@ -257,6 +257,9 @@ fn is_uri_char(c: char) -> bool {
                         // to escape uppercase letters (e.g. github.com/!puerkito!bio/...)
                 | '['   // used in legacy Debian-mirror URLs (e.g. vdr-calc-0[1].0.1-rc5.tgz)
                 | ']'
+                // Grouping parentheses are separate words; inside one they are part of the name
+                | '('
+                | ')'
         )
 }
 
@@ -276,7 +279,7 @@ fn is_flag_char(c: char) -> bool {
 
 fn parse_uri(input: &mut &str) -> ModalResult<String> {
     take_while(1.., is_uri_char)
-        .verify(|s: &str| !s.starts_with('@'))
+        .verify(|s: &str| !s.starts_with(['@', '(', ')']))
         .map(|s: &str| s.to_string())
         .parse_next(input)
 }
@@ -1017,5 +1020,17 @@ mod tests {
     fn lazy_src_uri_malformed_field_is_empty_not_an_error() {
         let lazy = LazySrcUriList::from_raw("v{oops}/bad.tar.gz");
         assert!(lazy.list().is_empty());
+    }
+
+    #[test]
+    fn parentheses_inside_a_filename_are_part_of_it() {
+        let input = "!cdinstall? ( setup_descent_1.4a_(16596).exe )";
+        let entries = SrcUriEntry::parse(input).unwrap();
+        let [SrcUriEntry::UseConditional { entries: inner, .. }] = entries.as_slice() else {
+            unreachable!("expected one conditional, got {entries:?}");
+        };
+        assert_eq!(inner.len(), 1);
+        let text: Vec<String> = entries.iter().map(ToString::to_string).collect();
+        assert_eq!(text.join(" "), input);
     }
 }

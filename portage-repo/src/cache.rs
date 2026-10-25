@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use camino::{Utf8Path, Utf8PathBuf};
+use portage_atom::{Cpn, Cpv};
 use portage_metadata::CacheEntry;
 
 use crate::metadata_cache::DirMetadataCache;
@@ -47,13 +48,17 @@ enum PreparedWriteTarget {
 }
 
 /// What [`regen_cache`] does with the target's entries it does not write
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+///
+/// In every mode, an ebuild that fails to source keeps the entry the target had for it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum RegenMode {
     /// The written entries become the whole target, so entries of removed ebuilds go
     #[default]
     Replace,
     /// The written entries are added to the target, which keeps the others
     Merge,
+    /// The written entries replace the target's entries of these packages and keep the rest
+    Packages(Vec<Cpn>),
 }
 
 /// Options for [`regen_cache`]
@@ -122,7 +127,7 @@ pub async fn regen_cache(
 ) -> Result<RegenStats> {
     let total = ebuilds.len();
     let write = opts.write.clone();
-    let mode = opts.mode;
+    let mode = opts.mode.clone();
 
     // A Dir target's writes go into a fresh staging directory, swapped into
     // place only once every entry is written — see `swap_dir_target`'s doc
@@ -191,12 +196,14 @@ pub async fn regen_cache(
     let done = Arc::new(AtomicUsize::new(0));
     let errors = Arc::new(AtomicUsize::new(0));
     let errors_cb = Arc::clone(&errors);
+    let failed = Arc::new(Mutex::new(HashSet::new()));
+    let failed_cb = Arc::clone(&failed);
     let covered = Arc::new(Mutex::new(HashSet::new()));
     let covered_cb = Arc::clone(&covered);
     let reconcile_cb = reconcile_repo_cache;
     let repo_for_write = repo.clone();
 
-    crate::source::source_parallel_join(
+    let sourced = crate::source::source_parallel_join(
         repo,
         ebuilds,
         &opts.source,
@@ -234,6 +241,9 @@ pub async fn regen_cache(
             }
             if item_result.is_err() {
                 errors_cb.fetch_add(1, Ordering::Relaxed);
+                if let Ok(mut failed) = failed_cb.lock() {
+                    failed.insert(ebuild.cpv().clone());
+                }
             }
             let index = done.fetch_add(1, Ordering::Relaxed) + 1;
             // Sync send: never park a worker on the UI hand-off. Pair with an
@@ -247,15 +257,27 @@ pub async fn regen_cache(
             });
         },
     )
-    .await?;
+    .await;
+    if let Err(e) = sourced {
+        if let Some((_, staging)) = &dir_swap {
+            let _ = fs::remove_dir_all(staging);
+        }
+        return Err(e);
+    }
 
     let error_count = errors.load(Ordering::Relaxed);
-    if let Some((dir, staging)) = dir_swap
-        && error_count == 0
-    {
-        match mode {
-            RegenMode::Replace => swap_dir_target(&dir, &staging)?,
+    if let Some((dir, staging)) = dir_swap {
+        let failed = failed.lock().map(|f| f.clone()).unwrap_or_default();
+        match &mode {
+            RegenMode::Replace => {
+                carry_over_failed(&dir, &staging, &failed)?;
+                swap_dir_target(&dir, &staging)?;
+            }
             RegenMode::Merge => merge_dir_target(&dir, &staging)?,
+            RegenMode::Packages(packages) => {
+                prune_packages(&dir, packages, &failed)?;
+                merge_dir_target(&dir, &staging)?;
+            }
         }
         if reconcile_repo_cache && let Ok(covered) = covered.lock() {
             crate::entries::reconcile_gap_index(repo, &covered);
@@ -318,6 +340,7 @@ fn stage_dir_target<'a>(
     if staging.is_dir() {
         fs::remove_dir_all(&staging).map_err(|e| io_err(&staging, e))?;
     }
+    fs::create_dir_all(&staging).map_err(|e| io_err(&staging, e))?;
     let cats: HashSet<&str> = categories.collect();
     for cat in cats {
         let p = staging.join(cat);
@@ -353,6 +376,48 @@ fn swap_dir_target(dir: &Path, staging: &Utf8Path) -> Result<()> {
     fs::rename(staging, dir).map_err(|e| io_err(staging, e))?;
     if displaced.is_dir() {
         fs::remove_dir_all(&displaced).map_err(|e| io_err(&displaced, e))?;
+    }
+    Ok(())
+}
+
+/// Copy the entry `dir` has for each of `failed` into `staging`, so a replace keeps it
+fn carry_over_failed(dir: &Path, staging: &Utf8Path, failed: &HashSet<Cpv>) -> Result<()> {
+    let dir = utf8_or_err(dir)?;
+    for cpv in failed {
+        let category = cpv.cpn.category.as_str();
+        let name = format!("{}-{}", cpv.cpn.package, cpv.version);
+        let old = dir.join(category).join(&name);
+        if !old.is_file() {
+            continue;
+        }
+        let to = staging.join(category);
+        fs::create_dir_all(&to).map_err(|e| io_err(&to, e))?;
+        fs::copy(&old, to.join(&name)).map_err(|e| io_err(&old, e))?;
+    }
+    Ok(())
+}
+
+/// Remove `dir`'s entries of `packages`, except those of `failed`
+fn prune_packages(dir: &Path, packages: &[Cpn], failed: &HashSet<Cpv>) -> Result<()> {
+    let dir = utf8_or_err(dir)?;
+    for cpn in packages {
+        let category = dir.join(cpn.category.as_str());
+        let Ok(files) = fs::read_dir(&category) else {
+            continue;
+        };
+        for file in files {
+            let file = file.map_err(|e| io_err(&category, e))?.path();
+            let file = utf8_or_err(&file)?;
+            let Some(name) = file.file_name() else {
+                continue;
+            };
+            let Ok(cpv) = Cpv::parse(&format!("{}/{name}", cpn.category)) else {
+                continue;
+            };
+            if cpv.cpn == *cpn && !failed.contains(&cpv) {
+                fs::remove_file(file).map_err(|e| io_err(file, e))?;
+            }
+        }
     }
     Ok(())
 }

@@ -11,6 +11,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use portage_atom::Cpn;
 use portage_repo::{
     RegenItem, RegenMode, RegenOpts, RegenWriteTarget, ReposConf, SourceOpts, regen_cache,
 };
@@ -37,6 +38,8 @@ pub async fn run(cli: &Cli, args: &RegenArgs) -> Result<()> {
         repos: repos_args,
         output,
         merge,
+        replace,
+        only,
         repos_dir,
         jobs,
         dedup,
@@ -92,6 +95,20 @@ pub async fn run(cli: &Cli, args: &RegenArgs) -> Result<()> {
     if output.is_some() && targets.len() > 1 {
         bail!("--output only makes sense with a single repository");
     }
+    if !only.is_empty() && targets.len() > 1 {
+        bail!("--only only makes sense with a single repository");
+    }
+    let only: Vec<Cpn> = only
+        .iter()
+        .map(|p| Cpn::parse(p).with_context(|| format!("--only {p}")))
+        .collect::<Result<_>>()?;
+    let mode = if !only.is_empty() {
+        RegenMode::Packages(only.clone())
+    } else if *merge || (output.is_some() && !*replace) {
+        RegenMode::Merge
+    } else {
+        RegenMode::Replace
+    };
 
     // Masters resolve against the main repo's parent (e.g. an overlay's
     // `masters = gentoo` → /var/db/repos/gentoo).
@@ -133,6 +150,7 @@ pub async fn run(cli: &Cli, args: &RegenArgs) -> Result<()> {
             .ebuilds()
             .context("list ebuilds")?
             .into_iter()
+            .filter(|e| only.is_empty() || only.contains(&e.cpv().cpn))
             .collect();
 
         let write = match &output {
@@ -174,11 +192,7 @@ pub async fn run(cli: &Cli, args: &RegenArgs) -> Result<()> {
         let opts = RegenOpts {
             source: SourceOpts { jobs, dedup },
             write,
-            mode: if *merge {
-                RegenMode::Merge
-            } else {
-                RegenMode::Replace
-            },
+            mode: mode.clone(),
         };
 
         // Concurrent UI drain: pool runs on this task (feed+join); items land

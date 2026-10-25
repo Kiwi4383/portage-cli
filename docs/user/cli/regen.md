@@ -15,8 +15,10 @@ em regen [OPTIONS] [REPOS]...
 
 ## Options
 
-* `-o, --output <DIR>` — Write cache files to this directory instead of metadata/md5-cache
-* `--merge` — Keep the cache's entries this run does not write; by default the run's entries replace it
+* `-o, --output <DIR>` — Write cache files to this directory instead of metadata/md5-cache, keeping its other entries unless `--replace` is given
+* `--merge` — Keep the cache's entries this run does not write (the default with `--output`)
+* `--replace` — Make the run's entries the whole cache, dropping those of removed ebuilds (the default without `--output`)
+* `--only <CAT/PKG>...` — Regenerate only these packages: their entries are replaced, removed versions included, and the rest of the cache is kept
 * `--repos-dir <DIR>` — Directory containing master repositories
 * `-j, --jobs <JOBS>` — Number of parallel workers
 * `--dedup` — Deduplicate top-level dep tokens before writing

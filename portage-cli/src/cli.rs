@@ -2515,12 +2515,21 @@ pub struct RegenArgs {
     /// main one, whose cache is normally maintained upstream)
     #[arg(positional)]
     pub repos: Vec<String>,
-    /// Write cache files to this directory instead of metadata/md5-cache
+    /// Write cache files to this directory instead of metadata/md5-cache, keeping its other
+    /// entries unless `--replace` is given
     #[arg(short = 'o', long, value_name = "DIR")]
     pub output: Option<std::path::PathBuf>,
-    /// Keep the cache's entries this run does not write; by default the run's entries replace it
-    #[arg(long)]
+    /// Keep the cache's entries this run does not write (the default with `--output`)
+    #[arg(long, conflicts("replace"))]
     pub merge: bool,
+    /// Make the run's entries the whole cache, dropping those of removed ebuilds (the default
+    /// without `--output`)
+    #[arg(long)]
+    pub replace: bool,
+    /// Regenerate only these packages: their entries are replaced, removed versions included, and
+    /// the rest of the cache is kept
+    #[arg(long, value_name = "CAT/PKG", conflicts("replace"))]
+    pub only: Vec<String>,
     /// Directory containing master repositories
     #[arg(long, value_name = "DIR")]
     pub repos_dir: Option<String>,

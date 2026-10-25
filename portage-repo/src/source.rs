@@ -245,8 +245,59 @@ mod tests {
         let stats = regen_cache(&repo, ebuilds, &opts, tx).await.unwrap();
 
         assert_eq!(stats.errors, 1);
-        assert!(!output.exists());
         assert!(!output.join("cat/pkg-1.0").exists());
+    }
+
+    #[tokio::test]
+    async fn a_replace_keeps_the_previous_entry_of_an_ebuild_that_fails() {
+        let (_tmp, repo, ebuilds) = repo_with_eclass("if true; then\n");
+        let output = tempfile::tempdir().unwrap();
+        let out = output.path().join("out");
+        for (path, text) in [("cat/pkg-1.0", "previous"), ("other/gone-1", "stale")] {
+            std::fs::create_dir_all(out.join(path).parent().unwrap()).unwrap();
+            std::fs::write(out.join(path), text).unwrap();
+        }
+        let (tx, _rx) = flume::unbounded();
+        let opts = RegenOpts {
+            write: RegenWriteTarget::Dir(out.clone()),
+            ..RegenOpts::default()
+        };
+
+        let stats = regen_cache(&repo, ebuilds, &opts, tx).await.unwrap();
+
+        assert_eq!(stats.errors, 1);
+        assert_eq!(
+            std::fs::read_to_string(out.join("cat/pkg-1.0")).unwrap(),
+            "previous"
+        );
+        assert!(!out.join("other/gone-1").exists());
+        assert!(!output.path().join("out.regen-staging").exists());
+    }
+
+    #[tokio::test]
+    async fn a_packages_run_drops_removed_versions_and_keeps_other_packages() {
+        let (_tmp, repo, ebuilds) = repo_with_eclass("");
+        let output = tempfile::tempdir().unwrap();
+        let out = output.path().join("out");
+        std::fs::create_dir_all(out.join("cat")).unwrap();
+        std::fs::write(out.join("cat/pkg-0.9"), "removed").unwrap();
+        std::fs::write(out.join("cat/other-1"), "kept").unwrap();
+        let (tx, _rx) = flume::unbounded();
+        let opts = RegenOpts {
+            write: RegenWriteTarget::Dir(out.clone()),
+            mode: crate::RegenMode::Packages(vec![portage_atom::Cpn::parse("cat/pkg").unwrap()]),
+            ..RegenOpts::default()
+        };
+
+        let stats = regen_cache(&repo, ebuilds, &opts, tx).await.unwrap();
+
+        assert_eq!(stats.errors, 0);
+        assert!(out.join("cat/pkg-1.0").is_file());
+        assert!(!out.join("cat/pkg-0.9").exists());
+        assert_eq!(
+            std::fs::read_to_string(out.join("cat/other-1")).unwrap(),
+            "kept"
+        );
     }
 
     #[tokio::test]

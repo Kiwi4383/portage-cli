@@ -31,6 +31,7 @@ file, version atoms and `package.env` per toolchain open).
 | `env_lines` writes `KEY="value"` unescaped (spec values with `"`/`$`): think it through | 🔴 | review 2026-10-22 |
 | `ProfileStack::build_in` parses repos.conf for every profile (malformed one now fails all): think it through | 🔴 | review 2026-10-22 |
 | One resolved Portage config: `Settings` landed 2026-10-23 (envvar, --info, resolver, merge protection); build env seeding waits on FEATURES parity | 🟡 | [[portage-config-layering]], [[features-parity]] |
+| Parity: a target atom's USE requirement is ignored — `em -p 'sys-libs/zlib[minizip]'` plans a reinstall without it; emerge asks for the USE change (found 2026-10-25) | 🔴 | not yet filed |
 | Parity: `texlive-core` pulls a perl stack via `virtual/perl-File-Temp`; firefox misses `python-3.15` | 🔴 | found 2026-10-14 by `bench-em-vs-emerge.sh`, not yet filed |
 
 Closed since 2026-09-25 and archived under `todo/done/`: the phase order audit

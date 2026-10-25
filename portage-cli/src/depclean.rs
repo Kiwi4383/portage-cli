@@ -254,7 +254,7 @@ pub async fn run_with_targets(
         // or Err), kept as a belt-and-braces guard against future refactors.
         bail!("depclean: no valid target atoms");
     }
-    let with_bdeps = merge_flags.with_bdeps;
+    let with_bdeps = merge_flags.depclean_bdeps();
 
     let installed: Vec<InstalledPackage> = vdb.packages().into_iter().collect();
     let cleanlist = compute_cleanlist(

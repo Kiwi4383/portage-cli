@@ -259,6 +259,7 @@ pub(super) fn solve_round(
         // Also the path that re-opens host-satisfied build edges so deep tools
         // can upgrade/rebuild; `-N` alone must not do that (Portage parity).
         provider.set_prefer_update(update && deep && !emptytree_native);
+        provider.set_kept_build_deps(solve_with_bdeps && deep);
         // `-n`/`-N`/`-U` without `-u`: a root target an installed version
         // already satisfies keeps that version instead of taking the newest.
         provider.set_selective_no_update(selective && !update);

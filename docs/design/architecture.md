@@ -420,8 +420,8 @@ Stages, in order:
    edge and repair lookups use typed node indices and reusable reachability marks.
    Explicitly-requested targets are listed last when nothing depends on them
    (emerge convention).
-8b. **Post-order rewrite** — for everything except native `--emptytree`,
-    `--with-bdeps` triggers the within-run BDEPEND trim (`bdepend_trim.rs`),
+8b. **Post-order rewrite** — for everything except native `--emptytree` and `-uD`,
+    the within-run BDEPEND trim (`bdepend_trim.rs`) runs,
     dropping edges already satisfied on BROOT or by earlier plan entries. Native
     `--emptytree` skips the trim: the provider returns the full deep closure
     straight from the solve (`rebuild_tree` ⇒ un-pruned `vd.merged`), so there is

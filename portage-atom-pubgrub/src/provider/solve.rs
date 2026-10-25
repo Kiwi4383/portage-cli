@@ -346,13 +346,9 @@ impl PortageDependencyProvider {
             return Dependencies::Available(DependencyConstraints::default());
         }
 
-        // For installed packages at their installed version, skip build-time
-        // deps (DEPEND = index 0, BDEPEND = index 2).  The package is already
-        // built; re-solving its build deps would drag in bootstrap toolchain
-        // packages (old gcc to build new gcc, etc.) that portage never shows.
-        // Only RDEPEND (1), PDEPEND (3), and IDEPEND (4) matter at install time.
-        // `--emptytree` (`InstalledPolicy::Rebuild`) always expands the full
-        // build-time closure even when the selected version matches the VDB.
+        // An installed package kept at its version lists its runtime deps, and its build deps only
+        // under `kept_build_deps`, as emerge does with `--with-bdeps` and `--deep`. `--emptytree`
+        // (`InstalledPolicy::Rebuild`) expands the full build-time closure instead.
         if let Some((inst, policy)) = self.installed.get(package)
             && inst == version
             && !matches!(policy, InstalledPolicy::Rebuild)
@@ -376,14 +372,17 @@ impl PortageDependencyProvider {
                     false,
                 ));
             }
-            let runtime: DependencyConstraints<PortagePackage, PortageVersionSet> = vd
+            let mut deps: Vec<(PortagePackage, PortageVersionSet)> = vd
                 .rdepend()
                 .iter()
                 .chain(vd.pdepend())
                 .chain(vd.idepend())
                 .map(|(p, vs, _)| (p.clone(), vs.clone()))
                 .collect();
-            return Dependencies::Available(runtime);
+            if self.kept_build_deps {
+                kept_build_deps(&mut deps, self, vd);
+            }
+            return Dependencies::Available(deps.into_iter().collect());
         }
 
         // Native `--emptytree` (`rebuild_tree`): list the **full deep closure** with
@@ -426,10 +425,8 @@ impl PortageDependencyProvider {
 
         // A package being *built* always pulls its BDEPEND/IDEPEND, minus
         // edges already satisfied on BROOT (the host) — build deps are
-        // strictly required, so `--with-bdeps` doesn't gate them (that flag
-        // only governs installed-and-*kept* packages' BDEPEND, already
-        // excluded by the runtime-only branch above). DEPEND/RDEPEND
-        // unaffected.
+        // strictly required, so `--with-bdeps` doesn't gate them (it governs
+        // installed-and-*kept* packages, above). DEPEND/RDEPEND unaffected.
         //
         // `!package.is_virtual()`: the synthetic solver root also flows
         // through here and carries the user's requested target atoms in its
@@ -554,6 +551,22 @@ fn cross_target_runtime_deps(
             include_bdepend,
         },
     )
+}
+
+/// A kept package's DEPEND and BDEPEND: all of them under `-uD`, so their upgrades are taken,
+/// else only the edges BROOT does not satisfy
+fn kept_build_deps(
+    out: &mut Vec<(PortagePackage, PortageVersionSet)>,
+    provider: &PortageDependencyProvider,
+    vd: &VersionData,
+) {
+    if provider.prefer_update {
+        let build = vd.depend().iter().chain(vd.bdepend());
+        out.extend(build.map(|(p, vs, _)| (p.clone(), vs.clone())));
+    } else {
+        append_unsatisfied_broot(out, vd.depend(), provider, vd, MergeRoot::Target);
+        append_unsatisfied_broot(out, vd.bdepend(), provider, vd, MergeRoot::Target);
+    }
 }
 
 /// Host-root native build (BDEPEND front-matter): all deps target the host

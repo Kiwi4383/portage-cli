@@ -269,9 +269,8 @@ pub struct DepgraphOpts<'a> {
     /// `--onlydeps`: drop the explicitly-requested targets from the plan,
     /// keeping only their dependencies (emerge's `--onlydeps`).
     pub onlydeps: bool,
-    /// Include BDEPEND in resolution (emerge's `--with-bdeps`)
-    ///
-    /// Default false (exclude BDEPEND) to match emerge's default.
+    /// emerge's `--with-bdeps`, resolved: kept packages' build deps under `--deep`, and a cross
+    /// build's host-root build deps
     pub with_bdeps: bool,
     /// emerge's `--root-deps[=rdeps]`: only RDEPEND (not DEPEND) is required to be satisfiable
     /// in the merge target

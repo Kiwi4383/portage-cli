@@ -34,7 +34,7 @@ built fresh; catalyst’s stage2 is the “rebuild toolchain inside the
 chroot” step we skip).
 
 Stage3 is intentionally thin: one `emerge_atoms` call with forced
-`-e -uD --with-bdeps` and `-b` (seed PKGDIR), atoms `@system`, empty
+`-e -uD --with-bdeps y` and `-b` (seed PKGDIR), atoms `@system`, empty
 `use_override`. Same shape as catalyst’s
 `targets/stage3/chroot.sh` (`run_merge -e --update --deep --with-bdeps=y @system`).
 
@@ -185,7 +185,7 @@ em stages --root /path/to/stage \
   + `package.use` already say. If you need lean/bindist USE, write it into
   the root’s config **before** this step.
 - Forces: `--emptytree` (`-e`), `--update` (`-u`), `--deep` (`-D`),
-  `--with-bdeps`, and `-b` (PKGDIR seed).
+  `--with-bdeps y`, and `-b` (PKGDIR seed).
 - Target set: **`@system` only** (not `@world`).
 
 Or both stage steps in one invocation:
@@ -202,7 +202,7 @@ Always smoke the resolver before a multi-hour build:
 em stages --root /path/to/stage --stage1 -p --autosolve-use
 em stages --root /path/to/stage --stage3 -p --autosolve-use
 # or emptytree canary without stages:
-em --root /path/to/stage -pe @system --with-bdeps -p
+em --root /path/to/stage -pe @system --with-bdeps y
 ```
 
 ### 5. Using `--prefix` instead of `--root`
@@ -256,7 +256,7 @@ Canaries (after toolchain is up):
 em -p cross-riscv64-unknown-linux-gnu/linux-headers
 
 # Cross emptytree of a leaf (historical task #17 class)
-em --root "$ROOT" --target "$T" -pe sys-apps/systemd-utils --with-bdeps
+em --root "$ROOT" --target "$T" -pe sys-apps/systemd-utils --with-bdeps y
 ```
 
 Do **not** run `em setup --target T` before `crossdev --setup`: with

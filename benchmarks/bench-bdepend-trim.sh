@@ -34,7 +34,7 @@ em_cmd() {
 echo "== plan size (cross sys-devel/gcc)"
 for mode in default with-bdeps; do
     args=(sys-devel/gcc)
-    [ "$mode" = with-bdeps ] && args=(--with-bdeps sys-devel/gcc)
+    [ "$mode" = with-bdeps ] && args=(--with-bdeps y sys-devel/gcc)
     n=$(em_cmd "${args[@]}" 2>/dev/null | count_ebuilds)
     emerge_n=""
     if command -v "$EMERGE" >/dev/null 2>&1; then
@@ -54,7 +54,7 @@ echo "== wall time (hyperfine, $RUNS runs, trim is always on in this build)"
 if command -v hyperfine >/dev/null 2>&1; then
     hyperfine -w 1 -r "$RUNS" --ignore-failure \
         "ACCEPT_LICENSE='$ACCEPT_LICENSE' $EM -p --config-root $SYSROOT --root $SYSROOT --arch $ARCH sys-devel/gcc" \
-        "ACCEPT_LICENSE='$ACCEPT_LICENSE' $EM -p --config-root $SYSROOT --root $SYSROOT --arch $ARCH --with-bdeps sys-devel/gcc" \
+        "ACCEPT_LICENSE='$ACCEPT_LICENSE' $EM -p --config-root $SYSROOT --root $SYSROOT --arch $ARCH --with-bdeps y sys-devel/gcc" \
         2>/dev/null | grep -E 'Benchmark|Time|faster'
 else
     echo "   (hyperfine not installed — skip timing)"

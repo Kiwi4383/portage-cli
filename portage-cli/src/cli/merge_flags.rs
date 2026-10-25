@@ -149,12 +149,17 @@ pub struct MergeFlags {
     #[arg(long)]
     pub complete_graph: bool,
 
-    /// Include build-time dependencies (BDEPEND) in the resolution.
-    /// Default is false (exclude BDEPEND), matching emerge's default.
-    /// When enabled, BDEPEND are included but filtered by what's already
-    /// installed on the build host (BROOT).
-    #[arg(long)]
-    pub with_bdeps: bool,
+    /// Follow the build-time dependencies (DEPEND, BDEPEND) of installed packages that are kept
+    ///
+    /// With `--deep`, their upgrades and missing build tools enter the plan; `em depclean` keeps
+    /// them installed. Unset, it is on for depclean, and for installs unless binary packages are
+    /// used or `--with-bdeps-auto n` is given.
+    #[arg(long, value_name = "y|n")]
+    pub with_bdeps: Option<YesNo>,
+
+    /// `n`: an install does not turn `--with-bdeps` on by itself
+    #[arg(long, value_name = "y|n")]
+    pub with_bdeps_auto: Option<YesNo>,
 
     /// Exclude the specified atom from being merged
     #[arg(short = 'X', long, value_name = "ATOM")]
@@ -167,4 +172,100 @@ pub struct MergeFlags {
     /// this unconditionally; elsewhere it defaults off.
     #[arg(long = "root-deps")]
     pub root_deps: bool,
+}
+
+/// A `y`/`n` flag value
+#[derive(Clone, Copy, Debug, PartialEq, Eq, winnow_args::ValueEnum, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum YesNo {
+    /// Yes
+    Y,
+    /// No
+    N,
+}
+
+/// Also reads the plain booleans older resume files saved for `with_bdeps`
+impl<'de> serde::Deserialize<'de> for YesNo {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        #[serde(untagged)]
+        enum Saved {
+            Bool(bool),
+            Text(String),
+        }
+        match Saved::deserialize(deserializer)? {
+            Saved::Bool(true) => Ok(Self::Y),
+            Saved::Bool(false) => Ok(Self::N),
+            Saved::Text(t) if t == "y" => Ok(Self::Y),
+            Saved::Text(t) if t == "n" => Ok(Self::N),
+            Saved::Text(t) => Err(serde::de::Error::custom(format!(
+                "expected y or n, got {t}"
+            ))),
+        }
+    }
+}
+
+impl MergeFlags {
+    /// Whether an install follows kept packages' build-time deps: emerge's `--with-bdeps`, `auto`
+    /// unless binary packages are in use
+    pub fn install_bdeps(&self) -> bool {
+        match self.with_bdeps {
+            Some(value) => value == YesNo::Y,
+            None => {
+                let binpkgs =
+                    self.usepkg || self.usepkgonly || self.getbinpkg || self.getbinpkgonly;
+                self.with_bdeps_auto != Some(YesNo::N) && !binpkgs
+            }
+        }
+    }
+
+    /// Whether depclean keeps installed packages' build-time deps: all but `--with-bdeps n`
+    pub fn depclean_bdeps(&self) -> bool {
+        self.with_bdeps != Some(YesNo::N)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn with_bdeps_defaults_to_auto() {
+        let unset = MergeFlags::default();
+        assert!(unset.install_bdeps());
+        assert!(unset.depclean_bdeps());
+
+        let binpkgs = MergeFlags {
+            getbinpkg: true,
+            ..MergeFlags::default()
+        };
+        assert!(!binpkgs.install_bdeps());
+        let forced = MergeFlags {
+            with_bdeps: Some(YesNo::Y),
+            ..binpkgs
+        };
+        assert!(forced.install_bdeps());
+
+        let no_auto = MergeFlags {
+            with_bdeps_auto: Some(YesNo::N),
+            ..MergeFlags::default()
+        };
+        assert!(!no_auto.install_bdeps());
+        assert!(no_auto.depclean_bdeps());
+
+        let off = MergeFlags {
+            with_bdeps: Some(YesNo::N),
+            ..MergeFlags::default()
+        };
+        assert!(!off.install_bdeps());
+        assert!(!off.depclean_bdeps());
+    }
+
+    #[test]
+    fn an_old_resume_files_boolean_with_bdeps_still_loads() {
+        let old: MergeFlags = serde_json::from_str(r#"{"with_bdeps": true}"#).unwrap();
+        assert_eq!(old.with_bdeps, Some(YesNo::Y));
+        let new: MergeFlags = serde_json::from_str(r#"{"with_bdeps": "n"}"#).unwrap();
+        assert_eq!(new.with_bdeps, Some(YesNo::N));
+    }
 }

@@ -306,11 +306,7 @@ pub struct PortageDependencyProvider {
     /// named argument selects the best accepted version, as emerge does
     /// (installed-and-best still resolves to the installed version).
     pub(crate) root_targets: std::collections::HashMap<PortagePackage, PortageVersionSet>,
-    /// Whether to include BDEPEND in the resolution (emerge's `--with-bdeps`)
-    ///
-    /// When false (default), BDEPEND are excluded from resolution for
-    /// packages being built (assumed provided by BROOT). When true,
-    /// BDEPEND are included but filtered by `host_installed`.
+    /// Whether a cross build's host-root packages list their DEPEND and BDEPEND
     pub(crate) with_bdeps: bool,
     /// `--emptytree`: do not prefer installed virtual/OR branches; full deep
     /// closure from repository candidates
@@ -331,6 +327,9 @@ pub struct PortageDependencyProvider {
     /// and from [`InstalledPolicy::Rebuild`] (emptytree full build-closure
     /// expansion).
     pub(crate) prefer_update: bool,
+    /// `--with-bdeps` with `--deep`: an installed package kept at its version still lists its
+    /// DEPEND and BDEPEND, so their upgrades and missing build tools enter the plan as in emerge
+    pub(crate) kept_build_deps: bool,
     /// Selective resolution without `--update`: an installed version that
     /// satisfies a root target is kept rather than replaced by the newest
     /// accepted one
@@ -763,6 +762,7 @@ impl PortageDependencyProvider {
             rebuild_tree: false,
             prefer_newest_slot: false,
             prefer_update: false,
+            kept_build_deps: false,
             selective_no_update: false,
             root_deps_rdeps: false,
             nodeps: false,
@@ -893,6 +893,12 @@ impl PortageDependencyProvider {
         self.prefer_update = active;
     }
 
+    /// `--with-bdeps` with `--deep`: an installed package kept at its version still lists its
+    /// DEPEND and BDEPEND, so their upgrades and missing build tools enter the plan
+    pub fn set_kept_build_deps(&mut self, active: bool) {
+        self.kept_build_deps = active;
+    }
+
     /// Selective resolution without `--update`: keep an installed version that
     /// already satisfies a root target instead of pulling the newest accepted
     /// one
@@ -1002,11 +1008,10 @@ impl PortageDependencyProvider {
             .is_some_and(|d| d.versions.get(version).is_some_and(|vd| vd.live))
     }
 
-    /// Set whether to include BDEPEND in the resolution
+    /// Set whether a cross build's host-root packages list their DEPEND and BDEPEND
     ///
-    /// When `false` (default), BDEPEND are excluded from resolution entirely,
-    /// matching emerge's `--with-bdeps=n` default. When `true`, BDEPEND are
-    /// included but filtered by `host_installed`.
+    /// Packages being built always list their build deps; installed ones kept at their version
+    /// follow [`Self::set_kept_build_deps`].
     pub fn set_with_bdeps(&mut self, with_bdeps: bool) {
         self.with_bdeps = with_bdeps;
     }

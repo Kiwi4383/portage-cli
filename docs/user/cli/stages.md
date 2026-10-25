@@ -12,7 +12,7 @@ em stages [OPTIONS]
 ## Options
 
 * `--stage1` — Emerge the profile's `packages.build` bootstrap set into `--root`: baselayout (USE=build, --nodeps) then the minimal stage1 package list (USE="-\* build"), mirroring catalyst's `stage1/chroot.sh`. Requires a working toolchain already in the root (`em toolchain --setup`).
-* `--stage3` — Emptytree rebuild of `@system` into `--root` (catalyst `stage3/chroot.sh`: `emerge -e --update --deep --with-bdeps=y @system`). Forces `-e -uD --with-bdeps` on top of other merge flags; seeds PKGDIR with `-b` like stage1. No stage2 (crossdev model). Requires a usable root (typically after `--stage1` or an unpacked seed).
+* `--stage3` — Emptytree rebuild of `@system` into `--root` (catalyst `stage3/chroot.sh`: `emerge -e --update --deep --with-bdeps=y @system`). Forces `-e -uD --with-bdeps y` on top of other merge flags; seeds PKGDIR with `-b` like stage1. No stage2 (crossdev model). Requires a usable root (typically after `--stage1` or an unpacked seed).
 * `-v, --verbose...` — Increase verbosity: `-v` labels each build phase, `-vv`/`-vvv` add `em`'s own debug/trace logs (see also `RUST_LOG`).
 * `-q, --quiet` — Suppress non-error output
 * `--arch <ARCH>` — Target architecture for operations \[default: current system architecture\]
@@ -66,7 +66,14 @@ How the solver and build scheduler behave.
   Off by default; flips are reported.
 * `--eta` — With `-p`/`--pretend` or `-a`/`--ask`, print an "Expected time of completion" for the plan alongside the merge list, estimated from activity history (median of recent successful merges per package; wall uses the build graph + `--jobs` when blockers are available). Shown even when the plan needs USE/mask changes to proceed.
 * `--complete-graph` — With `-u`/`--update` `-D`/`--deep`: when moving a version-pinned family (e.g. upgrading `llvm` pulls `clang` along) would leave a retained package's pin broken (e.g. `lldb` still pinned to the old `llvm`), pull that package into the plan too instead of stopping halfway. Off by default: this can revert the upgrade instead if the retained package has no version satisfying the new pin.
-* `--with-bdeps` — Include build-time dependencies (BDEPEND) in the resolution. Default is false (exclude BDEPEND), matching emerge's default. When enabled, BDEPEND are included but filtered by what's already installed on the build host (BROOT).
+* `--with-bdeps <y|n>` — Follow the build-time dependencies (DEPEND, BDEPEND) of installed packages that are kept
+
+  With `--deep`, their upgrades and missing build tools enter the plan; `em depclean` keeps them installed. Unset, it is on for depclean, and for installs unless binary packages are used or `--with-bdeps-auto n` is given.
+  * `y`: Yes
+  * `n`: No
+* `--with-bdeps-auto <y|n>` — `n`: an install does not turn `--with-bdeps` on by itself
+  * `y`: Yes
+  * `n`: No
 * `-X, --exclude <ATOM>...` — Exclude the specified atom from being merged
 * `--root-deps` — Only require RDEPEND (not DEPEND) to be satisfied in the merge target. Work-around for cross-compilation bootstrap: a still-empty target sysroot cannot yet satisfy plain DEPEND (e.g. virtual/os-headers, acct-group/root) while its own toolchain is being built. `em crossdev --setup` always applies this unconditionally; elsewhere it defaults off.
 

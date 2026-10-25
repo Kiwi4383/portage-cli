@@ -553,7 +553,7 @@ async fn emerge_atoms_inner(
         roots: &roots,
         host_merge_root: host_roots.merge_root(),
         onlydeps: merge_flags.onlydeps,
-        with_bdeps: merge_flags.with_bdeps,
+        with_bdeps: merge_flags.install_bdeps(),
         root_deps_rdeps: merge_flags.root_deps,
         deep: depgraph_flags.0,
         update: merge_flags.update,

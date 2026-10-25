@@ -159,14 +159,17 @@ runtime once installed.
 Portage's depgraph processes each class against the appropriate root; em
 approximates this in `portage-atom-pubgrub` via `get_dependencies()`:
 
-- **`--with-bdeps=n` (em default, `with_bdeps=false`)** — strip all `BDEPEND`
-  edges for packages being built. Assumes BROOT already provides build tools.
-  Matches `emerge -p --with-bdeps=n` on offset/stage plans.
-- **`--with-bdeps` (`with_bdeps=true`)** — keep `BDEPEND`, but drop each edge
+- **A package being built** always keeps its `BDEPEND`, but each edge is dropped
   individually when `host_installed` (host `/var/db/pkg`) already satisfies the
-  version set. `RDEPEND` / `DEPEND` edges are unaffected. This is **per-edge**
+  version set (`-uD` keeps them all, so build tools upgrade). This is **per-edge**
   filtering, not per-package suppression: if `foo` is host-satisfied as `A`'s
   `BDEPEND` but still required as `C`'s `RDEPEND`, `foo` stays in the plan.
+- **An installed package kept at its version** lists only its runtime deps,
+  unless `--with-bdeps` is on and `--deep` is given: then its `DEPEND`/`BDEPEND`
+  are followed the same way, as emerge does. Like emerge, `--with-bdeps` is on
+  by default for installs (`auto`), off with `-k`/`-K`/`-g`/`-G` or
+  `--with-bdeps-auto n`; `--with-bdeps y|n` overrides both. `em depclean` keeps
+  those build deps installed unless `--with-bdeps n`.
 
 `preflight` mirrors the same split after the solve: `DEPEND` against
 `VDB(base) ∪ VDB(target)`, `BDEPEND` against host `BROOT` (plus prefix target
@@ -175,7 +178,7 @@ for native `--prefix` within-run visibility).
 **Within-run trim (2026-06):** after `install_order`, a post-solve pass drops
 entries only needed for `BDEPEND` already satisfied on BROOT (host/prefix VDB)
 or earlier plan entries — same growth model as [`preflight`](../../portage-cli/src/preflight.rs).
-Runs only with `--with-bdeps`; see `depgraph/bdepend_trim.rs`.
+Skipped under `-uD` and native `--emptytree`; see `depgraph/bdepend_trim.rs`.
 
 ### Cross (`CBUILD ≠ CHOST`) — why per-edge filtering is not enough
 
@@ -291,8 +294,8 @@ Same semantics as native, but the roots differ:
 
 | flag | native offset | cross `{target}-emerge` |
 |---|---|---|
-| default (`with_bdeps=false`) | assume host tools; plan only target closure | same — host satisfies `BDEPEND`, plan goes to `ROOT` |
-| `--with-bdeps` | include unsatisfied `BDEPEND` into plan (still merged to target on native) | same closure as default on `-p` when BROOT is full; unsatisfied `BDEPEND` schedule to **BROOT** `/` via Host-root nodes, not onto `ROOT` |
+| `--with-bdeps n` | assume host tools; plan only target closure | same — host satisfies `BDEPEND`, plan goes to `ROOT` |
+| `--with-bdeps y` (default) | include unsatisfied `BDEPEND` into plan (still merged to target on native) | same closure as default on `-p` when BROOT is full; unsatisfied `BDEPEND` schedule to **BROOT** `/` via Host-root nodes, not onto `ROOT` |
 
 Cross `-p` with `--with-bdeps=y` does not expand host-satisfied build tools onto
 the target merge list (verified: `riscv64-emerge -pv --with-bdeps=y gcc` still

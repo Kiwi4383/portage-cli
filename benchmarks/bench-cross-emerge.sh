@@ -92,14 +92,14 @@ done
 echo
 echo "== with-bdeps parity (sys-devel/gcc)"
 if em_cmd sys-devel/gcc 2>/dev/null | extract_cpns > "$tmp/em-base.txt" \
-    && em_cmd --with-bdeps sys-devel/gcc 2>/dev/null | extract_cpns > "$tmp/em-bdeps.txt"; then
+    && em_cmd --with-bdeps y sys-devel/gcc 2>/dev/null | extract_cpns > "$tmp/em-bdeps.txt"; then
     base_n=$(wc -l < "$tmp/em-base.txt")
     bdeps_n=$(wc -l < "$tmp/em-bdeps.txt")
     emerge_bdeps_n=0
     if "$EMERGE" -pv --with-bdeps=y sys-devel/gcc 2>/dev/null | extract_cpns > "$tmp/emerge-bdeps.txt"; then
         emerge_bdeps_n=$(wc -l < "$tmp/emerge-bdeps.txt")
     fi
-    host_lines=$(grep -c ' to /$' <(em_cmd --with-bdeps sys-devel/gcc 2>/dev/null) || true)
+    host_lines=$(grep -c ' to /$' <(em_cmd --with-bdeps y sys-devel/gcc 2>/dev/null) || true)
     echo "   emerge --with-bdeps=y=$emerge_bdeps_n  em default=$base_n  em --with-bdeps=$bdeps_n  host-root lines=$host_lines"
     if [ "$bdeps_n" -ne "$base_n" ] || { [ "$emerge_bdeps_n" -gt 0 ] && [ "$bdeps_n" -ne "$emerge_bdeps_n" ]; }; then
         fail=1

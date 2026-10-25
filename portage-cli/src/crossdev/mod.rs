@@ -726,7 +726,7 @@ pub(crate) async fn toolchain(args: &crate::cli::ToolchainArgs, globals: &Cli) -
 ///
 /// - **stage1** — baselayout + `packages.build` (USE="-* build"), catalyst
 ///   `stage1/chroot.sh`; needs a working ROOT toolchain ([`toolchain`]).
-/// - **stage3** — emptytree `@system` (`-e -uD --with-bdeps`), catalyst
+/// - **stage3** — emptytree `@system` (`-e -uD --with-bdeps y`), catalyst
 ///   `stage3/chroot.sh`. No stage2 (crossdev model).
 ///
 /// Both may be passed: stage1 runs first, then stage3. With `-p` each step
@@ -889,7 +889,7 @@ async fn run_stage3(args: &crate::cli::StagesArgs, globals: &Cli) -> Result<()> 
     };
     writeln!(
         out,
-        "\n{C_LABEL}{verb} stage3{C_LABEL:#} into {merge_root} — emptytree @system (-e -uD --with-bdeps)"
+        "\n{C_LABEL}{verb} stage3{C_LABEL:#} into {merge_root} — emptytree @system (-e -uD --with-bdeps y)"
     )
     .ok();
     out.flush().ok();
@@ -900,7 +900,7 @@ async fn run_stage3(args: &crate::cli::StagesArgs, globals: &Cli) -> Result<()> 
     let mut merge_flags = with_buildpkg(globals.merge_flags());
     merge_flags.emptytree = true;
     merge_flags.update = true;
-    merge_flags.with_bdeps = true;
+    merge_flags.with_bdeps = Some(crate::cli::YesNo::Y);
     let mut depgraph_flags = globals.depgraph_flags();
     depgraph_flags.deep = true;
 

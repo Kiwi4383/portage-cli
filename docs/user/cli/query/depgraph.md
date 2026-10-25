@@ -18,7 +18,7 @@ em query depgraph [OPTIONS] <ATOM>...
 * `--autosolve-use` — Let the solver choose USE flags to satisfy REQUIRED\_USE (Level C)
 * `-e, --emptytree` — Treat every atom as not-yet-installed (emerge's `-e`/`--emptytree`)
 * `-o, --onlydeps` — Only show dependencies, excluding the given atoms themselves from the tree
-* `--with-bdeps` — Include build-time dependencies (BDEPEND) in the resolution
+* `--with-bdeps` — With `--deep`, also follow the build-time deps of installed packages that are kept
 * `--root-deps` — emerge's `--root-deps[=rdeps]`: only require RDEPEND (not DEPEND) to be satisfiable in the merge target.
 * `-f, --format <FORMAT>` — Output format \[default: pretty\]
   * `pretty`: emerge -p style pretend output

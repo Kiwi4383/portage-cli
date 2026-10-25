@@ -3862,3 +3862,49 @@ fn root_target_may_select_live_explicitly() {
         Some(&Version::parse("2.0.9999").unwrap())
     );
 }
+
+// emerge `-uD --with-bdeps y`: a kept installed package's BDEPEND is followed, so the build tool
+// upgrades; without the flag only its runtime deps are.
+#[test]
+fn kept_build_deps_upgrade_a_kept_packages_build_tool() {
+    let solve = |kept_build_deps: bool| {
+        let mut repo = InMemoryRepository::new();
+        for v in ["1.0", "1.1"] {
+            repo.add_version(
+                portage_atom::Cpv::parse(&format!("dev-build/tool-{v}")).unwrap(),
+                None,
+                None,
+                empty_deps(),
+            );
+        }
+        repo.add_version(
+            portage_atom::Cpv::parse("app-misc/app-1.0").unwrap(),
+            None,
+            None,
+            PackageDeps {
+                bdepend: (DepEntry::parse("dev-build/tool").unwrap()).into(),
+                ..empty_deps()
+            },
+        );
+        let mut provider = PortageDependencyProvider::new(repo);
+        provider.set_prefer_update(true);
+        provider.set_kept_build_deps(kept_build_deps);
+        let app = PortagePackage::unslotted(Cpn::parse("app-misc/app").unwrap());
+        let tool = PortagePackage::unslotted(Cpn::parse("dev-build/tool").unwrap());
+        for (package, version) in [(&app, "1.0"), (&tool, "1.0")] {
+            provider.add_installed(InstalledPackage {
+                package: package.clone(),
+                version: Version::parse(version).unwrap(),
+                policy: InstalledPolicy::Favor,
+                active_use: vec![],
+                iuse: vec![],
+            });
+        }
+        let solution = provider
+            .resolve_targets(vec![(app, PortageVersionSet::any())])
+            .unwrap();
+        solution.get(&tool).cloned()
+    };
+    assert_eq!(solve(true), Some(Version::parse("1.1").unwrap()));
+    assert_eq!(solve(false), None);
+}

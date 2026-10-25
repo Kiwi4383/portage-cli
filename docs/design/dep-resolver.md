@@ -58,12 +58,13 @@ portage (`NS` = new in new slot; em does not yet distinguish slot-update install
 6. **Skip build-time deps for installed versions** in `get_dependencies`
    (`provider.rs`): when PubGrub queries dependencies for a package at exactly
    its installed version, only RDEPEND (1), PDEPEND (3), and IDEPEND (4) are
-   returned; DEPEND (0) and BDEPEND (2) are dropped.
+   returned; DEPEND (0) and BDEPEND (2) are added only with `--with-bdeps` and
+   `--deep` (`kept_build_deps`), as in emerge, where `--with-bdeps` defaults on
+   for installs.
 
-7. **`--with-bdeps` / BDEPEND filtering [native parity, 2026-06]:** default-off
-   `BDEPEND` exclusion plus per-edge `host_installed` filtering when
-   `--with-bdeps` is set. Closes the native offset `@system` over-pull
-   (was 316 → now **182**, exact parity with `emerge --with-bdeps=n` = 182,
+7. **BDEPEND filtering [native parity, 2026-06]:** per-edge `host_installed`
+   filtering of a built package's `BDEPEND`. Closes the native offset `@system`
+   over-pull (was 316 → now **182**, parity with `emerge --with-bdeps=n` = 182,
    verified 2026-06-18). Crossdev dual-root scheduling (`BDEPEND` merge
    to `/`, `RDEPEND` merge to `ROOT`, same CPV twice) is **not** implemented —
    see [root-model.md § BDEPEND / crossdev](../user/root-model.md#bdepend-rdepend-and-with-bdeps).

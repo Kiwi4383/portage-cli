@@ -20,7 +20,7 @@ pub use context::{
 };
 pub use depgraph_flags::DepgraphFlags;
 pub use emerge_mode::EmergeModeArgs;
-pub use merge_flags::MergeFlags;
+pub use merge_flags::{MergeFlags, YesNo};
 pub use topology::{RootArg, RootTopology, RootedTopology, Topology};
 
 fn default_arch() -> Arch {
@@ -3177,7 +3177,7 @@ pub struct StagesArgs {
 
     /// Emptytree rebuild of `@system` into `--root` (catalyst `stage3/chroot.sh`:
     /// `emerge -e --update --deep --with-bdeps=y @system`). Forces `-e -uD
-    /// --with-bdeps` on top of other merge flags; seeds PKGDIR with `-b` like
+    /// --with-bdeps y` on top of other merge flags; seeds PKGDIR with `-b` like
     /// stage1. No stage2 (crossdev model). Requires a usable root (typically
     /// after `--stage1` or an unpacked seed).
     #[arg(long)]
@@ -3778,7 +3778,7 @@ pub enum QueryCommand {
         /// Only show dependencies, excluding the given atoms themselves from the tree
         #[arg(short = 'o', long)]
         onlydeps: bool,
-        /// Include build-time dependencies (BDEPEND) in the resolution
+        /// With `--deep`, also follow the build-time deps of installed packages that are kept
         #[arg(long)]
         with_bdeps: bool,
         /// emerge's `--root-deps[=rdeps]`: only require RDEPEND (not DEPEND)

@@ -11,13 +11,15 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use portage_repo::{RegenItem, RegenOpts, RegenWriteTarget, ReposConf, SourceOpts, regen_cache};
+use portage_repo::{
+    RegenItem, RegenMode, RegenOpts, RegenWriteTarget, ReposConf, SourceOpts, regen_cache,
+};
 
 use crate::activity::{
     ACTIVITY_EVENT_VERSION, ActivityBus, ActivityEvent, ActivityMergeRoot, ActivityMode, PkgKind,
     SessionFlags,
 };
-use crate::cli::Cli;
+use crate::cli::{Cli, RegenArgs};
 
 /// Regenerate metadata caches
 ///
@@ -30,15 +32,18 @@ use crate::cli::Cli;
 /// Default write path: in-tree primary if writable, else the repo's user
 /// secondary (`$XDG_CACHE_HOME/em/md5-cache/<name>`), configured at open.
 /// `--output DIR` forces a single directory instead.
-pub async fn run(
-    cli: &Cli,
-    repos_args: &[String],
-    main_repo_path: &str,
-    repos_dir: Option<&str>,
-    output: Option<PathBuf>,
-    jobs: Option<usize>,
-    dedup: bool,
-) -> Result<()> {
+pub async fn run(cli: &Cli, args: &RegenArgs) -> Result<()> {
+    let RegenArgs {
+        repos: repos_args,
+        output,
+        merge,
+        repos_dir,
+        jobs,
+        dedup,
+        ..
+    } = args;
+    let (jobs, dedup) = (*jobs, *dedup);
+    let main_repo_path = cli.repo_path();
     let conf = ReposConf::load().ok();
 
     // Resolve targets: explicit names/paths, or every non-main conf repo.
@@ -90,11 +95,13 @@ pub async fn run(
 
     // Masters resolve against the main repo's parent (e.g. an overlay's
     // `masters = gentoo` → /var/db/repos/gentoo).
-    let default_repos_dir = Path::new(main_repo_path)
+    let default_repos_dir = Path::new(&main_repo_path)
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_default();
-    let repos_dir = repos_dir.map_or(default_repos_dir, PathBuf::from);
+    let repos_dir = repos_dir
+        .as_deref()
+        .map_or(default_repos_dir, PathBuf::from);
 
     let roots = cli.roots();
     // Not `roots.merge_root()`: regen must stay usable unprivileged (see
@@ -167,6 +174,11 @@ pub async fn run(
         let opts = RegenOpts {
             source: SourceOpts { jobs, dedup },
             write,
+            mode: if *merge {
+                RegenMode::Merge
+            } else {
+                RegenMode::Replace
+            },
         };
 
         // Concurrent UI drain: pool runs on this task (feed+join); items land

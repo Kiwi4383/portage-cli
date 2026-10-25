@@ -61,6 +61,7 @@ fn run(fixture: &Fixture, runtime: &tokio::runtime::Runtime) -> usize {
             dedup: false,
         },
         write: RegenWriteTarget::Dir(fixture.root.join("out")),
+        ..RegenOpts::default()
     };
     let stats = runtime
         .block_on(regen_cache(

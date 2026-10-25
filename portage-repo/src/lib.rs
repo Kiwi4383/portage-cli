@@ -62,7 +62,7 @@ pub use build::{
     Settings, SettingsSources, TerminalConfig, phase_path_dirs, run_helper,
 };
 pub use cache::{
-    CacheReadOpts, RegenItem, RegenOpts, RegenStats, RegenWriteTarget, cache_cpvs,
+    CacheReadOpts, RegenItem, RegenMode, RegenOpts, RegenStats, RegenWriteTarget, cache_cpvs,
     cache_entries_parallel, cache_entries_parallel_with_mtime, regen_cache,
 };
 pub use entries::{alias_entries, gap_entries, repo_entries};

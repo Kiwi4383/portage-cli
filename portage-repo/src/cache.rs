@@ -46,6 +46,16 @@ enum PreparedWriteTarget {
     Repository,
 }
 
+/// What [`regen_cache`] does with the target's entries it does not write
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RegenMode {
+    /// The written entries become the whole target, so entries of removed ebuilds go
+    #[default]
+    Replace,
+    /// The written entries are added to the target, which keeps the others
+    Merge,
+}
+
 /// Options for [`regen_cache`]
 #[derive(Debug, Clone, Default)]
 pub struct RegenOpts {
@@ -53,6 +63,8 @@ pub struct RegenOpts {
     pub source: SourceOpts,
     /// Where to persist sourced metadata
     pub write: RegenWriteTarget,
+    /// Whether the written entries replace the target or join it
+    pub mode: RegenMode,
 }
 
 /// Result counters returned by [`regen_cache`]
@@ -110,6 +122,7 @@ pub async fn regen_cache(
 ) -> Result<RegenStats> {
     let total = ebuilds.len();
     let write = opts.write.clone();
+    let mode = opts.mode;
 
     // A Dir target's writes go into a fresh staging directory, swapped into
     // place only once every entry is written — see `swap_dir_target`'s doc
@@ -240,7 +253,10 @@ pub async fn regen_cache(
     if let Some((dir, staging)) = dir_swap
         && error_count == 0
     {
-        swap_dir_target(&dir, &staging)?;
+        match mode {
+            RegenMode::Replace => swap_dir_target(&dir, &staging)?,
+            RegenMode::Merge => merge_dir_target(&dir, &staging)?,
+        }
         if reconcile_repo_cache && let Ok(covered) = covered.lock() {
             crate::entries::reconcile_gap_index(repo, &covered);
         }
@@ -339,6 +355,25 @@ fn swap_dir_target(dir: &Path, staging: &Utf8Path) -> Result<()> {
         fs::remove_dir_all(&displaced).map_err(|e| io_err(&displaced, e))?;
     }
     Ok(())
+}
+
+/// Move every entry of `staging` into `dir`, replacing an entry of the same name and keeping
+/// the rest of `dir`; each file is renamed into place whole
+fn merge_dir_target(dir: &Path, staging: &Utf8Path) -> Result<()> {
+    let dir = utf8_or_err(dir)?;
+    for category in fs::read_dir(staging).map_err(|e| io_err(staging, e))? {
+        let category = category.map_err(|e| io_err(staging, e))?.path();
+        let category = utf8_or_err(&category)?;
+        let target = dir.join(category.file_name().unwrap_or_default());
+        fs::create_dir_all(&target).map_err(|e| io_err(&target, e))?;
+        for entry in fs::read_dir(category).map_err(|e| io_err(category, e))? {
+            let entry = entry.map_err(|e| io_err(category, e))?.path();
+            let entry = utf8_or_err(&entry)?;
+            let to = target.join(entry.file_name().unwrap_or_default());
+            fs::rename(entry, &to).map_err(|e| io_err(entry, e))?;
+        }
+    }
+    fs::remove_dir_all(staging).map_err(|e| io_err(staging, e))
 }
 
 fn eclass_md5(path: &Utf8Path, cache: &ChecksumCache) -> std::result::Result<md5::Digest, String> {
@@ -820,6 +855,27 @@ mod tests {
             !staging.exists(),
             "staging dir must be consumed by the swap"
         );
+    }
+
+    #[test]
+    fn merge_dir_target_keeps_the_entries_the_run_did_not_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = utf8_root(&dir, "out");
+        std::fs::create_dir_all(root.join("dev-libs")).unwrap();
+        std::fs::write(root.join("dev-libs/kept"), "kept").unwrap();
+        std::fs::write(root.join("dev-libs/rewritten"), "old").unwrap();
+
+        let staging =
+            stage_dir_target(root.as_std_path(), ["dev-libs", "sys-apps"].into_iter()).unwrap();
+        std::fs::write(staging.join("dev-libs/rewritten"), "new").unwrap();
+        std::fs::write(staging.join("sys-apps/added"), "added").unwrap();
+        merge_dir_target(root.as_std_path(), &staging).unwrap();
+
+        let read = |p: &str| std::fs::read_to_string(root.join(p)).unwrap();
+        assert_eq!(read("dev-libs/kept"), "kept");
+        assert_eq!(read("dev-libs/rewritten"), "new");
+        assert_eq!(read("sys-apps/added"), "added");
+        assert!(!staging.exists());
     }
 
     #[test]

@@ -195,16 +195,7 @@ impl RunAsync<&cli::Cli> for RegenArgs {
     type Output = Result<()>;
 
     async fn run_async(self, cli: &cli::Cli) -> Self::Output {
-        regen::run(
-            cli,
-            &self.repos,
-            &cli.repo_path(),
-            self.repos_dir.as_deref(),
-            self.output.clone(),
-            self.jobs,
-            self.dedup,
-        )
-        .await
+        regen::run(cli, &self).await
     }
 }
 

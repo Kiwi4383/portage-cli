@@ -122,6 +122,7 @@ async fn main() {
             .output
             .map(portage_repo::RegenWriteTarget::Dir)
             .unwrap_or(portage_repo::RegenWriteTarget::None),
+        ..RegenOpts::default()
     };
 
     let (tx, rx) = flume::unbounded::<portage_repo::RegenItem>();

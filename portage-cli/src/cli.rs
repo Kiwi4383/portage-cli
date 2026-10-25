@@ -2518,6 +2518,9 @@ pub struct RegenArgs {
     /// Write cache files to this directory instead of metadata/md5-cache
     #[arg(short = 'o', long, value_name = "DIR")]
     pub output: Option<std::path::PathBuf>,
+    /// Keep the cache's entries this run does not write; by default the run's entries replace it
+    #[arg(long)]
+    pub merge: bool,
     /// Directory containing master repositories
     #[arg(long, value_name = "DIR")]
     pub repos_dir: Option<String>,

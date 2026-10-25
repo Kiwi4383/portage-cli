@@ -239,6 +239,7 @@ mod tests {
                 dedup: false,
             },
             write: RegenWriteTarget::Dir(output.clone()),
+            ..RegenOpts::default()
         };
 
         let stats = regen_cache(&repo, ebuilds, &opts, tx).await.unwrap();
@@ -259,6 +260,7 @@ mod tests {
                 dedup: false,
             },
             write: RegenWriteTarget::Dir(output.path().to_owned()),
+            ..RegenOpts::default()
         };
 
         let stats = regen_cache(&repo, ebuilds, &opts, tx).await.unwrap();
@@ -399,6 +401,7 @@ mod tests {
                 dedup: false,
             },
             write: RegenWriteTarget::Repository,
+            ..RegenOpts::default()
         };
 
         let stats = regen_cache(&repo, vec![ebuild], &opts, tx).await.unwrap();

@@ -16,6 +16,7 @@ em regen [OPTIONS] [REPOS]...
 ## Options
 
 * `-o, --output <DIR>` — Write cache files to this directory instead of metadata/md5-cache
+* `--merge` — Keep the cache's entries this run does not write; by default the run's entries replace it
 * `--repos-dir <DIR>` — Directory containing master repositories
 * `-j, --jobs <JOBS>` — Number of parallel workers
 * `--dedup` — Deduplicate top-level dep tokens before writing

@@ -561,17 +561,16 @@ impl Version {
     /// Format the version portion (numbers, letter, suffixes, revision,
     /// glob) without the operator
     ///
-    /// Uses the raw string when available to preserve leading zeros in
-    /// numeric components.
+    /// Numeric components keep their written digits: a leading zero can change the comparison.
     pub(crate) fn fmt_version(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if let Some(ref raw) = self.raw {
             write!(f, "{raw}")
         } else {
-            for (i, num) in self.numbers.iter().enumerate() {
+            for (i, digits) in self.digits.iter().enumerate() {
                 if i > 0 {
                     write!(f, ".")?;
                 }
-                write!(f, "{num}")?;
+                write!(f, "{digits}")?;
             }
             if let Some(letter) = self.letter {
                 write!(f, "{letter}")?;
@@ -892,14 +891,6 @@ mod tests {
     }
 
     #[test]
-    fn test_raw_in_dep_displays_canonical() {
-        use crate::dep::Dep;
-
-        let dep = Dep::parse(">=app-accessibility/kontrast-26.04.0").unwrap();
-        assert_eq!(dep.to_string(), ">=app-accessibility/kontrast-26.4.0");
-    }
-
-    #[test]
     fn test_raw_in_cpv_round_trip() {
         use crate::cpv::Cpv;
 
@@ -943,6 +934,12 @@ mod tests {
             later.contains("number too large"),
             "a later component must commit the overflow, got {later}"
         );
+    }
+
+    #[test]
+    fn a_dep_keeps_the_leading_zeros_of_its_version() {
+        let dep = crate::Dep::parse(">=app-arch/7zip-24.09").unwrap();
+        assert_eq!(dep.to_string(), ">=app-arch/7zip-24.09");
     }
 
     #[test]

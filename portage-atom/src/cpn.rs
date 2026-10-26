@@ -161,10 +161,48 @@ pub(crate) fn parse_package(input: &mut &str) -> ModalResult<Interned<DefaultInt
             s.chars()
                 .next()
                 .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+                && !ends_in_version(s)
         })
         .map(|s: &str| Interned::intern(s))
         .context(StrContext::Label("package"))
         .parse_next(input)
+}
+
+/// PMS 3.1.2: a package name must not end in a hyphen followed by anything matching the version
+/// syntax, so `awk-1` in `awk-1-3` is a version and a build id, never a name
+fn ends_in_version(name: &str) -> bool {
+    name.match_indices('-')
+        .any(|(i, _)| is_version_syntax(&name[i + 1..]))
+}
+
+/// Whether `s` is shaped like a version, revision included, whatever the size of its numbers
+fn is_version_syntax(s: &str) -> bool {
+    fn digits(s: &str) -> Option<&str> {
+        let end = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
+        (end > 0).then(|| &s[end..])
+    }
+    let Some(mut rest) = digits(s) else {
+        return false;
+    };
+    while let Some(after) = rest.strip_prefix('.').and_then(digits) {
+        rest = after;
+    }
+    if rest.starts_with(|c: char| c.is_ascii_lowercase()) {
+        rest = &rest[1..];
+    }
+    while let Some(after) = rest.strip_prefix('_') {
+        let Some(suffix) = ["alpha", "beta", "pre", "rc", "p"]
+            .iter()
+            .find_map(|k| after.strip_prefix(k))
+        else {
+            return false;
+        };
+        rest = suffix.trim_start_matches(|c: char| c.is_ascii_digit());
+    }
+    if let Some(revision) = rest.strip_prefix("-r") {
+        rest = digits(revision).unwrap_or("x");
+    }
+    rest.is_empty()
 }
 
 /// Parse full Cpn (category/package)
@@ -231,29 +269,32 @@ mod tests {
 
     #[test]
     fn test_package_name_cannot_end_with_hyphen_version() {
-        // PMS 3.1.2: "must not end in a hyphen followed by anything matching the version syntax"
-        // Note: This rule is enforced at the CPV level, not the CPN level.
-        // The CPN parser allows hyphen endings, but the CPV parser ensures proper version boundary detection.
-
-        // These are valid CPN names (the CPV parser will handle version detection)
-        assert!(
-            Cpn::parse("cat/pkg-").is_ok(),
-            "Package name ending with hyphen is valid at CPN level"
-        );
-        assert!(
-            Cpn::parse("cat/pkg-test").is_ok(),
-            "Package name ending with hyphen+word should be valid"
-        );
-
-        // But when used in CPV context, the version boundary detection should work correctly
-        let cpv1 = Cpv::parse("cat/pkg--1.2"); // pkg- is package, -1.2 is version
-        assert!(
-            cpv1.is_ok(),
-            "CPV parser should handle hyphen in package name correctly"
-        );
-        let cpv1 = cpv1.unwrap();
-        assert_eq!(cpv1.cpn.package, "pkg-");
-        assert_eq!(cpv1.version.numbers.as_slice(), vec![1, 2].as_slice());
+        for name in [
+            "awk-1",
+            "foo-1.0",
+            "foo-1-r2",
+            "foo-2_p1",
+            "foo-1.2b_rc3_p4",
+            "foo-bar-20250101",
+            "pkg-18446744073709551616",
+        ] {
+            assert!(Cpn::parse(&format!("cat/{name}")).is_err(), "{name}");
+        }
+        for name in [
+            "pkg-test",
+            "font-adobe-75dpi",
+            "_cron-failure",
+            "foo-1_beta_x",
+            "foo-1-r",
+            "pkg-",
+            "libsigc++",
+        ] {
+            assert!(Cpn::parse(&format!("cat/{name}")).is_ok(), "{name}");
+        }
+        // The only reading left of `awk-1-3` is a version followed by something else.
+        assert!(crate::Pf::parse("awk-1-3").is_err());
+        let cpv = Cpv::parse("cat/pkg--1.2").unwrap();
+        assert_eq!(cpv.cpn.package, "pkg-");
     }
 
     #[test]

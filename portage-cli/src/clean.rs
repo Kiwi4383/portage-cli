@@ -563,8 +563,8 @@ fn cpv_in_package_dir(cat: &str, pn: &str, file: &str) -> Option<String> {
 
 /// The flat `<cat>/<pf>[-<build_id>]` older em wrote
 fn cpv_in_category_dir(cat: &str, file: &str) -> Option<String> {
-    // `awk-1-3` is `awk-1` with build id 3: PMS forbids a package name ending in `-<version>`,
-    // so `awk-1` cannot be a name with version 3, whatever `Pf::parse` accepts.
+    // `awk-1-3` is `awk-1` with build id 3: PMS forbids the name `awk-1`, so `Pf::parse` rejects
+    // the whole name and only this split is left.
     if let Some((base, build_id)) = file.rsplit_once('-')
         && !build_id.is_empty()
         && build_id.bytes().all(|b| b.is_ascii_digit())

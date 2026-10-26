@@ -163,7 +163,10 @@ pub fn resolve_atom_noted(
     if raw.contains('/') {
         return portage_atom::Dep::from_str(raw)
             .map(Resolved::from)
-            .with_context(|| format!("bad atom '{raw}'"));
+            .with_context(|| match portage_atom::Dep::from_str(&format!("={raw}")) {
+                Ok(_) => format!("bad atom '{raw}': a version needs an operator, as in '={raw}'"),
+                Err(_) => format!("bad atom '{raw}'"),
+            });
     }
     let cpns = set.find_cpns(raw);
     match cpns.as_slice() {

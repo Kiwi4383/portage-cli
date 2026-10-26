@@ -759,7 +759,7 @@ mod tests {
             None,
             None,
             PackageDeps {
-                depend: (vec![DepEntry::Atom(Dep::parse("dev-libs/bottom-1.0").unwrap())]).into(),
+                depend: (vec![DepEntry::Atom(Dep::parse("dev-libs/bottom").unwrap())]).into(),
                 rdepend: (vec![]).into(),
                 bdepend: (vec![]).into(),
                 pdepend: (vec![]).into(),
@@ -1081,8 +1081,8 @@ mod tests {
             None,
             None,
             PackageDeps {
-                depend: (vec![DepEntry::Atom(Dep::parse("dev-libs/lib-1.0").unwrap())]).into(),
-                rdepend: (vec![DepEntry::Atom(Dep::parse("dev-libs/runtime-1.0").unwrap())]).into(),
+                depend: (vec![DepEntry::Atom(Dep::parse("dev-libs/lib").unwrap())]).into(),
+                rdepend: (vec![DepEntry::Atom(Dep::parse("dev-libs/runtime").unwrap())]).into(),
                 bdepend: (vec![]).into(),
                 pdepend: (vec![]).into(),
                 idepend: (vec![]).into(),

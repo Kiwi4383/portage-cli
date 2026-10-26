@@ -7,9 +7,8 @@ use winnow::error::StrContext;
 use winnow::prelude::*;
 
 use crate::cpn::{Cpn, parse_cpn};
-use crate::cpv::{Cpv, parse_cpv, parse_cpv_with_glob};
+use crate::cpv::{Cpv, parse_cpv_with_glob};
 use crate::error::{Error, Result};
-use crate::parsers::has_version_suffix;
 use crate::slot::{Slot, SlotDep, parse_slot_dep};
 use crate::use_dep::{UseDep, parse_use_deps};
 use crate::version::{Operator, Version};
@@ -275,17 +274,6 @@ impl FromStr for Dep {
 
 // Winnow parsers
 
-fn parse_cpn_or_cpv(input: &mut &str) -> ModalResult<(Cpn, Option<crate::version::Version>)> {
-    if has_version_suffix(input) {
-        match parse_cpv.parse_next(input) {
-            Ok(cpv) => return Ok((cpv.cpn, Some(cpv.version))),
-            Err(winnow::error::ErrMode::Backtrack(_)) => {}
-            Err(e) => return Err(e),
-        }
-    }
-    parse_cpn.parse_next(input).map(|cpn| (cpn, None))
-}
-
 /// Parse blocker prefix
 fn parse_blocker(input: &mut &str) -> ModalResult<Blocker> {
     alt(("!!".value(Blocker::Strong), "!".value(Blocker::Weak))).parse_next(input)
@@ -317,8 +305,9 @@ pub(crate) fn parse_dep(input: &mut &str) -> ModalResult<Dep> {
             .parse_next(input)?;
         (cpv.cpn, Some(cpv.version), glob)
     } else {
-        let (cpn, version) = parse_cpn_or_cpv.parse_next(input)?;
-        (cpn, version, false)
+        // A version needs an operator (PMS 8.3.1); without one, `cat/pkg-1` is a package name, and
+        // `parse_package` rejects it for ending in a version.
+        (parse_cpn.parse_next(input)?, None, false)
     };
 
     if let Some(op) = operator {
@@ -381,14 +370,17 @@ mod tests {
     }
 
     #[test]
-    fn an_operatorless_atom_rejects_a_component_past_u64() {
-        let err = Dep::parse("cat/pkg-18446744073709551616")
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("number too large"),
-            "overflow must not become part of the package name, got {err}"
-        );
+    fn a_version_without_an_operator_is_not_an_atom() {
+        for atom in [
+            "virtual/awk-1",
+            "sys-libs/zlib-1.3.2-r1",
+            "cat/pkg-18446744073709551616",
+            "virtual/awk-1[foo]",
+        ] {
+            assert!(Dep::parse(atom).is_err(), "{atom}");
+        }
+        assert!(Dep::parse("dev-lang/python-exec").is_ok());
+        assert!(Dep::parse("=virtual/awk-1").is_ok());
     }
 
     #[test]

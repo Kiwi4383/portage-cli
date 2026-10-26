@@ -124,14 +124,6 @@ impl<'de> serde::Deserialize<'de> for Cpv {
 
 // Winnow parsers
 
-/// Parse a `category/package-version` string (without storing the raw version)
-///
-/// Package names can contain hyphens, so the version boundary is found at the
-/// last hyphen followed by a digit (per PMS).
-pub(crate) fn parse_cpv(input: &mut &str) -> ModalResult<Cpv> {
-    parse_cpv_impl(input, |i| parse_version_no_raw(i).map(|(v, _)| v))
-}
-
 pub(crate) fn parse_cpv_with_glob(input: &mut &str) -> ModalResult<(Cpv, bool)> {
     let checkpoint = *input;
     let (category, _, pkg_ver) =

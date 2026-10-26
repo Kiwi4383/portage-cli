@@ -189,7 +189,7 @@ mod tests {
     #[test]
     fn iter_classes_skips_empty() {
         let deps = PackageDeps {
-            rdepend: vec![DepEntry::Atom(Dep::parse("dev-libs/x-1").unwrap())],
+            rdepend: vec![DepEntry::Atom(Dep::parse("dev-libs/x").unwrap())],
             ..PackageDeps::default()
         };
         let classes: Vec<_> = deps.iter_classes().map(|(c, _)| c).collect();

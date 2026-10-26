@@ -119,7 +119,7 @@ committed code needs an unpublished commit that CI must also build, use a
 workspace `[patch.crates-io]` (`git` + `rev`) and delete it once the release
 ships. A config patch takes precedence over the manifest one.
 
-Git-source workspace deps (`brush-*`, `pkgcraft`, `hakoniwa`) keep a `rev`
+Git-source workspace deps (`brush-*`, `pkgcraft`) keep a `rev`
 in `Cargo.toml` — that is the source, not a crates.io pin.
 
 ## Local dependency overrides

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.2
+
+### Features
+
+- `KnownArch::ALL`, every known architecture in declaration order.
+
 ## 0.6.1
 
 ### Other

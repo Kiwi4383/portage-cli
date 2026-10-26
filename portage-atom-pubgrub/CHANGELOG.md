@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.9.0
+
+### Breaking changes
+
+- Depends on `portage-atom` 0.12 and `portage-solver` 0.4.
+- `PackageVersions` gains `empty_any_of_matches`, `needs_unmask` and `live`.
+- `package.provided` is modelled as `InstalledPolicy::Provided`; `set_provided` is removed.
+
+### Features
+
+- Widened candidate supply with acceptance tiering; live ebuilds are never autounmasked transitively.
+- Root targets held back below their newest version are surfaced.
+- `set_kept_build_deps`: an installed package kept at its version lists its build dependencies, as emerge
+  does with `--with-bdeps` and `--deep`.
+
+### Bug fixes
+
+- Root targets are decided before their dependencies; an unoffered installed version is never built.
+- The VDB's USE and IUSE are trusted for a candidate at its installed version.
+- Soft-cycle repair prioritises BDEPEND-target consumers; selected virtual branches are kept.
+- Empty `||` and `^^` groups are unsatisfiable on EAPI 7 and later.
+
+### Performance
+
+- Dependency graphs are reused and keyed without strings; provider cleanup is skipped when complete.
+
 ## 0.8.0
 
 ### Features

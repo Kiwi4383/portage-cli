@@ -20,7 +20,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-portage-atom-resolvo = "0.8"
+portage-atom-resolvo = "0.9"
 ```
 
 ## Quick start

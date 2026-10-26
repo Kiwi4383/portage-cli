@@ -16,7 +16,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-portage-binpkg = "0.2"
+portage-binpkg = "0.3"
 ```
 
 ## Features

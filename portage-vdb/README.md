@@ -16,7 +16,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-portage-vdb = "0.2"
+portage-vdb = "0.3"
 ```
 
 ## Quick start

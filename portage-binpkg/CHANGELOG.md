@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.0
+
+### Breaking changes
+
+- `GpkgInput` gains `build_id`, recorded as the package's `BUILD_ID` metadata as Portage does.
+
+### Features
+
+- The build-env key is derived from the flags a package was configured with and recorded as
+  `BUILD_ENV_KEY` (`BUILD_ENV_KEY_FIELD`, `encode_build_env_key`).
+- `read_environment` and `read_ebuild` extract a container's saved environment and ebuild.
+
+### Bug fixes
+
+- Containers and the `Packages` index are written under a temporary name and renamed into place.
+- A container's build id is derived from its known `PF`, so an integer version is not read as one.
+- Symlink targets are packed as they are; each index field is written on one line; an unreadable container
+  is reported through `tracing`.
+
+### Performance
+
+- GPKG containers are read as a stream.
+
 ## 0.2.1
 
 ### Bug fixes

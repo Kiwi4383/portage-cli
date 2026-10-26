@@ -50,14 +50,14 @@ Versions below are the **workspace** package versions in each crate's
 | Crate | Version | Purpose |
 |-------|---------|---------|
 | `gentoo-interner` | 0.4.1 | String interning |
-| `gentoo-core` | 0.6.1 | Architecture types, variants |
-| `portage-atom` | 0.11.1 | PMS atom parsing |
-| `portage-metadata` | 0.10.0 | md5-cache entry parsing, EAPI, keywords |
-| `portage-atom-pubgrub` | 0.8.0 | PubGrub solver bridge (default in `em`) |
-| `portage-atom-resolvo` | 0.8.1 | SAT dependency solver (resolvo bridge) |
-| `portage-solver` | 0.3.0 | Solver-agnostic trait and shared vocabulary |
-| `portage-vdb` | 0.2.1 | Installed package database (`/var/db/pkg`) |
-| `portage-binpkg` | 0.2.1 | GPKG binary package read/write |
+| `gentoo-core` | 0.6.2 | Architecture types, variants |
+| `portage-atom` | 0.12.0 | PMS atom parsing |
+| `portage-metadata` | 0.11.0 | md5-cache entry parsing, EAPI, keywords |
+| `portage-atom-pubgrub` | 0.9.0 | PubGrub solver bridge (default in `em`) |
+| `portage-atom-resolvo` | 0.9.0 | SAT dependency solver (resolvo bridge) |
+| `portage-solver` | 0.4.0 | Solver-agnostic trait and shared vocabulary |
+| `portage-vdb` | 0.3.0 | Installed package database (`/var/db/pkg`) |
+| `portage-binpkg` | 0.3.0 | GPKG binary package read/write |
 | `gentoo-stages` | 0.6.1 | Stage3 tarball fetch/cache |
 
 ### Local only (`publish = false` in workspace)

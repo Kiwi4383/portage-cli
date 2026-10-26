@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.11.0
+
+### Breaking changes
+
+- Depends on `portage-atom` 0.12.
+- `LICENSE`: a bare `( … )` group is a nested `LicenseExpr::All`, written back with its parentheses, instead
+  of being spliced into its parent; `|| ( MIT ( GPL-1 GPL-2 ) )` no longer reads as "MIT or GPL-1 or GPL-2".
+
+### Features
+
+- PMS table queries on `Eapi`.
+- A malformed lazy field is told apart from an empty one.
+
+### Bug fixes
+
+- `SRC_URI`: parentheses inside a filename are part of it.
+- Dependency fields and `SRC_URI` serialise from their parsed content.
+
+### Performance
+
+- Dependency fields and `SRC_URI` parse lazily; eclass checksums are interned and typed; cache entries
+  serialise as a stream.
+
 ## 0.10.0
 
 ### Breaking changes

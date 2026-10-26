@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.3.0
+
+### Breaking changes
+
+- Depends on `portage-atom` 0.12 and `portage-metadata` 0.11.
+- `MergeSpec` gains `iuse_effective`; `ContentsKind` is now `Copy`.
+- `InstalledPackage` returns typed values: `slot()` a `Slot` (the text is `slot_raw()`), `slot_main()` and
+  `subslot()` a `SlotName`, `iuse()` `IUse`, and `use_flags()`, `keywords()` and `repository()` interned
+  names instead of `String`s.
+
+### Features
+
+- `contents_into` reads `CONTENTS` into a caller's buffer, `contents_raw` returns its text, and `scan` walks
+  the database in parallel.
+
+### Bug fixes
+
+- Registering a package stages through `-MERGING-` instead of writing in place.
+- A package's field cache is cleared in place, so stale handles recover.
+
+### Performance
+
+- `CONTENTS` stays out of the field cache; field caching is scoped; the ownership index is reused across
+  merge batches.
+
 ## 0.2.1
 
 ### Other

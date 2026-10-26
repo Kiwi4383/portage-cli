@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.12.0
+
+### Breaking changes
+
+- A package name may not end in a hyphen followed by a version (PMS 3.1.2), and a versioned atom needs an
+  operator (PMS 8.3.1): `cat/pkg-1` no longer parses. Previously `awk-1-3` could read as package `awk-1`.
+- `SlotDep` is now `Copy`.
+- `matches_cpv` takes a typed `Slot` and honours a sub-slot constraint.
+- A version component wider than `u64` is rejected in every atom form.
+
+### Features
+
+- `Dep` serialises as its atom string.
+- `Version::is_live` for the `*9999` live convention.
+- `Lazy<T>`, the lazily parsed field shared by the dependency and `SRC_URI` lists.
+
+### Bug fixes
+
+- A dependency's version keeps its leading zeros when written back (`24.09`, not `24.9`).
+- Empty `||` and `^^` groups do not match on EAPI 7 and later.
+- `Version`'s `Hash` agrees with its `Eq`; a bare slot operator parses as one atom however spelled.
+
 ## 0.11.1
 
 ### Other

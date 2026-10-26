@@ -20,7 +20,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-portage-solver = "0.3"
+portage-solver = "0.4"
 ```
 
 ## Overview

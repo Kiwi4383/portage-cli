@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.0
+
+### Breaking changes
+
+- Depends on `portage-atom` 0.12.
+
+### Other
+
+- Version operator matching uses `portage-atom`'s shared implementation.
+
 ## 0.8.1
 
 ### Other

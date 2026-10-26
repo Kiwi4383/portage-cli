@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.0
+
+### Breaking changes
+
+- Depends on `portage-atom` 0.12.
+- `MergeRoot::Base` for the toolchain sysroot; `MergeRoot::Target`'s discriminant changed.
+- `resolve_effective_use` takes eight parameters instead of six.
+
+### Bug fixes
+
+- `package.use` applies over `make.defaults` (PMS 5.2.10), and a profile's `package.use` does not override
+  `make.conf` `USE`.
+- Only an explicitly assigned `USE_EXPAND` variable clears its group, and group membership overrides a
+  flag's own `+IUSE` default.
+
 ## 0.3.0
 
 ### Features

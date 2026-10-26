@@ -23,6 +23,10 @@
 
 - GPKG containers are read as a stream.
 
+### Other
+
+- `pgp` 0.21.
+
 ## 0.2.1
 
 ### Bug fixes

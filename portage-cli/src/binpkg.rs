@@ -467,13 +467,15 @@ pub(crate) fn lock_pkgdir(pkgdir: &Utf8Path) -> anyhow::Result<std::fs::File> {
     Ok(file)
 }
 
-/// The next free GPKG build-id for `<cat>/<pf>` in `pkgdir` (portage numbers
-/// rebuilds `<pf>-1`, `<pf>-2`, …); 1 when none exist.
-pub(crate) fn next_build_id(pkgdir: &Utf8Path, cat: &str, pf: &str) -> u32 {
-    let dir = pkgdir.join(cat);
+/// The next free build id for `<cat>/<pf>`: past every container of it, in Portage's `<cat>/<pn>/`
+/// directory and in the flat `<cat>/` layout older em wrote
+fn next_build_id(pkgdir: &Utf8Path, cat: &str, pn: &str, pf: &str) -> u32 {
     let prefix = format!("{pf}-");
     let mut max = 0u32;
-    if let Ok(rd) = std::fs::read_dir(dir.as_std_path()) {
+    for dir in [pkgdir.join(cat), pkgdir.join(cat).join(pn)] {
+        let Ok(rd) = std::fs::read_dir(dir.as_std_path()) else {
+            continue;
+        };
         for e in rd.flatten() {
             if let Some(rest) = e.file_name().to_string_lossy().strip_prefix(&prefix)
                 && let Some(id) = rest.strip_suffix(".gpkg.tar")
@@ -486,6 +488,35 @@ pub(crate) fn next_build_id(pkgdir: &Utf8Path, cat: &str, pf: &str) -> u32 {
     max + 1
 }
 
+/// Reserve a build id and the container path for `<cat>/<pn>/<pf>`, as Portage's
+/// binpkg-multi-instance lays it out: `PKGDIR/<cat>/<pn>/<pf>-<id>.gpkg.tar`
+///
+/// The path is created empty, so a writer that does not hold [`lock_pkgdir`] (Portage) takes the
+/// next id; the caller removes it if writing the container fails.
+pub(crate) fn reserve_container(
+    pkgdir: &Utf8Path,
+    cat: &str,
+    pn: &str,
+    pf: &str,
+) -> anyhow::Result<(u32, Utf8PathBuf)> {
+    use anyhow::Context;
+    let dir = pkgdir.join(cat).join(pn);
+    std::fs::create_dir_all(dir.as_std_path()).with_context(|| format!("creating {dir}"))?;
+    let mut id = next_build_id(pkgdir, cat, pn, pf);
+    loop {
+        let path = dir.join(format!("{pf}-{id}.gpkg.tar"));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path.as_std_path())
+        {
+            Ok(_) => return Ok((id, path)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => id += 1,
+            Err(e) => return Err(e).with_context(|| format!("creating {path}")),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -494,14 +525,13 @@ mod tests {
     fn parallel_writers_under_the_pkgdir_lock_take_distinct_build_ids() {
         let dir = tempfile::tempdir().unwrap();
         let pkgdir = Utf8PathBuf::from_path_buf(dir.path().to_owned()).unwrap();
-        std::fs::create_dir_all(pkgdir.join("sys-libs").as_std_path()).unwrap();
         let writers: Vec<_> = (0..8)
             .map(|_| {
                 let pkgdir = pkgdir.clone();
                 std::thread::spawn(move || {
                     let _lock = lock_pkgdir(&pkgdir).unwrap();
-                    let id = next_build_id(&pkgdir, "sys-libs", "glibc-2.42");
-                    let out = pkgdir.join(format!("sys-libs/glibc-2.42-{id}.gpkg.tar"));
+                    let (id, out) =
+                        reserve_container(&pkgdir, "sys-libs", "glibc", "glibc-2.42").unwrap();
                     std::thread::sleep(std::time::Duration::from_millis(5));
                     std::fs::write(out.as_std_path(), b"").unwrap();
                     id
@@ -511,6 +541,24 @@ mod tests {
         let mut ids: Vec<u32> = writers.into_iter().map(|w| w.join().unwrap()).collect();
         ids.sort_unstable();
         assert_eq!(ids, (1..=8).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_reserved_container_follows_portages_layout_past_older_flat_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let pkgdir = Utf8PathBuf::from_path_buf(dir.path().to_owned()).unwrap();
+        for old in [
+            "sys-libs/glibc-2.42-4.gpkg.tar",
+            "sys-libs/glibc/glibc-2.42-5.gpkg.tar",
+        ] {
+            let path = pkgdir.join(old);
+            std::fs::create_dir_all(path.parent().unwrap().as_std_path()).unwrap();
+            std::fs::write(path.as_std_path(), b"").unwrap();
+        }
+        let (id, path) = reserve_container(&pkgdir, "sys-libs", "glibc", "glibc-2.42").unwrap();
+        assert_eq!(id, 6);
+        assert_eq!(path, pkgdir.join("sys-libs/glibc/glibc-2.42-6.gpkg.tar"));
+        assert!(path.as_std_path().is_file());
     }
 
     // Regression test for the stage3 --buildpkg failure: a non-host root

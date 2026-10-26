@@ -4040,9 +4040,12 @@ mod tests {
 
         /// The one binary package under `root`'s default `PKGDIR`
         fn package(&self, root: &str) -> Option<Utf8PathBuf> {
-            let dir = self.path(root).join("var/cache/binpkgs/app-misc");
-            let mut found = fs::read_dir(dir).ok()?.flatten();
-            Utf8PathBuf::try_from(found.next()?.path()).ok()
+            let dir = self.path(root).join("var/cache/binpkgs");
+            let mut found = Vec::new();
+            portage_binpkg::find_gpkg_containers(dir.as_std_path(), dir.as_std_path(), &mut found)
+                .ok()?;
+            let (_, full) = found.into_iter().next()?;
+            Utf8PathBuf::try_from(full).ok()
         }
     }
 
@@ -4403,6 +4406,7 @@ mod tests {
                 metadata_dir: meta.as_std_path(),
                 basename: "probe-1",
                 signing: None,
+                build_id: None,
             },
             package.as_std_path(),
         )

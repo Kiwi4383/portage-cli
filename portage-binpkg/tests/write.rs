@@ -28,6 +28,7 @@ fn writes_gpkg_with_missing_image_dir() {
             metadata_dir: &meta,
             basename: "virtual-acl-0",
             signing: None,
+            build_id: None,
         },
         &out,
     )
@@ -64,6 +65,7 @@ fn writes_a_valid_gpkg_container() {
             metadata_dir: &meta,
             basename: "hello-1.0",
             signing: None,
+            build_id: None,
         },
         &out,
     )

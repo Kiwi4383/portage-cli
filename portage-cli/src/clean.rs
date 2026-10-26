@@ -537,7 +537,32 @@ async fn pkg_candidates(
 /// exactly the shape a real build-id suffix has.
 pub(crate) fn cpv_from_container(rel: &str) -> Option<String> {
     let rel = rel.strip_suffix(".gpkg.tar")?;
-    let (cat, file) = rel.rsplit_once('/')?;
+    let mut parts = rel.split('/');
+    match (parts.next(), parts.next(), parts.next(), parts.next()) {
+        (Some(cat), Some(pn), Some(file), None) => cpv_in_package_dir(cat, pn, file),
+        (Some(cat), Some(file), None, _) => cpv_in_category_dir(cat, file),
+        _ => None,
+    }
+}
+
+/// Portage's `<cat>/<pn>/<pf>[-<build_id>]`: the name is known, so the version is what follows it
+fn cpv_in_package_dir(cat: &str, pn: &str, file: &str) -> Option<String> {
+    let rest = file.strip_prefix(pn)?.strip_prefix('-')?;
+    let version = match rest.rsplit_once('-') {
+        Some((version, id))
+            if id.bytes().all(|b| b.is_ascii_digit())
+                && portage_atom::Version::parse(version).is_ok() =>
+        {
+            version
+        }
+        _ => rest,
+    };
+    portage_atom::Version::parse(version).ok()?;
+    Some(format!("{cat}/{pn}-{version}"))
+}
+
+/// The flat `<cat>/<pf>[-<build_id>]` older em wrote
+fn cpv_in_category_dir(cat: &str, file: &str) -> Option<String> {
     // `awk-1-3` is `awk-1` with build id 3: PMS forbids a package name ending in `-<version>`,
     // so `awk-1` cannot be a name with version 3, whatever `Pf::parse` accepts.
     if let Some((base, build_id)) = file.rsplit_once('-')
@@ -718,7 +743,26 @@ mod tests {
         // Ordinary versions are untouched.
         assert_eq!(cpv("sys-libs/zlib-1.3.1.gpkg.tar"), "sys-libs/zlib-1.3.1");
 
-        // em always writes a build id: a bare-integer version keeps its own number.
+        // Portage's layout, which em writes: the directory names the package.
+        assert_eq!(cpv("virtual/awk/awk-1-3.gpkg.tar"), "virtual/awk-1");
+        assert_eq!(
+            cpv("sys-libs/zlib/zlib-1.3.2-r1-3.gpkg.tar"),
+            "sys-libs/zlib-1.3.2-r1"
+        );
+        assert_eq!(
+            cpv("sys-libs/zlib/zlib-1.3.2-r1.gpkg.tar"),
+            "sys-libs/zlib-1.3.2-r1"
+        );
+        assert_eq!(
+            cpv("dev-perl/Locale-gettext/Locale-gettext-1.70.0-2.gpkg.tar"),
+            "dev-perl/Locale-gettext-1.70.0"
+        );
+        assert_eq!(
+            cpv_from_container("sys-libs/zlib/glibc-2.42-1.gpkg.tar"),
+            None
+        );
+
+        // The flat layout older em wrote, always with a build id.
         assert_eq!(cpv("virtual/awk-1-3.gpkg.tar"), "virtual/awk-1");
         assert_eq!(cpv("acct-group/audio-0-1.gpkg.tar"), "acct-group/audio-0");
         assert_eq!(

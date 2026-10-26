@@ -21,6 +21,7 @@ fn main() {
             metadata_dir: Path::new(&a[2]),
             basename: &a[3],
             signing: None,
+            build_id: None,
         },
         Path::new(&a[4]),
     )

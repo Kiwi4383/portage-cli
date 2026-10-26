@@ -2,8 +2,8 @@
 //!
 //! Packages the shell's post-`src_install` image (`$ED`) plus a VDB-shaped
 //! metadata directory into a `portage-binpkg` container, signing the Manifest
-//! when a key is configured. The build-id numbering that decides the output
-//! filename lives in [`crate::binpkg::next_build_id`].
+//! when a key is configured. The build id and the output path come from
+//! [`crate::binpkg::reserve_container`].
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -146,8 +146,8 @@ fn write_binpkg(
     // Held through the index refresh below: a parallel run must not take the same build id or
     // rewrite the index without this container.
     let _lock = crate::binpkg::lock_pkgdir(&pkgdir)?;
-    let build_id = crate::binpkg::next_build_id(&pkgdir, cat, &pf);
-    let out = pkgdir.join(cat).join(format!("{pf}-{build_id}.gpkg.tar"));
+    let pn = ebuild.cpv().cpn.package;
+    let (build_id, out) = crate::binpkg::reserve_container(&pkgdir, cat, pn.as_str(), &pf)?;
 
     // FEATURES=binpkg-signing: sign the Manifest (clearsign) + a detached
     // .sig per metadata/image member, matching real portage's own gpkg
@@ -164,16 +164,21 @@ fn write_binpkg(
     } else {
         None
     };
-    portage_binpkg::write_gpkg(
+    let written = portage_binpkg::write_gpkg(
         &portage_binpkg::GpkgInput {
             image_dir: image_dir.as_std_path(),
             metadata_dir: metadata_dir.as_std_path(),
             basename: &pf,
             signing: signing_key.as_ref(),
+            build_id: Some(build_id),
         },
         out.as_std_path(),
     )
-    .with_context(|| format!("writing binary package {out}"))?;
+    .with_context(|| format!("writing binary package {out}"));
+    if written.is_err() {
+        let _ = std::fs::remove_file(out.as_std_path());
+    }
+    written?;
     // Keep `Packages` coherent for `-k`/`-g` without a separate
     // `em maint binhost` (quickpkg already reindexes; normal `-b`/`-B` did not).
     let chost = shell.get_var("CHOST").unwrap_or_default();

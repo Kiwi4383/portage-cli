@@ -46,10 +46,13 @@ pub struct GpkgInput<'a> {
     /// block — matching real portage's own gpkg signing scheme (see this
     /// crate's `gpg` module doc).
     pub signing: Option<&'a gpg::SigningKey>,
+    /// Recorded as the `BUILD_ID` metadata entry, as Portage does, in place of one
+    /// `metadata_dir` may hold; `None` keeps the directory's own
+    pub build_id: Option<u32>,
 }
 
 /// Build a GPKG from `input` and write it to `out_path`
-/// (conventionally `<PKGDIR>/<category>/<PF>-<BUILD_ID>.gpkg.tar`).
+/// (conventionally `<PKGDIR>/<category>/<PN>/<PF>-<BUILD_ID>.gpkg.tar`, Portage's multi-instance layout).
 ///
 /// The owner/mode/xattr metadata of `image_dir` is read as it sits on disk, so the
 /// caller is responsible for running this where that metadata is correct — inside
@@ -68,7 +71,16 @@ pub fn write_gpkg(input: &GpkgInput, out_path: &Path) -> Result<()> {
     //    directory entry*: portage's `get_metadata` does `extractfile(m).read()`
     //    on every member, which is `None` for a dir.
     let metadata = pkg_dir.join(METADATA_TAR);
-    tar_metadata(input.metadata_dir, &metadata)?;
+    let extra = staging.path().join("extra-metadata");
+    if let Some(id) = input.build_id {
+        std::fs::create_dir_all(&extra)?;
+        std::fs::write(extra.join("BUILD_ID"), format!("{id}\n"))?;
+    }
+    tar_metadata(
+        input.metadata_dir,
+        input.build_id.map(|_| extra.as_path()),
+        &metadata,
+    )?;
 
     // 3. image.tar.zst — `${D}` under `image/`, with xattrs (caps/ACLs/devnodes).
     let image = pkg_dir.join(IMAGE_TAR);
@@ -180,12 +192,19 @@ fn tar_tree(dir: &Path, prefix: &str, out: &Path, xattrs: bool) -> Result<()> {
 /// `tar --zstd` the *files* directly in `dir` (the VDB is flat) into `out`, each
 /// member as `metadata/<name>` — with **no** `metadata/` directory entry, since
 /// portage reads every metadata member with `extractfile().read()`.
-fn tar_metadata(dir: &Path, out: &Path) -> Result<()> {
-    let mut names: Vec<std::ffi::OsString> = std::fs::read_dir(dir)?
-        .filter_map(|e| e.ok())
-        .map(|e| e.file_name())
-        .collect();
-    names.sort();
+/// The files of `dir`, and of `extra`, which wins a name both have
+fn tar_metadata(dir: &Path, extra: Option<&Path>, out: &Path) -> Result<()> {
+    let list = |dir: &Path| -> Result<Vec<std::ffi::OsString>> {
+        let mut names: Vec<_> = std::fs::read_dir(dir)?
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name())
+            .collect();
+        names.sort();
+        Ok(names)
+    };
+    let extra_names = extra.map(list).transpose()?.unwrap_or_default();
+    let mut names = list(dir)?;
+    names.retain(|n| !extra_names.contains(n));
     let mut cmd = Command::new("tar");
     cmd.arg("--zstd")
         .arg("--numeric-owner")
@@ -197,6 +216,9 @@ fn tar_metadata(dir: &Path, out: &Path) -> Result<()> {
         .arg("-cf")
         .arg(out);
     cmd.args(&names);
+    if let Some(extra) = extra {
+        cmd.arg("-C").arg(extra).args(&extra_names);
+    }
     run("tar", &mut cmd)
 }
 
@@ -941,6 +963,7 @@ mod tests {
                 metadata_dir: &meta,
                 basename: "foo-1.0",
                 signing: None,
+                build_id: None,
             },
             &container,
         )
@@ -964,6 +987,35 @@ mod tests {
             read_environment(&container).unwrap().as_deref(),
             Some(&b"not real bzip"[..])
         );
+    }
+
+    #[test]
+    fn a_build_id_replaces_the_metadata_directorys_own() {
+        let root = tempfile::tempdir().unwrap();
+        let (image, meta) = (root.path().join("image"), root.path().join("meta"));
+        fs::create_dir_all(&image).unwrap();
+        fs::create_dir_all(&meta).unwrap();
+        for (k, v) in [
+            ("PF", "foo-1.0"),
+            ("CATEGORY", "app-test"),
+            ("SLOT", "0"),
+            ("BUILD_ID", "1"),
+        ] {
+            fs::write(meta.join(k), format!("{v}\n")).unwrap();
+        }
+        let container = root.path().join("app-test/foo/foo-1.0-7.gpkg.tar");
+        let input = GpkgInput {
+            image_dir: &image,
+            metadata_dir: &meta,
+            basename: "foo-1.0",
+            signing: None,
+            build_id: Some(7),
+        };
+        write_gpkg(&input, &container).unwrap();
+        let out = read_metadata(&container).unwrap();
+        assert_eq!(out.get("BUILD_ID").map(String::as_str), Some("7"));
+        assert_eq!(out.get("PF").map(String::as_str), Some("foo-1.0"));
+        assert_eq!(fs::read_to_string(meta.join("BUILD_ID")).unwrap(), "1\n");
     }
 
     // `extract_image` recovers the image tree with the `image/` prefix stripped
@@ -996,6 +1048,7 @@ mod tests {
                 metadata_dir: &meta,
                 basename: "foo-1.0",
                 signing: None,
+                build_id: None,
             },
             &container,
         )
@@ -1086,6 +1139,7 @@ mod tests {
                 metadata_dir: &meta,
                 basename: "foo-1.0",
                 signing: Some(&signing),
+                build_id: None,
             },
             &container,
         )
@@ -1149,6 +1203,7 @@ mod tests {
                 metadata_dir: &meta,
                 basename: "foo-1.0",
                 signing: Some(&signing),
+                build_id: None,
             },
             &container,
         )
@@ -1183,6 +1238,7 @@ mod tests {
                 metadata_dir: &meta,
                 basename: "foo-1.0",
                 signing: None,
+                build_id: None,
             },
             &container,
         )
@@ -1218,6 +1274,7 @@ mod tests {
                 metadata_dir: &meta,
                 basename: "foo-1.0",
                 signing: None,
+                build_id: None,
             },
             &container,
         )
@@ -1263,6 +1320,7 @@ mod tests {
                 metadata_dir: &meta,
                 basename: "foo-1.0",
                 signing: None,
+                build_id: None,
             },
             &container,
         )

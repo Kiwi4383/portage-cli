@@ -489,6 +489,7 @@ mod tests {
                 metadata_dir: &meta,
                 basename: pf,
                 signing: None,
+                build_id: None,
             },
             container.as_std_path(),
         )

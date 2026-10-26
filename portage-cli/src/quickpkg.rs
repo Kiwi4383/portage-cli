@@ -240,22 +240,23 @@ fn package_one(
 
     let cat = pkg.category();
     let pf = pkg.pf().to_string();
-    let build_id = crate::binpkg::next_build_id(pkgdir, cat, &pf);
-    let out = pkgdir.join(cat).join(format!("{pf}-{build_id}.gpkg.tar"));
-    if let Some(parent) = out.parent() {
-        std::fs::create_dir_all(parent.as_std_path())?;
-    }
-
-    portage_binpkg::write_gpkg(
+    let pn = pkg.cpv().cpn.package;
+    let (build_id, out) = crate::binpkg::reserve_container(pkgdir, cat, pn.as_str(), &pf)?;
+    let written = portage_binpkg::write_gpkg(
         &portage_binpkg::GpkgInput {
             image_dir: &image_dir,
             metadata_dir: pkg.path().as_std_path(),
             basename: &pf,
             signing: None,
+            build_id: Some(build_id),
         },
         out.as_std_path(),
     )
-    .with_context(|| format!("writing binary package {out}"))?;
+    .with_context(|| format!("writing binary package {out}"));
+    if written.is_err() {
+        let _ = std::fs::remove_file(out.as_std_path());
+    }
+    written?;
 
     let size = std::fs::metadata(out.as_std_path())
         .map(|m| m.len())

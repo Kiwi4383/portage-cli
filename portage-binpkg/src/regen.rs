@@ -228,6 +228,7 @@ mod tests {
                 metadata_dir: &meta,
                 basename: "foo-1.0",
                 signing: None,
+                build_id: None,
             },
             container.as_std_path(),
         )
@@ -310,6 +311,7 @@ mod tests {
                     metadata_dir: &meta,
                     basename: "foo-1.0",
                     signing: None,
+                    build_id: None,
                 },
                 container.as_std_path(),
             )

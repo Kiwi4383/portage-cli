@@ -49,6 +49,18 @@ short, path-safe form of the key:
 This slug is stable (same flags → same slug) and safe to use directly as a
 `PKGDIR` path component (Recipe 1 below).
 
+## Layout
+
+em writes Portage's `binpkg-multi-instance` layout,
+`PKGDIR/<category>/<PN>/<PF>-<BUILD_ID>.gpkg.tar`, and records `BUILD_ID`
+inside the package as Portage does. The `<PN>` directory makes the build id
+unambiguous even for versions that are a bare integer (`acct-group/audio/audio-0-1`).
+
+Packages older em wrote flat, `PKGDIR/<category>/<PF>-<BUILD_ID>.gpkg.tar`,
+are still read and reused by em, and new builds number past them. Portage's
+own reindex (`emaint binhost --fix`) leaves them out, so rebuild them before
+handing the PKGDIR to Portage.
+
 ## Recipes
 
 ### Recipe 1 — separate PKGDIR per variant (stages default, zero risk)
@@ -91,8 +103,8 @@ em maint binpkg prune   # keeps one BUILD_ID per (cpv, chost, key) — not per c
 Sample `list` output distinguishing two board variants of the same package:
 
 ```text
-sys-libs/glibc-2.42                    3      18.2 MiB  riscv64-unknown-linux-gnu  a1b2c3d4e5f6  -O2 -march=rv64gcv_zvl256b       app-glibc/glibc-2.42-3.gpkg.tar
-sys-libs/glibc-2.42                    2      18.1 MiB  riscv64-unknown-linux-gnu  9f8e7d6c5b4a  -O2 -march=rva23u64              app-glibc/glibc-2.42-2.gpkg.tar
+sys-libs/glibc-2.42                    3      18.2 MiB  riscv64-unknown-linux-gnu  a1b2c3d4e5f6  -O2 -march=rv64gcv_zvl256b       sys-libs/glibc/glibc-2.42-3.gpkg.tar
+sys-libs/glibc-2.42                    2      18.1 MiB  riscv64-unknown-linux-gnu  9f8e7d6c5b4a  -O2 -march=rva23u64              sys-libs/glibc/glibc-2.42-2.gpkg.tar
 ```
 
 ### Recipe 3 — cross host tools (host BDEPEND reuse under `--target`)

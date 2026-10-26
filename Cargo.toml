@@ -134,7 +134,7 @@ object = "0.40"
 itertools = "0.15.0"
 jwalk = "0.9"
 ldconfig = "0.2.1"
-pkgcraft = { git = "https://github.com/pkgcraft/pkgcraft.git", rev = "b9fb45eb1995a6b9750f21312cda5e95bfbbe1bb" }
+pkgcraft = { git = "https://github.com/pkgcraft/pkgcraft.git", rev = "e27ed853c034ad526e904df3766b694557431812" }
 regex = "1"
 roxmltree = "0.21.1"
 sha2 = "0.11"

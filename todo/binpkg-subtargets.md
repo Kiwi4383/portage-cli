@@ -189,13 +189,16 @@ exact key match only.
 
 ## Storage and index model
 
-### On disk (unchanged GPKG layout)
+### On disk
 
 ```text
 PKGDIR/
-  <cat>/<PF>-<BUILD_ID>.gpkg.tar
+  <cat>/<PN>/<PF>-<BUILD_ID>.gpkg.tar    # Portage's binpkg-multi-instance layout, since 84572e40 (2026-10-26)
   Packages
 ```
+
+Before 84572e40 em wrote a flat `<cat>/<PF>-<BUILD_ID>.gpkg.tar`, which Portage's reindex skips; em still
+reads it. Writers hold `PKGDIR/.em-pkgdir.lock` and rename containers and the index into place (220c32a0).
 
 Multiple BUILD_IDs per CPV already work on write (`next_build_id`). Problem is
 **index and prune treat CPV as unique**.

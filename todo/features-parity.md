@@ -59,3 +59,11 @@ Checked in a stage3 sandbox: a build saw `binpkg-multi-instance preserve-libs` (
 
 Open: ccache support; whether `--info` should say that the build value differs from Portage's stacked one (step 4).
 
+**`candy` (Luca, 2026-10-27):** Portage's is a scrolling-message spinner while the resolver runs; em's resolve is too
+fast to need one. Instead, `FEATURES=candy` selects a richer build progress display: a sink on the activity bus
+(next to `HumanStdoutSink`, see [[activity-status]]) drawing per-package/phase bars and the ETA from the duration
+history, with indicatif (already a dependency, used for sync) or ratatui. Not started.
+- indicatif's `MultiProgress` can keep each running build's last output line under its bar, so parallel
+  (`--jobs N`) builds stay readable; the mode works for both verbose and quiet runs.
+- It may become the default display once it exists.
+

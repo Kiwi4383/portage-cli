@@ -166,6 +166,10 @@ fn fixture(pkgs: &[Pkg], installed: &[&str]) -> Fix {
 }
 
 fn solve(fix: &Fix, opts: Solve<'_>) -> super::DepgraphOutcome {
+    try_solve(fix, opts).unwrap()
+}
+
+fn try_solve(fix: &Fix, opts: Solve<'_>) -> anyhow::Result<super::DepgraphOutcome> {
     let arch = Arch::intern("amd64");
     let world: &[Dep] = &[];
     let extra: &[(Dep, Vec<portage_atom_pubgrub::UseOverride>)] = &[];
@@ -206,7 +210,6 @@ fn solve(fix: &Fix, opts: Solve<'_>) -> super::DepgraphOutcome {
         complete_graph: opts.complete_graph,
         quiet: true,
     }))
-    .unwrap()
 }
 
 fn names(outcome: &super::DepgraphOutcome) -> Vec<String> {
@@ -363,6 +366,57 @@ fn onlydeps_plans_the_dependency_and_omits_the_target() {
     opts.empty = true;
     opts.onlydeps = true;
     assert_eq!(names(&solve(&fix, opts)), ["app-misc/bar-1"]);
+}
+
+/// `flagged-1` has `IUSE=foo` (off), `flagged-2` has no `foo`, `defaulted-1` has `IUSE=+foo`
+fn flagged() -> Vec<Pkg> {
+    let pkg = |cpv, iuse| Pkg {
+        cpv,
+        keywords: "amd64",
+        depend: "",
+        iuse,
+        slot: "0",
+    };
+    vec![
+        pkg("app-misc/flagged-1", "foo"),
+        pkg("app-misc/flagged-2", ""),
+        pkg("app-misc/defaulted-1", "+foo"),
+    ]
+}
+
+#[test]
+fn a_target_use_requirement_picks_a_version_with_the_flag_and_asks_for_it() {
+    let fix = fixture(&flagged(), &[]);
+    let atoms = [TargetAtom::explicit("app-misc/flagged[foo]")];
+    let outcome = solve(&fix, Solve::new(&atoms));
+    assert_eq!(names(&outcome), ["app-misc/flagged-1"]);
+    assert_eq!(
+        outcome.exit_code, 1,
+        "foo is off, so a USE change is required"
+    );
+}
+
+#[test]
+fn a_target_use_requirement_already_met_needs_no_change() {
+    let fix = fixture(&flagged(), &[]);
+    let atoms = [TargetAtom::explicit("app-misc/defaulted[foo]")];
+    let outcome = solve(&fix, Solve::new(&atoms));
+    assert_eq!(names(&outcome), ["app-misc/defaulted-1"]);
+    assert_eq!(outcome.exit_code, 0);
+}
+
+#[test]
+fn a_target_use_requirement_no_version_has_is_unsatisfiable() {
+    let fix = fixture(&flagged(), &[]);
+    let atoms = [TargetAtom::explicit("app-misc/flagged[nosuchflag]")];
+    let Err(err) = try_solve(&fix, Solve::new(&atoms)) else {
+        panic!("a flag no version has must not resolve");
+    };
+    let message = err
+        .downcast_ref::<crate::error::UnsatisfiableTarget>()
+        .map(|e| e.0.clone())
+        .unwrap_or_default();
+    assert!(message.contains("Missing IUSE: nosuchflag"), "{err:#}");
 }
 
 #[test]

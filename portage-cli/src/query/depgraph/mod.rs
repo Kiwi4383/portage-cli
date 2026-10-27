@@ -420,6 +420,7 @@ fn resolve(
         provided_avail: &prepared.provided_avail,
         root_pkgs: &prepared.root_pkgs,
         root_cpns: &prepared.root_cpns,
+        root_use_deps: &prepared.root_use_deps,
         exclude_atoms: &prepared.exclude_atoms,
         resume_completed: &prepared.resume_completed,
         cross: &prepared.cross,
@@ -811,6 +812,8 @@ fn provided_availability(provided: &[Cpv], data: &repo::RepoData) -> Vec<(Cpv, O
 struct RootTargets {
     /// One solver root dep per acceptable atom
     deps: Vec<(PortagePackage, PortageVersionSet)>,
+    /// The USE requirements those atoms name (`sys-libs/zlib[minizip]`)
+    use_deps: Vec<RootUseDeps>,
     /// CPNs that became solver roots. Unsatisfiable atoms are not inserted.
     cpns: std::collections::HashSet<Cpn>,
     /// Atoms dropped with a warning, reported after the plan
@@ -819,6 +822,15 @@ struct RootTargets {
     /// policy filters them. The slot is the filtered ebuild's slot.
     masked_kept: Vec<(Cpv, Option<Interned<DefaultInterner>>, String)>,
 }
+
+/// A requested atom's USE requirements, on the package and versions it is a root dep for, with
+/// the label a required change is credited to: the atom, or the set it came from
+pub(super) type RootUseDeps = (
+    PortagePackage,
+    PortageVersionSet,
+    Vec<portage_atom::UseDep>,
+    String,
+);
 
 /// Classify each requested atom into a solver root dep, a reported
 /// unsatisfiable target, or a silent drop.
@@ -832,6 +844,7 @@ fn classify_root_targets(
     multi_repo: bool,
 ) -> anyhow::Result<RootTargets> {
     let mut deps = Vec::new();
+    let mut use_deps = Vec::new();
     let mut cpns: std::collections::HashSet<Cpn> = std::collections::HashSet::new();
     // Root targets with no acceptable candidate, dropped from the solve and
     // reported after the plan (world-family provenance only — anything else is
@@ -854,55 +867,139 @@ fn classify_root_targets(
         // provider never registers, so leaving it in `deps` turns into an
         // opaque solver failure. Classify it here instead, the way portage does
         // in argument processing.
-        if pkg.slot().is_none() {
+        let unsatisfied = if pkg.slot().is_none() {
             let reasons = repo::filter_reasons_for_atom(data, &dep, &vs, target_policy);
             let problem = if reasons.is_empty() {
                 targets::TargetProblem::NoEbuilds
             } else {
                 targets::TargetProblem::AllFiltered
             };
-            let unsat = output::UnsatisfiableTarget {
-                atom: atom.clone(),
-                origin: target.origin.clone(),
-                problem,
-                reasons,
-            };
-            // `--emptytree` deliberately ignores what is installed, so a
-            // satisfying VDB entry must not silence the atom there.
-            let satisfied = !empty && targets::installed_satisfies(&dep, installed);
-            match targets::classify_root_target(&target.origin, satisfied, selective) {
-                targets::RootTargetDecision::DropWithWarning => {
-                    unsatisfiable.push(unsat);
-                    continue;
-                }
-                targets::RootTargetDecision::DropSilently => {
-                    // The installed slot must be this ebuild's slot. Another
-                    // slot of the same version is a different package.
-                    masked_kept.extend(unsat.reasons.iter().filter_map(|c| {
-                        let slot = c.slot?;
-                        let installed_here = installed.get(&c.cpv.cpn).is_some_and(|slots| {
-                            slots.get(&slot).is_some_and(|v| *v == c.cpv.version)
-                        });
-                        installed_here
-                            .then(|| (c.cpv.clone(), c.slot, repo::filter_reason_text(&c.reasons)))
-                    }));
-                    continue;
-                }
-                targets::RootTargetDecision::Fatal => {
-                    let message = output::unsatisfiable_target_message(&unsat, data, multi_repo);
-                    return Err(crate::error::UnsatisfiableTarget(message).into());
+            Err((problem, reasons, Vec::new()))
+        } else {
+            narrow_to_required_iuse(data, &dep, pkg, vs, target_policy)
+                .map_err(|missing| (targets::TargetProblem::MissingIuse, Vec::new(), missing))
+        };
+        let (pkg, vs) = match unsatisfied {
+            Ok(root) => root,
+            Err((problem, reasons, missing_iuse)) => {
+                let unsat = output::UnsatisfiableTarget {
+                    atom: atom.clone(),
+                    origin: target.origin.clone(),
+                    problem,
+                    reasons,
+                    missing_iuse,
+                };
+                // `--emptytree` deliberately ignores what is installed, so a
+                // satisfying VDB entry must not silence the atom there.
+                let satisfied = !empty && targets::installed_satisfies(&dep, installed);
+                match targets::classify_root_target(&target.origin, satisfied, selective) {
+                    targets::RootTargetDecision::DropWithWarning => {
+                        unsatisfiable.push(unsat);
+                        continue;
+                    }
+                    targets::RootTargetDecision::DropSilently => {
+                        // The installed slot must be this ebuild's slot. Another
+                        // slot of the same version is a different package.
+                        masked_kept.extend(unsat.reasons.iter().filter_map(|c| {
+                            let slot = c.slot?;
+                            let installed_here = installed.get(&c.cpv.cpn).is_some_and(|slots| {
+                                slots.get(&slot).is_some_and(|v| *v == c.cpv.version)
+                            });
+                            installed_here.then(|| {
+                                (c.cpv.clone(), c.slot, repo::filter_reason_text(&c.reasons))
+                            })
+                        }));
+                        continue;
+                    }
+                    targets::RootTargetDecision::Fatal => {
+                        let message =
+                            output::unsatisfiable_target_message(&unsat, data, multi_repo);
+                        return Err(crate::error::UnsatisfiableTarget(message).into());
+                    }
                 }
             }
-        }
+        };
         cpns.insert(dep.cpn);
+        if let Some(required) = dep.use_deps.filter(|u| !u.is_empty()) {
+            use_deps.push((pkg.clone(), vs.clone(), required, target.label()));
+        }
         deps.push((pkg, vs));
     }
     Ok(RootTargets {
         deps,
+        use_deps,
         cpns,
         unsatisfiable,
         masked_kept,
     })
+}
+
+/// Accepted versions of a target and the flags its USE requirements name that each one lacks
+pub(super) type MissingIuse = Vec<(Cpv, Vec<String>)>;
+
+/// The root dep of `dep` restricted to the accepted versions whose `IUSE_EFFECTIVE` has every
+/// flag its USE requirements name without a default, as emerge picks among those
+///
+/// `Err` lists, for each accepted version, the required flags it lacks, when none has them all.
+fn narrow_to_required_iuse(
+    data: &repo::RepoData,
+    dep: &Dep,
+    pkg: PortagePackage,
+    vs: PortageVersionSet,
+    policy: &repo::ResolvePolicy,
+) -> Result<(PortagePackage, PortageVersionSet), MissingIuse> {
+    use pubgrub::VersionSet as _;
+    let required: Vec<_> = dep
+        .use_deps
+        .iter()
+        .flatten()
+        .filter(|ud| ud.default.is_none())
+        .map(|ud| ud.flag)
+        .collect();
+    let Some(entries) = data.versions.get(&dep.cpn).filter(|_| !required.is_empty()) else {
+        return Ok((pkg, vs));
+    };
+    let excluded: HashSet<Cpv> = repo::filter_reasons_for_atom(data, dep, &vs, policy)
+        .into_iter()
+        .map(|c| c.cpv)
+        .collect();
+    let mut with_flags = Vec::new();
+    let mut missing = Vec::new();
+    for (cpv, cache) in entries {
+        let slot = &cache.metadata.slot;
+        if !vs.contains(&cpv.version) || !dep.matches_cpv(cpv, Some(slot)) || excluded.contains(cpv)
+        {
+            continue;
+        }
+        let iuse = effective_use::iuse_set(cache, &policy.force_mask.iuse_injection);
+        let lacking: Vec<String> = required
+            .iter()
+            .filter(|f| !iuse.contains(*f))
+            .map(|f| f.to_string())
+            .collect();
+        if lacking.is_empty() {
+            with_flags.push((cpv, slot.slot));
+        } else {
+            missing.push((cpv.clone(), lacking));
+        }
+    }
+    if missing.is_empty() {
+        return Ok((pkg, vs));
+    }
+    // The newest version that has the flags decides the slot, as `target_package` does otherwise.
+    let Some(&(_, slot)) = with_flags
+        .iter()
+        .max_by(|a, b| a.0.version.cmp(&b.0.version))
+    else {
+        return Err(missing);
+    };
+    let narrowed = with_flags
+        .iter()
+        .filter(|(_, s)| *s == slot)
+        .fold(PortageVersionSet::empty(), |set, (cpv, _)| {
+            set.union(&PortageVersionSet::singleton(cpv.version.clone()))
+        });
+    Ok((PortagePackage::slotted(dep.cpn, slot), narrowed))
 }
 
 /// Prefer a newer accepted same-slot version for a slot-operator rebuild.

@@ -71,6 +71,7 @@ pub(super) struct Prepared<'a> {
     pub(super) policy_facts: repo::PolicyFactsCache,
     pub(super) provided_avail: Vec<(Cpv, Option<String>)>,
     pub(super) root_deps: Vec<(PortagePackage, PortageVersionSet)>,
+    pub(super) root_use_deps: Vec<super::RootUseDeps>,
     pub(super) root_cpns: std::collections::HashSet<Cpn>,
     pub(super) unsatisfiable: Vec<super::output::UnsatisfiableTarget>,
     pub(super) masked_root_targets: Vec<(Cpv, Option<Interned<DefaultInterner>>, String)>,
@@ -303,6 +304,7 @@ pub(super) async fn prepare<'a>(
 
     let RootTargets {
         deps: root_deps,
+        use_deps: root_use_deps,
         cpns: root_cpns,
         unsatisfiable,
         masked_kept: masked_root_targets,
@@ -509,6 +511,7 @@ pub(super) async fn prepare<'a>(
         policy_facts,
         provided_avail,
         root_deps,
+        root_use_deps,
         root_cpns,
         unsatisfiable,
         masked_root_targets,

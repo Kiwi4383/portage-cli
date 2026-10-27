@@ -10,7 +10,7 @@ use portage_resolve::{conflicts, download_size, effective_use, repo, required_us
 use super::prepare::Prepared;
 use super::{
     AutounmaskPersist, DepgraphOutcome, PlannedMerge, ResolveMetrics, Resolved,
-    actionable_autounmask_candidates, autounmask, output, package_use, round, targets,
+    actionable_autounmask_candidates, autounmask, output, package_use, round,
 };
 use crate::cli::DepgraphFormat;
 
@@ -166,10 +166,7 @@ pub(super) fn assemble(
         // itself once instead of listing every atom it pulled in.
         let mut root_labels: Vec<String> = Vec::new();
         for t in atoms {
-            let label = match &t.origin {
-                targets::TargetOrigin::Explicit => t.atom.clone(),
-                targets::TargetOrigin::Set(name) => format!("@{name}"),
-            };
+            let label = t.label();
             if !root_labels.contains(&label) {
                 root_labels.push(label);
             }

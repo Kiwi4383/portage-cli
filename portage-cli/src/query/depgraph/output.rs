@@ -528,6 +528,9 @@ pub(super) struct UnsatisfiableTarget {
     ///
     /// Empty for [`TargetProblem::NoEbuilds`](super::targets::TargetProblem::NoEbuilds).
     pub reasons: Vec<super::repo::AutounmaskCandidate>,
+    /// For [`TargetProblem::MissingIuse`](super::targets::TargetProblem::MissingIuse), each
+    /// accepted version and the required flags its IUSE lacks
+    pub missing_iuse: super::MissingIuse,
 }
 
 /// Portage's `(masked by: …)` parenthetical for one filtered version
@@ -581,8 +584,22 @@ fn target_lines(target: &UnsatisfiableTarget, data: &RepoData, multi_repo: bool)
             }
         }
         TargetProblem::AllFiltered => head.push(seg(plain_style, ": all ebuilds masked")),
+        TargetProblem::MissingIuse => {
+            head.push(seg(
+                plain_style,
+                ": no ebuilds have the USE flags it requires",
+            ));
+        }
     }
     let mut lines = vec![head];
+    lines.extend(target.missing_iuse.iter().map(|(cpv, flags)| {
+        vec![
+            seg(plain_style, "  "),
+            seg(C_PKG, format!("{}-{}", cpv.cpn, cpv.version)),
+            seg(C_OFF, format!("::{}", super::repo::repo_name_of(data, cpv))),
+            seg(plain_style, format!(" (Missing IUSE: {})", flags.join(" "))),
+        ]
+    }));
     lines.extend(target.reasons.iter().map(|c| {
         vec![
             seg(plain_style, "  "),

@@ -68,6 +68,8 @@ impl PortageDependencyProvider {
         solution: &SelectedDependencies<PortagePackage, Version>,
         by_target: &mut HashMap<PortagePackage, TargetAcc>,
     ) {
+        // The synthetic root's constraints are the requested atoms', credited to their labels.
+        let credit_parent = !parent.is_virtual() || *parent == PortagePackage::synthetic_root();
         for constraint in udeps {
             let (target_pkg, vs) = &constraint.target;
             if target_pkg.is_virtual() {
@@ -161,7 +163,7 @@ impl PortageDependencyProvider {
                     } else {
                         entry.2.insert(ud.flag);
                     }
-                    if !parent.is_virtual() {
+                    if credit_parent {
                         entry.3.insert(constraint.parent_cpn_str);
                     }
                 }
@@ -187,6 +189,8 @@ impl PortageDependencyProvider {
         // rather than rebuilt at the installed version.  Keyed by the installed
         // package; value is the newer version to build instead.
         let mut upgrade_to: HashMap<PortagePackage, Version> = HashMap::new();
+        let root = PortagePackage::synthetic_root();
+        let root_ver = Version::parse("0").expect("\"0\" is a version");
 
         // Iterate to fixpoint:
         // 1. Conditional deps cascade — when package A needs flag X, A's own
@@ -221,6 +225,16 @@ impl PortageDependencyProvider {
                     &mut by_target,
                 );
             }
+
+            // -- the requested atoms' own USE requirements --
+            self.accumulate_use_dep_violations(
+                &root,
+                &root_ver,
+                false,
+                &self.root_use_deps,
+                solution,
+                &mut by_target,
+            );
 
             // -- upgrade expansion --
             // For each installed package with violations, check whether a newer

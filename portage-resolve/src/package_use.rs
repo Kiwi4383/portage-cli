@@ -390,7 +390,18 @@ fn build_comments(
     }
 
     let mut comments = Vec::new();
-    if let Some(path) = found_path {
+    // A requested atom that names the flag itself is the requirer, whatever else reaches the
+    // package; it is credited as `<atom> (argument)`, which no package name can be.
+    let arguments: Vec<&String> = req
+        .required_by
+        .iter()
+        .filter(|r| r.ends_with(" (argument)"))
+        .collect();
+    if !arguments.is_empty() {
+        for credit in arguments {
+            comments.push(format!("# required by {credit}"));
+        }
+    } else if let Some(path) = found_path {
         // Show chain from deepest (closest to target) back to root.
         for hop in path.iter().rev() {
             comments.push(format!("# required by {hop}"));
@@ -526,6 +537,45 @@ mod tests {
             atom: atom.to_string(),
             flags: vec!["X".to_string()],
         }
+    }
+
+    fn requirement(package: &str, required_by: &[&str]) -> UseFlagRequirement {
+        UseFlagRequirement {
+            package: portage_atom_pubgrub::PortagePackage::unslotted(cpn(package)),
+            version: Version::parse("1").unwrap(),
+            upgrade_to: None,
+            required_enabled: Vec::new(),
+            required_disabled: Vec::new(),
+            required_by: required_by.iter().map(|r| r.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn a_requested_atom_is_credited_only_when_it_named_the_flag_itself() {
+        let roots: HashSet<String> = ["spike-test/needs".to_string()].into();
+        let labels = ["spike-test/needs".to_string()];
+        let mut adj = Adjacency::new();
+        adj.insert(
+            "spike-test/needs".to_string(),
+            vec![(
+                "spike-test/flagged".to_string(),
+                "spike-test/needs-1".to_string(),
+            )],
+        );
+        // A dependency of `needs` requires the flag; the parent's name equals the atom typed.
+        let by_dependency = requirement("spike-test/flagged", &["spike-test/needs"]);
+        assert_eq!(
+            build_comments(&by_dependency, &labels, &roots, &adj),
+            [
+                "# required by spike-test/needs-1",
+                "# required by spike-test/needs (argument)"
+            ]
+        );
+        let by_argument = requirement("sys-libs/zlib", &["sys-libs/zlib[minizip] (argument)"]);
+        assert_eq!(
+            build_comments(&by_argument, &labels, &roots, &adj),
+            ["# required by sys-libs/zlib[minizip] (argument)"]
+        );
     }
 
     #[test]

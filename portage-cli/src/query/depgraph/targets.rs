@@ -67,6 +67,14 @@ pub struct TargetAtom {
 }
 
 impl TargetAtom {
+    /// What the user asked for: the atom, or the set it came from (`@world` once, not each atom)
+    pub fn label(&self) -> String {
+        match &self.origin {
+            TargetOrigin::Explicit => self.atom.clone(),
+            TargetOrigin::Set(name) => format!("@{name}"),
+        }
+    }
+
     /// A target named on the command line
     pub fn explicit(atom: impl Into<String>) -> Self {
         Self {
@@ -84,6 +92,8 @@ pub enum TargetProblem {
     AllFiltered,
     /// No ebuild for this package at all
     NoEbuilds,
+    /// Every accepted version lacks a USE flag the atom requires, as in `pkg[nosuchflag]`
+    MissingIuse,
 }
 
 /// What to do with a root target no acceptable ebuild satisfies

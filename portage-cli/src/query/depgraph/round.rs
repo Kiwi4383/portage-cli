@@ -54,6 +54,7 @@ pub(super) struct RoundCtx<'a> {
     pub(super) provided_avail: &'a [(Cpv, Option<String>)],
     pub(super) root_pkgs: &'a [PortagePackage],
     pub(super) root_cpns: &'a HashSet<Cpn>,
+    pub(super) root_use_deps: &'a [super::RootUseDeps],
     pub(super) exclude_atoms: &'a [Dep],
     pub(super) resume_completed: &'a HashSet<(MergeRoot, String)>,
     pub(super) cross: &'a root_aware::CrossContext,
@@ -157,6 +158,7 @@ pub(super) fn solve_round(
         provided_avail,
         root_pkgs,
         root_cpns,
+        root_use_deps,
         exclude_atoms,
         resume_completed,
         cross,
@@ -251,6 +253,15 @@ pub(super) fn solve_round(
         // root_deps_rdeps`) — a property of which operation is running, not of
         // the sysroot's CHOST/CBUILD.
         provider.set_root_deps_rdeps(root_deps_rdeps);
+        for (package, versions, use_deps, label) in root_use_deps {
+            let credit = format!("{label} (argument)");
+            provider.add_root_use_deps(
+                package.clone(),
+                versions.clone(),
+                use_deps.clone(),
+                &credit,
+            );
+        }
         provider.set_nodeps(nodeps);
         provider.set_rebuild_tree(emptytree_native);
         // `--deep` and native emptytree bump `:*` deps to the newest slot.

@@ -330,6 +330,8 @@ pub struct PortageDependencyProvider {
     /// `--with-bdeps` with `--deep`: an installed package kept at its version still lists its
     /// DEPEND and BDEPEND, so their upgrades and missing build tools enter the plan as in emerge
     pub(crate) kept_build_deps: bool,
+    /// USE requirements the requested atoms name, checked after the solve as a dependency's are
+    pub(crate) root_use_deps: Vec<convert::UseDepConstraint>,
     /// Selective resolution without `--update`: an installed version that
     /// satisfies a root target is kept rather than replaced by the newest
     /// accepted one
@@ -763,6 +765,7 @@ impl PortageDependencyProvider {
             prefer_newest_slot: false,
             prefer_update: false,
             kept_build_deps: false,
+            root_use_deps: Vec::new(),
             selective_no_update: false,
             root_deps_rdeps: false,
             nodeps: false,
@@ -897,6 +900,23 @@ impl PortageDependencyProvider {
     /// DEPEND and BDEPEND, so their upgrades and missing build tools enter the plan
     pub fn set_kept_build_deps(&mut self, active: bool) {
         self.kept_build_deps = active;
+    }
+
+    /// Require the USE flags a requested atom names (`sys-libs/zlib[minizip]`) of the version the
+    /// solve picks for it; a violation is a required USE change, as a dependency's is, credited
+    /// to `label` in [`UseFlagRequirement::required_by`]
+    pub fn add_root_use_deps(
+        &mut self,
+        package: PortagePackage,
+        versions: PortageVersionSet,
+        use_deps: Vec<portage_atom::UseDep>,
+        label: &str,
+    ) {
+        self.root_use_deps.push(convert::UseDepConstraint {
+            target: (package, versions),
+            use_deps,
+            parent_cpn_str: Interned::intern(label),
+        });
     }
 
     /// Selective resolution without `--update`: keep an installed version that

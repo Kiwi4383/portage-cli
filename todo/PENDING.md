@@ -27,7 +27,7 @@ file, version atoms and `package.env` per toolchain open).
 | Execution shape: decided 2026-10-25 — first crossdev-stages runs the em binary inside its own hakoniwa box (closure spike: fine single-threaded, breaks tokio's signal driver from a threaded caller); `em stages` for R3 | 🟡 decided | [[crossdev-stages-backend-api]] "Direction" |
 | em side of that step: `plan_failed` events and `pkg_end` `failed_phase`/`log` (R5/R9), `--activity-fd` duplicated per step (2026-10-25); crossdev-stages side (phases 5–7, 11) is a sibling repo: needs Luca | 🟡 | [[crossdev-stages-backend-api]] |
 | Binpkgs for boards (k1/k3): PKGDIR lock + atomic writes, Portage's `<cat>/<pn>/<pf>-<id>` layout, `em clean pkg` keeps integer versions and reindexes (2026-10-26); live two-config check of the key gate not run | 🟡 | [[binpkg-subtargets]], `docs/user/binhost.md` |
-| Release: crates bumped (portage-atom 0.12.0, …, cf2e7825); `./release.sh --yes` must be run by Luca (auto mode blocks publishing) | 🟡 | `release.sh` |
+| Release: portage-atom 0.12.0 and the rest published 2026-10-27 (cf2e7825) | ✅ | `release.sh` |
 | Merge path residuals: more of `run_phase`, the missing-profile policy | 🟡 | [[merge-path-tidy-up]] |
 | Masked installed version kept: unmeasured modes | 🟡 | [[installed-masked-version-kept-as-candidate]] |
 | Tests for spec pins: newest keyworded version in the pin, host mask/unmask of the cross category | 🔴 later | review 2026-10-22 |
@@ -36,7 +36,7 @@ file, version atoms and `package.env` per toolchain open).
 | One resolved Portage config: `Settings` landed 2026-10-23 (envvar, --info, resolver, merge protection); build env seeding waits on FEATURES parity | 🟡 | [[portage-config-layering]], [[features-parity]] |
 | `config_changes_needed` events carry no change list; a failed build renders three times on stderr | 🔴 later | review 2026-10-25 |
 | Upstream brush has 14 commits not on `for-portage-repo` (fd23ba73) | 🔴 later | [[brush-fork-push-state]] |
-| Parity: a target atom's USE requirement is ignored — `em -p 'sys-libs/zlib[minizip]'` plans a reinstall without it; emerge asks for the USE change (found 2026-10-25) | 🔴 | not yet filed |
+| Parity: a target atom's USE requirement was ignored (`sys-libs/zlib[minizip]`); fixed 2026-10-27, with emerge's `Missing IUSE` and version narrowing | ✅ | — |
 | Parity: `texlive-core` pulls a perl stack via `virtual/perl-File-Temp`; firefox misses `python-3.15` | 🔴 | found 2026-10-14 by `bench-em-vs-emerge.sh`, not yet filed |
 
 Done 2026-10-23…26, no note of their own: `--with-bdeps` y/n/auto with kept packages' build deps (08eacc48);

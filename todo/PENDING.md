@@ -2,7 +2,7 @@
 
 Open items from the toolchain → stage → binhost work, grouped. Each links to the
 file with the detail. Status: 🔴 not started · 🟡 partial/decided · ✅ done (kept
-here briefly for context). Updated **2026-10-21**.
+here briefly for context). Updated **2026-10-27**.
 
 **How to use this file:** start from the open queue below; jump to the linked
 note for design. Long historical narrative for the 2026-07-05 riscv shakeout
@@ -11,7 +11,7 @@ is the audit trail). Fully closed design notes live under `todo/done/`;
 `[[name]]` links still resolve by filename there. Milestone-level build
 progress (M0 → M4, each with its gate command) lives in [[build-roadmap]].
 
-## RESUME HERE (2026-10-21) — em as the crossdev-stages backend
+## RESUME HERE (2026-10-27) — em as the crossdev-stages backend
 
 Next arc: crossdev-stages calls `em` as a library instead of driving real
 crossdev/emerge. Requirements R0–R9 and the 12-phase plan are in
@@ -24,15 +24,25 @@ file, version atoms and `package.env` per toolchain open).
 | Spec: file `--target`, derived profile, pins, exceptions, mixed gcc+clang (clang-main riscv64 stage1 live ✅ 2026-10-22); `--setup -r` resumes from milestones (2026-10-22); cross/target gcc snapshot alignment open | 🟡 | [[cross-sysroot-spec]] |
 | R4: baselayout before any `acct-*` in a sysroot populate — em's bootstrap steps already order it; nothing to change (decided 2026-10-21) | ✅ | [[crossdev-stages-backend-api]] |
 | R1: board-root merges and `em stages --target T --root R` verified 2026-10-22. R8: `em portageq envvar` done 2026-10-22 | ✅ | [[crossdev-stages-backend-api]], [[portageq-workalike-plan]] |
-| Execution shape (closure vs re-exec) and the shared container crate | 🔴 needs Luca | [[crossdev-stages-backend-api]] R0/R0b |
+| Execution shape: decided 2026-10-25 — first crossdev-stages runs the em binary inside its own hakoniwa box (closure spike: fine single-threaded, breaks tokio's signal driver from a threaded caller); `em stages` for R3 | 🟡 decided | [[crossdev-stages-backend-api]] "Direction" |
+| em side of that step: `plan_failed` events and `pkg_end` `failed_phase`/`log` (R5/R9), `--activity-fd` duplicated per step (2026-10-25); crossdev-stages side (phases 5–7, 11) is a sibling repo: needs Luca | 🟡 | [[crossdev-stages-backend-api]] |
+| Binpkgs for boards (k1/k3): PKGDIR lock + atomic writes, Portage's `<cat>/<pn>/<pf>-<id>` layout, `em clean pkg` keeps integer versions and reindexes (2026-10-26); live two-config check of the key gate not run | 🟡 | [[binpkg-subtargets]], `docs/user/binhost.md` |
+| Release: crates bumped (portage-atom 0.12.0, …, cf2e7825); `./release.sh --yes` must be run by Luca (auto mode blocks publishing) | 🟡 | `release.sh` |
 | Merge path residuals: more of `run_phase`, the missing-profile policy | 🟡 | [[merge-path-tidy-up]] |
 | Masked installed version kept: unmeasured modes | 🟡 | [[installed-masked-version-kept-as-candidate]] |
 | Tests for spec pins: newest keyworded version in the pin, host mask/unmask of the cross category | 🔴 later | review 2026-10-22 |
 | `env_lines` writes `KEY="value"` unescaped (spec values with `"`/`$`): think it through | 🔴 | review 2026-10-22 |
 | `ProfileStack::build_in` parses repos.conf for every profile (malformed one now fails all): think it through | 🔴 | review 2026-10-22 |
 | One resolved Portage config: `Settings` landed 2026-10-23 (envvar, --info, resolver, merge protection); build env seeding waits on FEATURES parity | 🟡 | [[portage-config-layering]], [[features-parity]] |
+| `config_changes_needed` events carry no change list; a failed build renders three times on stderr | 🔴 later | review 2026-10-25 |
+| Upstream brush has 14 commits not on `for-portage-repo` (fd23ba73) | 🔴 later | [[brush-fork-push-state]] |
 | Parity: a target atom's USE requirement is ignored — `em -p 'sys-libs/zlib[minizip]'` plans a reinstall without it; emerge asks for the USE change (found 2026-10-25) | 🔴 | not yet filed |
 | Parity: `texlive-core` pulls a perl stack via `virtual/perl-File-Temp`; firefox misses `python-3.15` | 🔴 | found 2026-10-14 by `bench-em-vs-emerge.sh`, not yet filed |
+
+Done 2026-10-23…26, no note of their own: `--with-bdeps` y/n/auto with kept packages' build deps (08eacc48);
+metadata fixes from Lyra's regen diff (LICENSE groups, dependency leading zeros, SRC_URI parentheses);
+the gap index and secondary-cache fixes; `em regen --merge/--replace/--only` and partial publishing;
+PMS package-name and versioned-atom rules in portage-atom; hakoniwa 1.8 from crates.io, pgp 0.21, pkgcraft pin.
 
 Closed since 2026-09-25 and archived under `todo/done/`: the phase order audit
 ([[phase-order-and-binpkg]]), the binpkg stage-test defects

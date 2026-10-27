@@ -1,6 +1,7 @@
 # FEATURES parity
 
-Status: 🔴 not started, filed 2026-10-22 from [[portage-config-layering]] (decision D3).
+Status: 🟡 steps 1–3 done 2026-10-27 (see "Done"); ccache and the sandbox family are not implemented. Filed
+2026-10-22 from [[portage-config-layering]] (decision D3).
 Related: [[build-clean-env]] (the `keepwork`/`keeptemp`/`noclean` subset, done).
 
 ## Decision (Luca, 2026-10-22)
@@ -34,3 +35,27 @@ run. Matching Portage's set is this note's work, one feature at a time.
 4. `em --info`/`portageq envvar FEATURES` show Portage's stacked value (make.globals included)
    once [[portage-config-layering]] step 2 exists; the build environment shows em's. Say so in
    `--info` if the two differ.
+
+## Done (2026-10-27)
+
+What the tree tests (`has X ${FEATURES}` in ebuilds and eclasses): `userpriv` 43, `usersandbox` and
+`network-sandbox` 27, `ccache` 26, `preserve-libs` 20, `test` 19, `distcc` 13, `installsources` 8, `noman` 4,
+`unmerge-orphans` 2, `sfperms`, `sandbox`, `nodoc` 1.
+
+A build's `FEATURES` is now `settings::provided_features`:
+- Honoured switches the configuration sets (`package.env` included): `test`, `keepwork`, `keeptemp`, `noclean`,
+  `nostrip`, `binpkg-signing`, `binpkg-request-signature`. (`candy`, emerge's resolve spinner, is not implemented:
+  the 2026-10-22 list above counted a profile test's sample text.)
+- `preserve-libs` as Portage stacks it, so `-preserve-libs` now switches preservation off (Luca: "interesting to
+  implement just to see how it is"). Without make.globals em's own globals layer is `FEATURES="preserve-libs"`.
+- `binpkg-multi-instance`, always (every package gets a build id).
+- `userpriv` when the build does not run as root; not under real or mapped root, as in crossdev-stages' box
+  (Luca: em should not claim it there).
+- Everything else is dropped: the sandbox family (em has none), `ccache` (no PATH/CCACHE_DIR setup), `distcc`,
+  `installsources`, `splitdebug`, `noman`/`nodoc`/`noinfo`, `sfperms`, `test-fail-continue`.
+
+Checked in a stage3 sandbox: a build saw `binpkg-multi-instance preserve-libs` (it had seen the config's
+`parallel-install`); removing a needed library keeps it by default and deletes it with `FEATURES=-preserve-libs`.
+
+Open: ccache support; whether `--info` should say that the build value differs from Portage's stacked one (step 4).
+

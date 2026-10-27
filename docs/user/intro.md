@@ -414,7 +414,10 @@ For a complete guide to cross-compilation, see [`docs/user/crossdev.md`](./cross
 - Some applets are stubs (see applet status in README)
 - `--local` bootstrap is not fully automated
 - Certain edge cases in dependency resolution
-- Some Portage-specific features (e.g., `FEATURES` parity)
+- `FEATURES`: a build sees only what em implements — `test`, `keepwork`, `keeptemp`, `noclean`,
+  `nostrip`, `binpkg-signing`, `binpkg-request-signature`, `preserve-libs` (on unless
+  `-preserve-libs`), `binpkg-multi-instance`, and `userpriv` when it does not build as root.
+  There is no sandbox, `ccache` or `distcc` support yet.
 
 See [`docs/user/applets.md`](./applets.md) for detailed status of each applet.
 

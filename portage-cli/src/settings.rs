@@ -16,6 +16,9 @@ use crate::cli::Cli;
 /// Portage's defaults for a host install; a prefix has none of its own yet
 const MAKE_GLOBALS: &str = "/usr/share/portage/config/make.globals";
 
+/// The globals layer without a make.globals: what em does by default that a switch can turn off
+const EM_GLOBALS: &str = "FEATURES=\"preserve-libs\"\n";
+
 /// The profile stack of `config_root`, its user profiles included; `None` without a `make.profile`
 pub(crate) fn profile_stack(
     config_root: &Utf8Path,
@@ -125,8 +128,11 @@ async fn evaluate(key: &Key, repo: &Repository) -> Result<Option<Settings>> {
             env_d: env_d
                 .is_file()
                 .then(|| ConfSource::File(env_d.as_std_path())),
-            globals: (key.host_globals && globals.is_file())
-                .then(|| ConfSource::File(globals.as_std_path())),
+            globals: Some(if key.host_globals && globals.is_file() {
+                ConfSource::File(globals.as_std_path())
+            } else {
+                ConfSource::Str(EM_GLOBALS)
+            }),
             confs: &confs,
             env: &env,
         },
@@ -167,6 +173,59 @@ pub(crate) async fn seed_build_shell(shell: &mut EbuildShell, settings: &Setting
         .run_string(&script)
         .await
         .context("seeding the build configuration")
+}
+
+/// `FEATURES` switches em acts on when the configuration sets them
+const HONOURED_FEATURES: &[&str] = &[
+    "binpkg-request-signature",
+    "binpkg-signing",
+    "keeptemp",
+    "keepwork",
+    "noclean",
+    "nostrip",
+    "test",
+];
+
+/// The `FEATURES` a build sees: what em provides, not every token configured
+///
+/// The honoured switches `configured` (the shell's value, `package.env` included) sets,
+/// `preserve-libs` when on, the always-on `binpkg-multi-instance`, and `userpriv` when the build
+/// does not run as root.
+fn provided_features(configured: &str, preserve_libs: bool, as_root: bool) -> String {
+    let mut out: Vec<&str> = configured
+        .split_whitespace()
+        .filter(|f| HONOURED_FEATURES.contains(f))
+        .collect();
+    out.extend(preserve_libs.then_some("preserve-libs"));
+    out.push("binpkg-multi-instance");
+    out.extend((!as_root).then_some("userpriv"));
+    out.sort_unstable();
+    out.dedup();
+    out.join(" ")
+}
+
+/// Whether `settings` keeps `preserve-libs` on: as Portage stacks it, so `-preserve-libs` turns it
+/// off; on without settings
+fn preserves_libs(settings: Option<&Settings>) -> bool {
+    settings.is_none_or(|s| {
+        s.get("FEATURES")
+            .is_some_and(|v| v.split_whitespace().any(|f| f == "preserve-libs"))
+    })
+}
+
+/// Replace the shell's `FEATURES` with [`provided_features`], and return it
+pub(crate) async fn export_provided_features(
+    shell: &mut EbuildShell,
+    settings: Option<&Settings>,
+) -> Result<String> {
+    let configured = shell.get_var("FEATURES").unwrap_or_default();
+    let as_root = rustix::process::getuid().is_root();
+    let features = provided_features(&configured, preserves_libs(settings), as_root);
+    shell
+        .run_string(&format!("export FEATURES={}\n", shell_quote(&features)))
+        .await
+        .context("setting FEATURES")?;
+    Ok(features)
 }
 
 fn shell_quote(value: &str) -> String {
@@ -244,6 +303,19 @@ fn repo_locations(repos: &portage_repo::ReposConf) -> (Option<String>, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_build_sees_only_the_features_em_provides() {
+        let configured = "ccache sandbox network-sandbox test keepwork distcc";
+        assert_eq!(
+            provided_features(configured, true, false),
+            "binpkg-multi-instance keepwork preserve-libs test userpriv"
+        );
+        assert_eq!(
+            provided_features("test", false, true),
+            "binpkg-multi-instance test"
+        );
+    }
 
     #[test]
     fn portdir_is_the_main_repo_and_portdir_overlay_the_rest() {

@@ -85,7 +85,7 @@ Each step lands on its own, with a parity check against the real tool on thalia.
    `read_make_conf_var_for_roots` (make.conf-only CFLAGS etc. for per-entry roots); `ProfileStack` cannot be empty,
    so a root without a profile has no `Settings`.
 6. 🟡 **The build environment:** done for CONFIG_PROTECT(_MASK), GENTOO_MIRRORS, PORTAGE_ELOG_CLASSES/SYSTEM, seeded
-   from `Settings`. Seeding everything is not safe yet: make.globals' FETCHCOMMAND would switch em's fetcher to wget,
+   from `Settings`, and FEATURES (2026-10-27, what em provides: [[features-parity]]). Seeding everything is not safe yet: make.globals' FETCHCOMMAND would switch em's fetcher to wget,
    PORTAGE_COMPRESS and others change behaviour, and FEATURES needs the [[features-parity]] table (D3) first.
 
 ## Decisions (Luca, 2026-10-22)

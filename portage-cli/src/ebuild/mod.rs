@@ -1350,8 +1350,9 @@ impl PackageSetup {
             );
         }
         let key = crate::settings::Key::new(config_root, config_overlay.as_deref(), root, eprefix);
-        if let Some(settings) = crate::settings::cached(key, &repo).await? {
-            crate::settings::seed_build_shell(&mut shell, &settings).await?;
+        let settings = crate::settings::cached(key, &repo).await?;
+        if let Some(settings) = &settings {
+            crate::settings::seed_build_shell(&mut shell, settings).await?;
         }
 
         // Per-package build environment: `/etc/portage/package.env` maps this package
@@ -1441,14 +1442,13 @@ impl PackageSetup {
             }
         }
 
-        // FEATURES from the configured environment (profile + make.conf). Only a
-        // small set is acted on; the rest are accepted silently.
-        let features: std::collections::HashSet<String> = shell
-            .get_var("FEATURES")
-            .unwrap_or_default()
-            .split_whitespace()
-            .map(str::to_string)
-            .collect();
+        // The ebuild sees, and em acts on, the FEATURES em provides.
+        let features: std::collections::HashSet<String> =
+            crate::settings::export_provided_features(&mut shell, settings.as_deref())
+                .await?
+                .split_whitespace()
+                .map(str::to_string)
+                .collect();
 
         let flags = |name: &str| shell.get_var(name).unwrap_or_default();
         let build_env_key = portage_binpkg::build_env_key(
@@ -2570,7 +2570,14 @@ async fn unmerge_package(u: UnmergePackage<'_>) -> Result<()> {
     // NEEDED.ELF.2 genuinely requires and that nothing else provides. See
     // `preserve_libs` module doc. Normal merges retain and update the
     // graph/registry across the batch; standalone removals share one pair.
-    let to_preserve = preserve_libs::find_libs_to_preserve(graph, old_pkg, &old_contents);
+    let preserving = shell
+        .get_var("FEATURES")
+        .is_some_and(|f| f.split_whitespace().any(|t| t == "preserve-libs"));
+    let to_preserve = if preserving {
+        preserve_libs::find_libs_to_preserve(graph, old_pkg, &old_contents)
+    } else {
+        Vec::new()
+    };
     // Slot replace: files the incoming package already owns (or will leave
     // on disk via remove_old_unique_files) must not enter the preserved-libs
     // registry — they are not orphaned.
